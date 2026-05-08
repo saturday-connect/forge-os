@@ -1,0 +1,7 @@
+.forge/
+test-projects/
+raw-input.md
+forge
+.claude/
+__pycache__/
+*.pyc
