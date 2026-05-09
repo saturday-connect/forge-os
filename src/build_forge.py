@@ -1,6 +1,8 @@
 import os
 from pprint import pformat
 
+FORGE_VERSION = "0.2.0"
+
 # Agents mapped to their definition blocks
 AGENTS = {
     "product-strategist": """# Agent: Product Strategist
@@ -496,1335 +498,707 @@ FILES_TO_TOUCH = pformat(
     width=100,
 )
 
-DASHBOARD_HTML_CONTENT = r"""<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Forge Dashboard</title>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-<style>
-:root {
-  --bg-primary: #0d1117;
-  --bg-secondary: #161b22;
-  --bg-tertiary: #21262d;
-  --bg-card: #1c2128;
-  --border-color: #30363d;
-  --border-accent: #3b82f6;
-  --text-primary: #e6edf3;
-  --text-secondary: #8b949e;
-  --text-muted: #6e7681;
-  --accent-blue: #3b82f6;
-  --accent-green: #22c55e;
-  --accent-amber: #f59e0b;
-  --accent-red: #ef4444;
-  --accent-purple: #a855f7;
-  --radius: 8px;
-  --shadow: 0 4px 24px rgba(0,0,0,0.4);
-  --transition: all 0.2s ease;
-  --browser-top-inset: 56px;
-}
-
-* { margin: 0; padding: 0; box-sizing: border-box; }
-
-body {
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-  background: var(--bg-primary);
-  color: var(--text-primary);
-  line-height: 1.6;
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  padding-top: var(--browser-top-inset);
-}
-
-.app-header {
-  background: var(--bg-secondary);
-  border-bottom: 1px solid var(--border-color);
-  padding: 16px 32px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  position: sticky;
-  top: 0;
-  z-index: 100;
-  backdrop-filter: blur(12px);
-}
-
-.app-header h1 {
-  font-size: 20px;
-  font-weight: 700;
-  background: linear-gradient(135deg, var(--accent-blue), var(--accent-purple));
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-  letter-spacing: -0.5px;
-}
-
-.header-actions {
-  display: flex;
-  gap: 12px;
-  align-items: center;
-}
-
-.runtime-panel {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-  padding: 10px 14px;
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius);
-  background: var(--bg-tertiary);
-}
-
-.runtime-field {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.runtime-field label {
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--text-muted);
-}
-
-.runtime-panel select,
-.runtime-panel input {
-  min-width: 160px;
-  background: var(--bg-primary);
-  color: var(--text-primary);
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-  padding: 8px 10px;
-  font-size: 12px;
-  font-family: inherit;
-}
-
-.runtime-panel input::placeholder {
-  color: var(--text-muted);
-}
-
-.runtime-panel select:focus,
-.runtime-panel input:focus {
-  outline: none;
-  border-color: var(--accent-blue);
-}
-
-.runtime-help {
-  font-size: 11px;
-  color: var(--text-muted);
-  max-width: 320px;
-}
-
-.header-actions button {
-  background: var(--bg-tertiary);
-  color: var(--text-secondary);
-  border: 1px solid var(--border-color);
-  padding: 6px 14px;
-  border-radius: var(--radius);
-  font-size: 13px;
-  cursor: pointer;
-  transition: var(--transition);
-  font-family: inherit;
-}
-
-.header-actions button:hover {
-  background: var(--accent-blue);
-  color: #fff;
-  border-color: var(--accent-blue);
-}
-
-.app-layout {
-  flex-grow: 1;
-  display: grid;
-  grid-template-columns: 280px 1fr;
-  overflow: hidden;
-}
-
-.sidebar {
-  background: var(--bg-secondary);
-  border-right: 1px solid var(--border-color);
-  overflow-y: auto;
-  padding: 16px 0;
-}
-
-.sidebar-section {
-  margin-bottom: 8px;
-}
-
-.sidebar-section-title {
-  padding: 8px 20px;
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 1px;
-  color: var(--text-muted);
-}
-
-.stage-item {
-  padding: 8px 20px;
-  font-size: 13px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  transition: var(--transition);
-  color: var(--text-secondary);
-  border-left: 3px solid transparent;
-}
-
-.stage-item:hover {
-  background: var(--bg-tertiary);
-  color: var(--text-primary);
-}
-
-.stage-item.active {
-  background: rgba(59,130,246,0.08);
-  color: var(--accent-blue);
-  border-left-color: var(--accent-blue);
-}
-
-.stage-item .indicator {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
-
-.stage-item .indicator.populated { background: var(--accent-green); }
-.stage-item .indicator.empty { background: var(--text-muted); }
-.stage-item .indicator.partial { background: var(--accent-amber); }
-.stage-item .indicator.needs_review {
-  background: var(--accent-amber);
-  box-shadow: 0 0 0 3px rgba(245,158,11,0.14);
-}
-.stage-item .indicator.reviewed {
-  background: var(--accent-green);
-  box-shadow: 0 0 0 3px rgba(34,197,94,0.14);
-}
-.stage-item .indicator.ready {
-  background: var(--accent-green);
-  box-shadow: 0 0 0 3px rgba(34,197,94,0.14);
-}
-.stage-item .indicator.updated {
-  background: var(--accent-amber);
-  box-shadow: 0 0 0 3px rgba(245,158,11,0.14);
-}
-
-.file-item {
-  padding: 6px 20px 6px 44px;
-  font-size: 12px;
-  cursor: pointer;
-  color: var(--text-muted);
-  transition: var(--transition);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.file-item:hover {
-  background: var(--bg-tertiary);
-  color: var(--text-primary);
-}
-
-.file-item.active {
-  color: var(--accent-blue);
-  background: rgba(59,130,246,0.05);
-}
-
-.file-item.empty-file {
-  opacity: 0.5;
-}
-
-.main-content {
-  overflow-y: auto;
-  padding: 24px 32px;
-}
-
-.gates-bar {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-  margin-bottom: 24px;
-}
-
-.gate-chip {
-  padding: 6px 14px;
-  border-radius: 20px;
-  font-size: 12px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: var(--transition);
-  border: 1px solid var(--border-color);
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.gate-chip.passed {
-  background: rgba(34,197,94,0.12);
-  border-color: rgba(34,197,94,0.3);
-  color: var(--accent-green);
-}
-
-.gate-chip.pending {
-  background: rgba(245,158,11,0.12);
-  border-color: rgba(245,158,11,0.3);
-  color: var(--accent-amber);
-}
-
-.gate-chip:hover {
-  transform: translateY(-1px);
-  box-shadow: var(--shadow);
-}
-
-.gate-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-}
-
-.gate-chip.passed .gate-dot { background: var(--accent-green); }
-.gate-chip.pending .gate-dot { background: var(--accent-amber); }
-
-.content-panel {
-  background: var(--bg-card);
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius);
-  overflow: hidden;
-}
-
-.content-header {
-  padding: 14px 20px;
-  border-bottom: 1px solid var(--border-color);
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  background: var(--bg-secondary);
-}
-
-.content-header h2 {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--text-primary);
-}
-
-.content-meta {
-  font-size: 12px;
-  color: var(--text-muted);
-}
-
-.content-body {
-  padding: 28px 32px;
-  font-size: 15px;
-  line-height: 1.85;
-  color: var(--text-secondary);
-  min-height: 280px;
-  max-height: 68vh;
-  overflow-y: auto;
-  background:
-    radial-gradient(circle at top right, rgba(59,130,246,0.08), transparent 28%),
-    linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0));
-}
-
-.content-body:empty::after {
-  content: 'Select a file from the sidebar to view its contents.';
-  color: var(--text-muted);
-  font-style: italic;
-  font-family: 'Inter', sans-serif;
-}
-
-.markdown-preview {
-  max-width: 860px;
-  margin: 0 auto;
-}
-
-.markdown-preview > *:first-child {
-  margin-top: 0;
-}
-
-.markdown-preview h1,
-.markdown-preview h2,
-.markdown-preview h3,
-.markdown-preview h4 {
-  color: var(--text-primary);
-  letter-spacing: -0.03em;
-  line-height: 1.2;
-  margin: 1.4em 0 0.65em;
-}
-
-.markdown-preview h1 {
-  font-size: 34px;
-  font-weight: 700;
-  padding-bottom: 16px;
-  border-bottom: 1px solid rgba(255,255,255,0.08);
-}
-
-.markdown-preview h2 {
-  font-size: 24px;
-  font-weight: 650;
-}
-
-.markdown-preview h3 {
-  font-size: 18px;
-  font-weight: 650;
-}
-
-.markdown-preview h4 {
-  font-size: 15px;
-  font-weight: 650;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--accent-blue);
-}
-
-.markdown-preview p,
-.markdown-preview li {
-  color: var(--text-secondary);
-  font-size: 15px;
-}
-
-.markdown-preview p {
-  margin: 0 0 1.1em;
-}
-
-.markdown-preview ul,
-.markdown-preview ol {
-  margin: 0 0 1.25em 1.25em;
-  padding: 0;
-}
-
-.markdown-preview li + li {
-  margin-top: 0.45em;
-}
-
-.markdown-preview strong {
-  color: var(--text-primary);
-  font-weight: 650;
-}
-
-.markdown-preview em {
-  color: #c9d6e3;
-}
-
-.markdown-preview a {
-  color: #7cc4ff;
-  text-decoration: none;
-  border-bottom: 1px solid rgba(124,196,255,0.35);
-}
-
-.markdown-preview a:hover {
-  color: #a7dbff;
-  border-bottom-color: rgba(167,219,255,0.75);
-}
-
-.markdown-preview hr {
-  border: none;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.12), transparent);
-  margin: 2em 0;
-}
-
-.markdown-preview blockquote {
-  margin: 1.4em 0;
-  padding: 16px 18px;
-  border-left: 3px solid var(--accent-blue);
-  background: rgba(59,130,246,0.08);
-  border-radius: 0 12px 12px 0;
-  color: #c7d7ea;
-}
-
-.markdown-preview code {
-  font-family: 'SF Mono', 'Fira Code', monospace;
-  font-size: 0.92em;
-}
-
-.markdown-preview p code,
-.markdown-preview li code,
-.markdown-preview td code,
-.markdown-preview blockquote code {
-  padding: 0.18em 0.42em;
-  border-radius: 6px;
-  background: rgba(255,255,255,0.06);
-  color: #f7d794;
-}
-
-.markdown-preview pre {
-  margin: 1.25em 0;
-  padding: 18px 20px;
-  border-radius: 16px;
-  overflow-x: auto;
-  background: linear-gradient(180deg, rgba(8,15,28,0.92), rgba(17,24,39,0.94));
-  border: 1px solid rgba(255,255,255,0.08);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.04);
-}
-
-.markdown-preview pre code {
-  color: #dbeafe;
-  display: block;
-  line-height: 1.7;
-}
-
-.markdown-preview table {
-  width: 100%;
-  border-collapse: collapse;
-  margin: 1.4em 0 1.8em;
-  overflow: hidden;
-  border-radius: 14px;
-  border: 1px solid rgba(255,255,255,0.08);
-  background: rgba(255,255,255,0.025);
-}
-
-.markdown-preview th,
-.markdown-preview td {
-  text-align: left;
-  padding: 12px 14px;
-  vertical-align: top;
-  border-bottom: 1px solid rgba(255,255,255,0.06);
-}
-
-.markdown-preview th {
-  background: rgba(59,130,246,0.1);
-  color: var(--text-primary);
-  font-size: 12px;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-
-.markdown-preview tr:last-child td {
-  border-bottom: none;
-}
-
-.markdown-preview .empty-file {
-  color: var(--text-muted);
-  font-style: italic;
-}
-
-.review-bar {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 16px;
-  border-bottom: 1px solid var(--border);
-  background: var(--bg-secondary);
-}
-.review-bar button {
-  padding: 4px 14px;
-  border-radius: 6px;
-  border: none;
-  font-size: 12px;
-  cursor: pointer;
-  font-weight: 500;
-}
-.btn-reviewed { background: var(--accent-green); color: #fff; }
-.btn-needs-review { background: var(--accent-amber); color: #fff; }
-.review-status-label { font-size: 12px; }
-.stage-progress { font-size: 10px; color: var(--text-muted); margin-left: 6px; }
-
-.critique-panel {
-  margin-top: 16px;
-  background: var(--bg-card);
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius);
-  overflow: hidden;
-}
-
-.critique-panel h3 {
-  padding: 14px 20px;
-  font-size: 13px;
-  font-weight: 600;
-  background: var(--bg-secondary);
-  border-bottom: 1px solid var(--border-color);
-}
-
-.critique-input-area {
-  padding: 16px 20px;
-  display: flex;
-  gap: 12px;
-}
-
-.critique-input-area textarea {
-  flex: 1;
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius);
-  color: var(--text-primary);
-  padding: 10px 14px;
-  font-size: 13px;
-  font-family: inherit;
-  resize: vertical;
-  min-height: 60px;
-  transition: var(--transition);
-}
-
-.critique-input-area textarea:focus {
-  outline: none;
-  border-color: var(--accent-blue);
-  box-shadow: 0 0 0 3px rgba(59,130,246,0.15);
-}
-
-.critique-input-area textarea::placeholder {
-  color: var(--text-muted);
-}
-
-.btn-send {
-  background: linear-gradient(135deg, var(--accent-blue), var(--accent-purple));
-  color: #fff;
-  border: none;
-  padding: 10px 20px;
-  border-radius: var(--radius);
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: var(--transition);
-  font-family: inherit;
-  align-self: flex-end;
-  white-space: nowrap;
-}
-
-.btn-send:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 4px 16px rgba(59,130,246,0.3);
-}
-
-.btn-send:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-  transform: none;
-}
-
-.status-banner {
-  padding: 10px 20px;
-  font-size: 12px;
-  font-weight: 500;
-  text-align: center;
-  animation: fadeIn 0.3s ease;
-}
-
-.status-banner.success {
-  background: rgba(34,197,94,0.12);
-  color: var(--accent-green);
-  border-top: 1px solid rgba(34,197,94,0.2);
-}
-
-.status-banner.error {
-  background: rgba(239,68,68,0.12);
-  color: var(--accent-red);
-  border-top: 1px solid rgba(239,68,68,0.2);
-}
-
-.status-banner.loading {
-  background: rgba(59,130,246,0.12);
-  color: var(--accent-blue);
-  border-top: 1px solid rgba(59,130,246,0.2);
-}
-
-.empty-state {
-  text-align: center;
-  padding: 80px 40px;
-  color: var(--text-muted);
-}
-
-.empty-state h2 {
-  font-size: 18px;
-  font-weight: 600;
-  color: var(--text-secondary);
-  margin-bottom: 8px;
-}
-
-.empty-state p {
-  font-size: 14px;
-}
-
-@keyframes fadeIn {
-  from { opacity: 0; transform: translateY(-4px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-.sidebar::-webkit-scrollbar,
-.content-body::-webkit-scrollbar,
-.main-content::-webkit-scrollbar {
-  width: 6px;
-}
-
-.sidebar::-webkit-scrollbar-thumb,
-.content-body::-webkit-scrollbar-thumb,
-.main-content::-webkit-scrollbar-thumb {
-  background: var(--bg-tertiary);
-  border-radius: 3px;
-}
-
-.sidebar::-webkit-scrollbar-thumb:hover,
-.content-body::-webkit-scrollbar-thumb:hover,
-.main-content::-webkit-scrollbar-thumb:hover {
-  background: var(--border-color);
-}
-
-.stage-item .indicator.generating { 
-  background: var(--accent-blue); 
-  animation: pulse 1.5s infinite;
-  box-shadow: 0 0 8px var(--accent-blue);
-}
-
-@keyframes pulse {
-  0% { transform: scale(0.95); opacity: 0.8; }
-  50% { transform: scale(1.2); opacity: 1; }
-  100% { transform: scale(0.95); opacity: 0.8; }
-}
-
-.processing-banner {
-  background: rgba(59,130,246,0.1);
-  border: 1px solid rgba(59,130,246,0.3);
-  color: var(--accent-blue);
-  padding: 10px 16px;
-  border-radius: var(--radius);
-  margin-bottom: 20px;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-size: 13px;
-  font-weight: 500;
-  animation: fadeIn 0.3s ease;
-}
-
-.spinner {
-  width: 14px;
-  height: 14px;
-  border: 2px solid rgba(59,130,246,0.3);
-  border-top-color: var(--accent-blue);
-  border-radius: 50%;
-  animation: spin 1s linear infinite;
-}
-
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
-</style>
-</head>
-<body>
-
-<header class="app-header">
-  <h1>Forge Dashboard</h1>
-  <div class="header-actions">
-    <div class="runtime-panel">
-      <div class="runtime-field">
-        <label for="toolSelect">AI Tool</label>
-        <select id="toolSelect"></select>
-      </div>
-      <div class="runtime-field">
-        <label for="modelInput">Model</label>
-        <input id="modelInput" type="text" placeholder="Optional model override">
-      </div>
-      <button id="saveRuntimeButton" onclick="saveRuntime()">Save Runtime</button>
-    </div>
-    <button onclick="loadState()">Refresh</button>
-  </div>
-</header>
-
-<div class="app-layout">
-  <nav class="sidebar" id="sidebar"></nav>
-  <main class="main-content">
-    <div class="gates-bar" id="gatesBar"></div>
-    <div class="runtime-help" id="runtimeHelp"></div>
-    <div id="liveProcessingBanner" style="display:none"></div>
-    <div class="content-panel">
-      <div class="review-bar" id="reviewBar" style="display:none">
-        <button id="reviewToggleBtn" onclick="toggleReview()">Mark as Reviewed</button>
-        <span class="review-status-label" id="reviewStatusLabel"></span>
-      </div>
-      <div class="content-header">
-        <h2 id="contentTitle">Select a file</h2>
-        <div class="content-meta" id="contentMeta"></div>
-      </div>
-      <div class="content-body" id="contentBody"></div>
-      <div id="statusBanner"></div>
-    </div>
-    <div class="critique-panel" id="critiquePanel" style="display:none">
-      <h3>AI Critique / Fix Request</h3>
-      <div class="critique-input-area">
-        <textarea id="critiqueInput" placeholder="Describe the issue or improvement you want the AI to make to this file..."></textarea>
-        <button class="btn-send" id="btnSend" onclick="sendCritique()">Send to AI</button>
-      </div>
-    </div>
-  </main>
-</div>
-
-<script>
-var currentFile = null;
-var stateData = null;
-var runtimeOptions = [];
-
-var STAGE_LABELS = {
-  '00-context': 'Context',
-  '01-requirements': 'Requirements',
-  '02-design': 'Design',
-  '03-analysis': 'Analysis',
-  '04-architecture': 'Architecture',
-  '05-delivery': 'Delivery',
-  '06-engineering': 'Engineering',
-  '07-quality': 'Quality',
-  '08-operations': 'Operations',
-  '09-release': 'Release',
-  '10-marketing': 'Marketing'
-};
-
-var FILE_STATUS_COPY = {
-  generating: { label: 'Generating', description: 'This file is being created right now.' },
-  empty: { label: 'Empty', description: 'No content yet. Run ./forge generate to start.' },
-  needs_review: { label: 'Needs Review', description: 'AI-generated. Review and approve before the gate passes.' },
-  reviewed: { label: 'Reviewed', description: 'Approved. Gate auto-passes when all stage files are reviewed.' },
-  updated: { label: 'Recently updated', description: 'This file has content and changed recently.' },
-  ready: { label: 'Generated', description: 'This file has content and is not recently changed.' }
-};
-
-var runtimeInitialized = false;
-var stageReviewSummary = {};
-var currentFileStatus = 'empty';
-
-function loadState(forceRenderRuntime) {
-  fetch('/api/state')
-    .then(function(r) { return r.json(); })
-    .then(function(data) {
-      stateData = data;
-      runtimeOptions = data.runtime ? data.runtime.options || [] : [];
-      stageReviewSummary = data.stageReviewSummary || {};
-      if (!runtimeInitialized || forceRenderRuntime) {
-        renderRuntime(data.runtime);
-        runtimeInitialized = true;
-      }
-      renderGates(data.gates);
-      renderSidebar(data.tree, data.processing);
-      renderProcessing(data.processing);
-    })
-    .catch(function(err) {
-      console.error('Failed to load state:', err);
-    });
-}
-
-function renderRuntime(runtime) {
-  var toolSelect = document.getElementById('toolSelect');
-  var modelInput = document.getElementById('modelInput');
-  var runtimeHelp = document.getElementById('runtimeHelp');
-  var current = runtime && runtime.current ? runtime.current : { tool: '', model: '' };
-  var options = runtime && runtime.options ? runtime.options : [];
-
-  toolSelect.innerHTML = '';
-  for (var i = 0; i < options.length; i++) {
-    var optionData = options[i];
-    var option = document.createElement('option');
-    option.value = optionData.id;
-    option.textContent = optionData.label + (optionData.available ? '' : ' (unavailable)');
-    option.disabled = !optionData.available || !optionData.supported;
-    if (optionData.id === current.tool) {
-      option.selected = true;
-    }
-    toolSelect.appendChild(option);
-  }
-
-  modelInput.value = current.model || '';
-  updateRuntimeHelp();
-}
-
-function updateRuntimeHelp() {
-  var toolSelect = document.getElementById('toolSelect');
-  var runtimeHelp = document.getElementById('runtimeHelp');
-  var selectedTool = toolSelect.value;
-  for (var i = 0; i < runtimeOptions.length; i++) {
-    if (runtimeOptions[i].id === selectedTool) {
-      runtimeHelp.textContent = runtimeOptions[i].description;
-      return;
-    }
-  }
-  runtimeHelp.textContent = '';
-}
-
-function renderGates(gates) {
-  var bar = document.getElementById('gatesBar');
-  bar.innerHTML = '';
-  var gateNames = Object.keys(gates).sort();
-  for (var i = 0; i < gateNames.length; i++) {
-    var name = gateNames[i];
-    var status = gates[name];
-    var isPassed = status === 'PASSED';
-    var chip = document.createElement('div');
-    chip.className = 'gate-chip ' + (isPassed ? 'passed' : 'pending');
-    chip.setAttribute('data-gate', name);
-    chip.innerHTML = '<span class="gate-dot"></span>' + name.replace('-gate', '').replace(/-/g, ' ');
-    chip.onclick = (function(n, p) {
-      return function() {
-        if (!p) { toggleGate(n); }
-      };
-    })(name, isPassed);
-    bar.appendChild(chip);
-  }
-}
-
-function renderSidebar(tree, processing) {
-  var sidebar = document.getElementById('sidebar');
-  sidebar.innerHTML = '';
-  var stages = Object.keys(tree).sort();
-  for (var i = 0; i < stages.length; i++) {
-    var stage = stages[i];
-    var files = tree[stage].slice().sort(function(a, b) {
-      var aName = typeof a === 'string' ? a : a.name;
-      var bName = typeof b === 'string' ? b : b.name;
-      return aName.localeCompare(bName);
-    });
-    var section = document.createElement('div');
-    section.className = 'sidebar-section';
-    var title = document.createElement('div');
-    title.className = 'sidebar-section-title';
-    var labelText = STAGE_LABELS[stage] || stage;
-    var summary = stageReviewSummary[stage];
-    if (summary && summary.total > 0) {
-      var prog = document.createElement('span');
-      prog.className = 'stage-progress';
-      prog.textContent = '(' + summary.reviewed + '/' + summary.total + ')';
-      title.textContent = labelText;
-      title.appendChild(prog);
-    } else {
-      title.textContent = labelText;
-    }
-    section.appendChild(title);
-
-    for (var j = 0; j < files.length; j++) {
-      var fileEntry = files[j];
-      var fileName = typeof fileEntry === 'string' ? fileEntry : fileEntry.name;
-      var fileStatus = typeof fileEntry === 'string' ? 'empty' : fileEntry.status;
-      var fPath = stage + '/' + fileName;
-      var fileDiv = document.createElement('div');
-      fileDiv.className = 'file-item stage-item';
-      var statusMeta = FILE_STATUS_COPY[fileStatus] || FILE_STATUS_COPY.empty;
-      
-      var indicatorHTML = '';
-      if (processing && processing.status === 'generating' && processing.file === fPath) {
-        indicatorHTML = '<span class="indicator generating" style="display:inline-block; width:6px; height:6px; border-radius:50%; margin-right:8px;"></span>';
-        fileDiv.classList.add('active');
-        fileDiv.title = FILE_STATUS_COPY.generating.description;
-      } else {
-        indicatorHTML = '<span class="indicator ' + fileStatus + '" style="display:inline-block; width:6px; height:6px; border-radius:50%; margin-right:8px;"></span>';
-        if (fileStatus === 'empty') {
-          fileDiv.classList.add('empty-file');
-        }
-        fileDiv.title = statusMeta.description;
-      }
-      
-      fileDiv.innerHTML = indicatorHTML + fileName.replace('.md', '');
-      fileDiv.setAttribute('data-path', fPath);
-      fileDiv.onclick = (function(p) {
-        return function() { loadFile(p); };
-      })(fPath);
-      section.appendChild(fileDiv);
-    }
-    sidebar.appendChild(section);
-  }
-}
-
-function renderProcessing(processing) {
-  var banner = document.getElementById('liveProcessingBanner');
-  if (processing && processing.status === 'generating') {
-    banner.style.display = 'flex';
-    banner.className = 'processing-banner';
-    banner.innerHTML = '<div class="spinner"></div><span><b>Generating:</b> ' + processing.stage + ' &rarr; ' + processing.file + '</span>';
-  } else {
-    banner.style.display = 'none';
-  }
-}
-
-function escapeHtml(value) {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
-
-function renderInlineMarkdown(text) {
-  var escaped = escapeHtml(text);
-  escaped = escaped.replace(/`([^`]+)`/g, '<code>$1</code>');
-  escaped = escaped.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noreferrer">$1</a>');
-  escaped = escaped.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-  escaped = escaped.replace(/__([^_]+)__/g, '<strong>$1</strong>');
-  escaped = escaped.replace(/(^|[^\*])\*([^*]+)\*(?!\*)/g, '$1<em>$2</em>');
-  escaped = escaped.replace(/(^|[^_])_([^_]+)_(?!_)/g, '$1<em>$2</em>');
-  return escaped;
-}
-
-function isTableSeparator(line) {
-  return /^\s*\|?(?:\s*:?-{3,}:?\s*\|)+\s*:?-{3,}:?\s*\|?\s*$/.test(line);
-}
-
-function renderTable(lines, startIndex) {
-  if (startIndex + 1 >= lines.length) {
-    return null;
-  }
-  if (lines[startIndex].indexOf('|') === -1 || !isTableSeparator(lines[startIndex + 1])) {
-    return null;
-  }
-
-  var rows = [];
-  var index = startIndex;
-  while (index < lines.length && lines[index].indexOf('|') !== -1 && lines[index].trim() !== '') {
-    rows.push(lines[index]);
-    index += 1;
-  }
-
-  if (rows.length < 2) {
-    return null;
-  }
-
-  function splitRow(row) {
-    return row
-      .trim()
-      .replace(/^\|/, '')
-      .replace(/\|$/, '')
-      .split('|')
-      .map(function(cell) { return renderInlineMarkdown(cell.trim()); });
-  }
-
-  var headerCells = splitRow(rows[0]);
-  var bodyRows = rows.slice(2).map(splitRow);
-  var html = '<table><thead><tr>';
-  for (var i = 0; i < headerCells.length; i++) {
-    html += '<th>' + headerCells[i] + '</th>';
-  }
-  html += '</tr></thead><tbody>';
-  for (var j = 0; j < bodyRows.length; j++) {
-    html += '<tr>';
-    for (var k = 0; k < bodyRows[j].length; k++) {
-      html += '<td>' + bodyRows[j][k] + '</td>';
-    }
-    html += '</tr>';
-  }
-  html += '</tbody></table>';
-  return { html: html, nextIndex: index };
-}
-
-function renderMarkdown(markdown) {
-  if (!markdown || !markdown.trim()) {
-    return '<div class="markdown-preview"><p class="empty-file">(empty file)</p></div>';
-  }
-
-  var normalized = markdown.replace(/\r\n/g, '\n');
-  var lines = normalized.split('\n');
-  var html = [];
-  var paragraph = [];
-  var listType = '';
-  var listItems = [];
-  var inCodeBlock = false;
-  var codeBuffer = [];
-
-  function flushParagraph() {
-    if (!paragraph.length) {
-      return;
-    }
-    html.push('<p>' + renderInlineMarkdown(paragraph.join(' ')) + '</p>');
-    paragraph = [];
-  }
-
-  function flushList() {
-    if (!listItems.length) {
-      return;
-    }
-    var tag = listType === 'ol' ? 'ol' : 'ul';
-    html.push('<' + tag + '><li>' + listItems.join('</li><li>') + '</li></' + tag + '>');
-    listItems = [];
-    listType = '';
-  }
-
-  function flushCodeBlock() {
-    if (!inCodeBlock) {
-      return;
-    }
-    html.push('<pre><code>' + escapeHtml(codeBuffer.join('\n')) + '</code></pre>');
-    inCodeBlock = false;
-    codeBuffer = [];
-  }
-
-  for (var index = 0; index < lines.length; index++) {
-    var line = lines[index];
-    var trimmed = line.trim();
-
-    if (trimmed.indexOf('```') === 0) {
-      flushParagraph();
-      flushList();
-      if (inCodeBlock) {
-        flushCodeBlock();
-      } else {
-        inCodeBlock = true;
-        codeBuffer = [];
-      }
-      continue;
+DASHBOARD_HTML_CONTENT = open(os.path.join(os.path.dirname(__file__), "dashboard.html")).read()
+
+SERVER_PY_CONTENT = r"""import os
+import sys
+import json
+import subprocess
+import time
+import threading
+import urllib.parse
+from datetime import datetime
+from http.server import HTTPServer, BaseHTTPRequestHandler
+
+REPO_ROOT = os.environ.get("AEOS_REPO_ROOT", ".")
+FORGE_DIR = os.path.join(REPO_ROOT, ".forge")
+REVIEWS_FILE = os.path.join(FORGE_DIR, "reviews.json")
+STATE_FILE = os.path.join(FORGE_DIR, "project-state.json")
+RAW_INPUT_DIR = os.path.join(FORGE_DIR, "00-raw-input")
+FORGE_VERSION = os.environ.get("FORGE_VERSION", "unknown")
+FORGE_SCRIPT = os.environ.get("FORGE_SCRIPT", "")
+
+GATE_STAGE_MAP = {
+    "context-gate": "00-context",
+    "prd-gate": "01-requirements",
+    "design-gate": "02-design",
+    "architecture-gate": "04-architecture",
+    "engineering-gate": "06-engineering",
+    "qa-gate": "07-quality",
+    "release-gate": "09-release",
+    "marketing-gate": "10-marketing",
+}
+
+def load_reviews():
+    if os.path.exists(REVIEWS_FILE):
+        try:
+            with open(REVIEWS_FILE, "r") as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {}
+
+def save_reviews(reviews):
+    with open(REVIEWS_FILE, "w") as f:
+        json.dump(reviews, f, indent=2)
+
+def _default_state():
+    return {
+        "project_name": "",
+        "builds": [],
+        "issues": [],
+        "git": {
+            "repo_url": "",
+            "username": "",
+            "email": "",
+            "token": "",
+            "default_branch": "main",
+            "branch_prefix": "forge"
+        },
+        "environments": {
+            "staging": {"url": "", "branch": "staging", "status": "not_deployed", "deployed_at": ""},
+            "production": {"url": "", "branch": "main", "status": "not_deployed", "deployed_at": ""}
+        },
+        "tool": "gemini",
+        "model": "gemini"
     }
 
-    if (inCodeBlock) {
-      codeBuffer.push(line);
-      continue;
+def load_project_state():
+    if os.path.exists(STATE_FILE):
+        try:
+            with open(STATE_FILE, "r") as f:
+                data = json.load(f)
+            # Merge with defaults for missing keys
+            defaults = _default_state()
+            for k, v in defaults.items():
+                if k not in data:
+                    data[k] = v
+                elif isinstance(v, dict) and isinstance(data[k], dict):
+                    for sk, sv in v.items():
+                        if sk not in data[k]:
+                            data[k][sk] = sv
+            return data
+        except Exception:
+            pass
+    return _default_state()
+
+def save_project_state(state):
+    with open(STATE_FILE, "w") as f:
+        json.dump(state, f, indent=2)
+
+def list_raw_inputs():
+    if not os.path.exists(RAW_INPUT_DIR):
+        return []
+    files = []
+    for fname in sorted(os.listdir(RAW_INPUT_DIR)):
+        if fname.endswith(".md"):
+            fpath = os.path.join(RAW_INPUT_DIR, fname)
+            st = os.stat(fpath)
+            files.append({
+                "name": fname,
+                "size": st.st_size,
+                "modifiedAt": int(st.st_mtime)
+            })
+    return files
+
+def build_file_entry(stage_dir, filename, reviews):
+    file_path = os.path.join(stage_dir, filename)
+    file_stats = os.stat(file_path)
+    file_size = file_stats.st_size
+    modified_at = int(file_stats.st_mtime)
+    stage_name = os.path.basename(stage_dir)
+    rel_path = f"{stage_name}/{filename}"
+    if reviews is None:
+        reviews = {}
+    if file_size == 0:
+        status = "empty"
+    elif reviews.get(rel_path) == "reviewed":
+        status = "reviewed"
+    else:
+        status = "needs_review"
+    return {
+        "name": filename,
+        "status": status,
+        "size": file_size,
+        "modifiedAt": modified_at,
     }
 
-    if (!trimmed) {
-      flushParagraph();
-      flushList();
-      continue;
+def parse_gate_status(content):
+    in_status = False
+    for line in content.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("## Status"):
+            in_status = True
+            continue
+        if in_status and stripped:
+            return "PASSED" if stripped.upper() in ("PASSED", "APPROVED") else "PENDING"
+    return "PENDING"
+
+def evaluate_gate(gate_name):
+    stage_dir_name = GATE_STAGE_MAP.get(gate_name)
+    if not stage_dir_name:
+        return "PENDING"
+    reviews = load_reviews()
+    stage_path = os.path.join(FORGE_DIR, stage_dir_name)
+    if not os.path.exists(stage_path):
+        return "PENDING"
+    md_files = [f for f in os.listdir(stage_path) if f.endswith(".md") and os.path.getsize(os.path.join(stage_path, f)) > 0]
+    if not md_files:
+        return "PENDING"
+    for fname in md_files:
+        if reviews.get(f"{stage_dir_name}/{fname}") != "reviewed":
+            return "PENDING"
+    return "PASSED"
+
+def set_processing(status, stage=""):
+    status_file = os.path.join(FORGE_DIR, "runs/status.json")
+    runs_dir = os.path.join(FORGE_DIR, "runs")
+    if os.path.exists(runs_dir):
+        try:
+            with open(status_file, "w") as sf:
+                json.dump({"status": status, "stage": stage}, sf)
+        except Exception:
+            pass
+
+def compute_full_state():
+    proj = load_project_state()
+    reviews = load_reviews()
+
+    # Gates
+    gates = {}
+    gates_dir = os.path.join(FORGE_DIR, "12-gates")
+    if os.path.exists(gates_dir):
+        for g in os.listdir(gates_dir):
+            if g.endswith(".md"):
+                gate_name = g.replace(".md", "")
+                if gate_name in GATE_STAGE_MAP:
+                    gates[gate_name] = evaluate_gate(gate_name)
+                else:
+                    with open(os.path.join(gates_dir, g), "r") as f:
+                        content = f.read()
+                    gates[gate_name] = parse_gate_status(content)
+
+    # File tree
+    VALID_STAGE_PREFIXES = {f"{i:02d}" for i in range(11)}
+    files_tree = {}
+    stage_review_summary = {}
+    for d in sorted(os.listdir(FORGE_DIR)):
+        d_path = os.path.join(FORGE_DIR, d)
+        if os.path.isdir(d_path) and d[:2] in VALID_STAGE_PREFIXES and d != "00-raw-input":
+            files_tree[d] = []
+            reviewed_count = 0
+            generated_count = 0
+            total_count = 0
+            for fname in sorted(os.listdir(d_path)):
+                if fname.endswith(".md"):
+                    entry = build_file_entry(d_path, fname, reviews)
+                    files_tree[d].append(entry)
+                    total_count += 1
+                    if entry["status"] != "empty":
+                        generated_count += 1
+                    if entry["status"] == "reviewed":
+                        reviewed_count += 1
+            stage_review_summary[d] = {
+                "reviewed": reviewed_count,
+                "generated": generated_count,
+                "total": total_count,
+            }
+
+    # Processing status
+    processing_status = {"status": "idle"}
+    status_file = os.path.join(FORGE_DIR, "runs/status.json")
+    if os.path.exists(status_file):
+        try:
+            with open(status_file, "r") as sf:
+                processing_status = json.load(sf)
+        except Exception:
+            pass
+
+    all_reviewed = all(
+        s["reviewed"] == s["generated"] and s["generated"] > 0
+        for s in stage_review_summary.values()
+    ) if stage_review_summary else False
+
+    all_gates_passed = all(v == "PASSED" for v in gates.values()) if gates else False
+
+    # Raw inputs
+    raw_inputs = list_raw_inputs()
+
+    # Compute phase
+    total_generated = sum(s["generated"] for s in stage_review_summary.values())
+    total_docs = sum(s["total"] for s in stage_review_summary.values())
+
+    builds = proj.get("builds", [])
+    last_build = builds[-1] if builds else None
+
+    if not raw_inputs:
+        phase = "input"
+    elif total_generated == 0:
+        phase = "generate"
+    elif total_generated < total_docs:
+        phase = "generate"
+    elif not all_reviewed:
+        phase = "review"
+    elif not builds or (last_build and last_build.get("status") not in ("pushed", "committed")):
+        phase = "build"
+    elif last_build and last_build.get("status") in ("pushed", "committed"):
+        phase = "deploy"
+    else:
+        phase = "review"
+
+    return {
+        "version": FORGE_VERSION,
+        "phase": phase,
+        "gates": gates,
+        "tree": files_tree,
+        "processing": processing_status,
+        "stageReviewSummary": stage_review_summary,
+        "allReviewed": all_reviewed,
+        "rawInputs": raw_inputs,
+        "builds": builds,
+        "issues": proj.get("issues", []),
+        "environments": proj.get("environments", {}),
+        "git": proj.get("git", {}),
+        "tool": proj.get("tool", "gemini"),
+        "model": proj.get("model", "gemini"),
+        "project_name": proj.get("project_name", ""),
     }
 
-    var tableResult = renderTable(lines, index);
-    if (tableResult) {
-      flushParagraph();
-      flushList();
-      html.push(tableResult.html);
-      index = tableResult.nextIndex - 1;
-      continue;
-    }
+class ForgeHandler(BaseHTTPRequestHandler):
+    def log_message(self, format, *args):
+        pass  # silence access logs
 
-    if (/^---+$/.test(trimmed) || /^\*\*\*+$/.test(trimmed)) {
-      flushParagraph();
-      flushList();
-      html.push('<hr>');
-      continue;
-    }
+    def _send_cors_headers(self):
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type")
 
-    var headingMatch = /^(#{1,4})\s+(.*)$/.exec(trimmed);
-    if (headingMatch) {
-      flushParagraph();
-      flushList();
-      var level = headingMatch[1].length;
-      html.push('<h' + level + '>' + renderInlineMarkdown(headingMatch[2]) + '</h' + level + '>');
-      continue;
-    }
+    def _json_response(self, code, data):
+        body = json.dumps(data).encode()
+        self.send_response(code)
+        self._send_cors_headers()
+        self.send_header("Content-Type", "application/json")
+        self.end_headers()
+        self.wfile.write(body)
 
-    if (trimmed.indexOf('>') === 0) {
-      flushParagraph();
-      flushList();
-      html.push('<blockquote>' + renderInlineMarkdown(trimmed.replace(/^>\s?/, '')) + '</blockquote>');
-      continue;
-    }
+    def do_OPTIONS(self):
+        self.send_response(200)
+        self._send_cors_headers()
+        self.end_headers()
 
-    var unorderedMatch = /^[-*+]\s+(.*)$/.exec(trimmed);
-    if (unorderedMatch) {
-      flushParagraph();
-      if (listType && listType !== 'ul') {
-        flushList();
-      }
-      listType = 'ul';
-      listItems.push(renderInlineMarkdown(unorderedMatch[1]));
-      continue;
-    }
+    def do_GET(self):
+        parsed = urllib.parse.urlparse(self.path)
+        path = parsed.path
+        params = urllib.parse.parse_qs(parsed.query)
 
-    var orderedMatch = /^\d+\.\s+(.*)$/.exec(trimmed);
-    if (orderedMatch) {
-      flushParagraph();
-      if (listType && listType !== 'ol') {
-        flushList();
-      }
-      listType = 'ol';
-      listItems.push(renderInlineMarkdown(orderedMatch[1]));
-      continue;
-    }
+        if path == "/":
+            dashboard_path = os.path.join(FORGE_DIR, "scripts/dashboard.html")
+            if os.path.exists(dashboard_path):
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.end_headers()
+                with open(dashboard_path, "rb") as f:
+                    self.wfile.write(f.read())
+            else:
+                self.send_response(404)
+                self.end_headers()
+            return
 
-    paragraph.push(trimmed);
-  }
+        if path == "/api/state":
+            try:
+                state = compute_full_state()
+                self._json_response(200, state)
+            except Exception as e:
+                self._json_response(500, {"error": str(e)})
+            return
 
-  flushParagraph();
-  flushList();
-  flushCodeBlock();
-  return '<div class="markdown-preview">' + html.join('') + '</div>';
-}
+        if path == "/api/file":
+            file_path = params.get("path", [None])[0]
+            if not file_path:
+                self._json_response(400, {"error": "missing path"})
+                return
+            abs_path = os.path.join(FORGE_DIR, file_path)
+            if os.path.exists(abs_path):
+                self.send_response(200)
+                self._send_cors_headers()
+                self.send_header("Content-Type", "text/plain; charset=utf-8")
+                self.end_headers()
+                with open(abs_path, "rb") as f:
+                    self.wfile.write(f.read())
+            else:
+                self._json_response(404, {"error": "not found"})
+            return
 
-function loadFile(path) {
-  currentFile = path;
-  currentFileStatus = 'empty';
-  if (stateData && stateData.tree) {
-    var parts = path.split('/');
-    var stageKey = parts[0];
-    var fname = parts[1];
-    var stageFiles = stateData.tree[stageKey] || [];
-    for (var si = 0; si < stageFiles.length; si++) {
-      if (stageFiles[si].name === fname) {
-        currentFileStatus = stageFiles[si].status || 'empty';
-        break;
-      }
-    }
-  }
-  updateReviewBar();
-  document.getElementById('contentTitle').textContent = path;
-  document.getElementById('contentMeta').textContent = '';
-  document.getElementById('critiquePanel').style.display = 'block';
-  document.getElementById('critiqueInput').value = '';
-  document.getElementById('statusBanner').innerHTML = '';
+        if path == "/api/raw-input":
+            name = params.get("name", [None])[0]
+            if not name:
+                self._json_response(400, {"error": "missing name"})
+                return
+            fpath = os.path.join(RAW_INPUT_DIR, name)
+            if os.path.exists(fpath):
+                self.send_response(200)
+                self._send_cors_headers()
+                self.send_header("Content-Type", "text/plain; charset=utf-8")
+                self.end_headers()
+                with open(fpath, "rb") as f:
+                    self.wfile.write(f.read())
+            else:
+                self._json_response(404, {"error": "not found"})
+            return
 
-  if (stateData && stateData.tree) {
-    var stage = path.split('/')[0];
-    var fileName = path.split('/').slice(1).join('/');
-    var stageFiles = stateData.tree[stage] || [];
-    for (var i = 0; i < stageFiles.length; i++) {
-      var fileEntry = stageFiles[i];
-      if (fileEntry && fileEntry.name === fileName) {
-        var statusMeta = FILE_STATUS_COPY[fileEntry.status] || FILE_STATUS_COPY.empty;
-        document.getElementById('contentMeta').textContent = statusMeta.label + ' - ' + statusMeta.description;
-        break;
-      }
-    }
-  }
+        self._json_response(404, {"error": "not found"})
 
-  var allFiles = document.querySelectorAll('.file-item');
-  for (var i = 0; i < allFiles.length; i++) {
-    allFiles[i].classList.remove('active');
-    if (allFiles[i].getAttribute('data-path') === path) {
-      allFiles[i].classList.add('active');
-    }
-  }
+    def do_DELETE(self):
+        parsed = urllib.parse.urlparse(self.path)
+        path = parsed.path
 
-  fetch('/api/file?path=' + encodeURIComponent(path))
-    .then(function(r) { return r.text(); })
-    .then(function(text) {
-      document.getElementById('contentBody').innerHTML = renderMarkdown(text);
-    })
-    .catch(function(err) {
-      document.getElementById('contentBody').innerHTML = '<div class="markdown-preview"><p class="empty-file">Error loading file: ' + escapeHtml(String(err)) + '</p></div>';
-    });
-}
+        if path == "/api/raw-input":
+            content_length = int(self.headers.get("Content-Length", 0))
+            post_data = self.rfile.read(content_length)
+            try:
+                data = json.loads(post_data.decode("utf-8")) if post_data else {}
+            except Exception:
+                data = {}
+            name = data.get("name")
+            if not name:
+                self._json_response(400, {"error": "missing name"})
+                return
+            fpath = os.path.join(RAW_INPUT_DIR, name)
+            if os.path.exists(fpath):
+                os.remove(fpath)
+                self._json_response(200, {"status": "deleted"})
+            else:
+                self._json_response(404, {"error": "not found"})
+            return
 
-function toggleGate(gateName) {
-  var nextStatus = 'PASSED';
-  if (stateData && stateData.gates && stateData.gates[gateName] === 'PASSED') {
-    nextStatus = 'PENDING';
-  }
-  fetch('/api/gate', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ gate: gateName, status: nextStatus })
-  })
-  .then(function(r) { return r.json(); })
-  .then(function() { loadState(); })
-  .catch(function(err) {
-    console.error('Failed to toggle gate:', err);
-  });
-}
+        self._json_response(404, {"error": "not found"})
 
-function saveRuntime() {
-  var tool = document.getElementById('toolSelect').value;
-  var model = document.getElementById('modelInput').value.trim();
-  var saveButton = document.getElementById('saveRuntimeButton');
+    def do_POST(self):
+        content_length = int(self.headers.get("Content-Length", 0))
+        post_data = self.rfile.read(content_length)
+        try:
+            data = json.loads(post_data.decode("utf-8")) if post_data else {}
+        except Exception:
+            data = {}
 
-  saveButton.disabled = true;
-  saveButton.textContent = 'Saving...';
+        parsed = urllib.parse.urlparse(self.path)
+        path = parsed.path
 
-  fetch('/api/runtime', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ tool: tool, model: model })
-  })
-  .then(function(r) { return r.json(); })
-  .then(function(data) {
-    saveButton.disabled = false;
-    saveButton.textContent = 'Save Runtime';
-    if (data.status === 'success') {
-      showBanner('success', 'Runtime settings updated.');
-      loadState(true);
-    } else {
-      showBanner('error', 'Runtime update failed.');
-    }
-  })
-  .catch(function(err) {
-    saveButton.disabled = false;
-    saveButton.textContent = 'Save Runtime';
-    showBanner('error', 'Runtime update failed: ' + err);
-  });
-}
+        if path == "/api/raw-input":
+            name = data.get("name")
+            content = data.get("content", "")
+            if not name:
+                self._json_response(400, {"error": "missing name"})
+                return
+            os.makedirs(RAW_INPUT_DIR, exist_ok=True)
+            fpath = os.path.join(RAW_INPUT_DIR, name)
+            with open(fpath, "w", encoding="utf-8") as f:
+                f.write(content)
+            self._json_response(200, {"status": "saved"})
+            return
 
-function updateReviewBar() {
-  var bar = document.getElementById('reviewBar');
-  var btn = document.getElementById('reviewToggleBtn');
-  var label = document.getElementById('reviewStatusLabel');
-  if (!currentFile || currentFileStatus === 'empty') {
-    bar.style.display = 'none';
-    return;
-  }
-  bar.style.display = 'flex';
-  if (currentFileStatus === 'reviewed') {
-    btn.textContent = 'Mark Needs Review';
-    btn.className = 'btn-needs-review';
-    label.textContent = 'Reviewed ✓';
-    label.style.color = 'var(--accent-green)';
-  } else {
-    btn.textContent = 'Mark as Reviewed';
-    btn.className = 'btn-reviewed';
-    label.textContent = 'Needs Review';
-    label.style.color = 'var(--accent-amber)';
-  }
-}
+        if path == "/api/generate":
+            stage = data.get("stage", "all")
+            forge_script = FORGE_SCRIPT or os.path.abspath(os.path.join(FORGE_DIR, "..", "..", "forge"))
 
-function toggleReview() {
-  if (!currentFile) return;
-  var newStatus = currentFileStatus === 'reviewed' ? 'needs_review' : 'reviewed';
-  fetch('/api/review', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ path: currentFile, status: newStatus })
-  })
-  .then(function(r) { return r.json(); })
-  .then(function(data) {
-    if (data.status === 'success') {
-      currentFileStatus = newStatus;
-      updateReviewBar();
-      loadState(false);
-    }
-  })
-  .catch(function(err) { showBanner('error', 'Review update failed: ' + err); });
-}
+            def run_generate():
+                set_processing("running", stage)
+                try:
+                    if stage == "all":
+                        # Find all raw input files
+                        raw_inputs = list_raw_inputs()
+                        raw_input_arg = None
+                        if raw_inputs:
+                            raw_input_arg = os.path.join(RAW_INPUT_DIR, raw_inputs[0]["name"])
+                        pipeline_stages = [
+                            "context", "requirements", "design", "analysis", "architecture",
+                            "delivery", "engineering", "qa", "operations", "release", "marketing"
+                        ]
+                        for s in pipeline_stages:
+                            set_processing("running", s)
+                            cmd = [forge_script, "generate", s]
+                            if raw_input_arg and s == "context":
+                                cmd.append(raw_input_arg)
+                            subprocess.run(cmd, cwd=REPO_ROOT)
+                    else:
+                        raw_inputs = list_raw_inputs()
+                        raw_input_arg = None
+                        if raw_inputs and stage == "context":
+                            raw_input_arg = os.path.join(RAW_INPUT_DIR, raw_inputs[0]["name"])
+                        cmd = [forge_script, "generate", stage]
+                        if raw_input_arg:
+                            cmd.append(raw_input_arg)
+                        subprocess.run(cmd, cwd=REPO_ROOT)
+                finally:
+                    set_processing("idle")
 
-function sendCritique() {
-  if (!currentFile) return;
-  var critique = document.getElementById('critiqueInput').value.trim();
-  if (!critique) return;
+            t = threading.Thread(target=run_generate, daemon=True)
+            t.start()
+            self._json_response(200, {"status": "started", "stage": stage})
+            return
 
-  var btn = document.getElementById('btnSend');
-  btn.disabled = true;
-  btn.textContent = 'Processing...';
-  showBanner('loading', 'Sending critique to AI agent...');
+        if path == "/api/build":
+            proj = load_project_state()
+            git_cfg = proj.get("git", {})
+            repo_url = git_cfg.get("repo_url", "")
+            token = git_cfg.get("token", "")
+            branch_prefix = git_cfg.get("branch_prefix", "forge")
+            username = git_cfg.get("username", "")
+            email = git_cfg.get("email", "")
 
-  fetch('/api/fix', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ path: currentFile, critique: critique })
-  })
-  .then(function(r) { return r.json(); })
-  .then(function(data) {
-    btn.disabled = false;
-    btn.textContent = 'Send to AI';
-    if (data.status === 'success') {
-      showBanner('success', 'File regenerated successfully.');
-      loadFile(currentFile);
-    } else {
-      showBanner('error', 'AI generation failed. Check terminal logs.');
-    }
-  })
-  .catch(function(err) {
-    btn.disabled = false;
-    btn.textContent = 'Send to AI';
-    showBanner('error', 'Request failed: ' + err);
-  });
-}
+            timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+            branch_name = f"{branch_prefix}/build-{timestamp}"
+            build_entry = {
+                "id": timestamp,
+                "branch": branch_name,
+                "status": "pending",
+                "pr_url": "",
+                "created_at": datetime.now().isoformat(),
+                "log": []
+            }
 
-function showBanner(type, message) {
-  var banner = document.getElementById('statusBanner');
-  banner.innerHTML = '<div class="status-banner ' + type + '">' + message + '</div>';
-  if (type !== 'loading') {
-    setTimeout(function() { banner.innerHTML = ''; }, 5000);
-  }
-}
+            def do_build():
+                logs = []
+                try:
+                    def run_git(args, cwd=REPO_ROOT):
+                        result = subprocess.run(
+                            ["git"] + args, cwd=cwd,
+                            capture_output=True, text=True
+                        )
+                        logs.append(f"$ git {' '.join(args)}: {result.returncode}")
+                        if result.stdout.strip():
+                            logs.append(result.stdout.strip())
+                        if result.stderr.strip():
+                            logs.append(result.stderr.strip())
+                        return result
 
-loadState();
-document.getElementById('toolSelect').addEventListener('change', updateRuntimeHelp);
-setInterval(loadState, 3000);
-</script>
-</body>
-</html>
+                    # Init if not a git repo
+                    if not os.path.exists(os.path.join(REPO_ROOT, ".git")):
+                        run_git(["init"])
+                        if email:
+                            run_git(["config", "user.email", email])
+                        if username:
+                            run_git(["config", "user.name", username])
+
+                    # Create branch
+                    run_git(["checkout", "-b", branch_name])
+                    build_entry["status"] = "committed"
+
+                    # Stage and commit forge docs
+                    run_git(["add", ".forge/"])
+                    run_git(["commit", "-m", f"forge: generated docs {timestamp}"])
+
+                    # Push if repo_url is set
+                    if repo_url:
+                        push_url = repo_url
+                        if token and "github.com" in repo_url:
+                            # Inject token
+                            push_url = repo_url.replace("https://", f"https://{username}:{token}@")
+                        result = run_git(["push", "-u", push_url, branch_name])
+                        if result.returncode == 0:
+                            build_entry["status"] = "pushed"
+                            # Construct PR URL for GitHub
+                            if "github.com" in repo_url:
+                                clean_url = repo_url.rstrip("/").replace(".git", "")
+                                default_branch = git_cfg.get("default_branch", "main")
+                                pr_url = f"{clean_url}/compare/{default_branch}...{branch_name}?expand=1"
+                                build_entry["pr_url"] = pr_url
+                        else:
+                            build_entry["status"] = "error"
+                except Exception as e:
+                    logs.append(f"Error: {e}")
+                    build_entry["status"] = "error"
+                finally:
+                    build_entry["log"] = logs
+                    proj2 = load_project_state()
+                    proj2.setdefault("builds", []).append(build_entry)
+                    save_project_state(proj2)
+
+            t = threading.Thread(target=do_build, daemon=True)
+            t.start()
+            self._json_response(200, {"status": "started", "branch": branch_name})
+            return
+
+        if path == "/api/issue":
+            proj = load_project_state()
+            issues = proj.setdefault("issues", [])
+            issue_id = data.get("id")
+            if issue_id:
+                # Update existing
+                for issue in issues:
+                    if issue["id"] == issue_id:
+                        for k in ("type", "title", "description", "priority", "status"):
+                            if k in data:
+                                issue[k] = data[k]
+                        issue["updated_at"] = datetime.now().isoformat()
+                        break
+            else:
+                # Create new
+                new_id = f"ISSUE-{len(issues) + 1:03d}"
+                new_issue = {
+                    "id": new_id,
+                    "type": data.get("type", "bug"),
+                    "title": data.get("title", ""),
+                    "description": data.get("description", ""),
+                    "priority": data.get("priority", "medium"),
+                    "status": "open",
+                    "created_at": datetime.now().isoformat(),
+                    "updated_at": datetime.now().isoformat(),
+                }
+                issues.append(new_issue)
+            save_project_state(proj)
+            self._json_response(200, {"status": "ok", "issues": proj["issues"]})
+            return
+
+        if path == "/api/settings":
+            proj = load_project_state()
+            if "git" in data:
+                proj["git"].update(data["git"])
+            if "environments" in data:
+                for env_key in ("staging", "production"):
+                    if env_key in data["environments"]:
+                        proj["environments"].setdefault(env_key, {}).update(data["environments"][env_key])
+            if "tool" in data:
+                proj["tool"] = data["tool"]
+            if "model" in data:
+                proj["model"] = data["model"]
+            if "project_name" in data:
+                proj["project_name"] = data["project_name"]
+            save_project_state(proj)
+            self._json_response(200, {"status": "saved"})
+            return
+
+        if path == "/api/gate":
+            gate_name = data.get("gate")
+            gate_path = os.path.join(FORGE_DIR, f"12-gates/{gate_name}.md")
+            if os.path.exists(gate_path):
+                with open(gate_path, "r") as f:
+                    content = f.read()
+                content = content.replace("PENDING", "PASSED")
+                with open(gate_path, "w") as f:
+                    f.write(content)
+                self._json_response(200, {"status": "success"})
+            else:
+                self._json_response(404, {"error": "gate not found"})
+            return
+
+        if path == "/api/review":
+            file_path = data.get("path")
+            status = data.get("status")
+            if not file_path or status not in ("reviewed", "needs_review"):
+                self._json_response(400, {"error": "invalid"})
+                return
+            reviews = load_reviews()
+            if status == "reviewed":
+                reviews[file_path] = "reviewed"
+            else:
+                reviews.pop(file_path, None)
+            save_reviews(reviews)
+            for gate_name in GATE_STAGE_MAP:
+                gate_status = evaluate_gate(gate_name)
+                gate_path = os.path.join(FORGE_DIR, f"12-gates/{gate_name}.md")
+                if os.path.exists(gate_path):
+                    with open(gate_path, "r") as gf:
+                        lines = gf.readlines()
+                    new_lines = []
+                    in_status = False
+                    changed = False
+                    for line in lines:
+                        if line.strip().startswith("## Status"):
+                            in_status = True
+                            new_lines.append(line)
+                            continue
+                        if in_status and line.strip():
+                            in_status = False
+                            if line.strip() != gate_status:
+                                new_lines.append(gate_status + "\n")
+                                changed = True
+                                continue
+                        new_lines.append(line)
+                    if changed:
+                        with open(gate_path, "w") as gf:
+                            gf.writelines(new_lines)
+            self._json_response(200, {"status": "success"})
+            return
+
+        if path == "/api/fix":
+            file_path = data.get("path")
+            critique = data.get("critique")
+            if not file_path or not critique:
+                self._json_response(400, {"error": "missing fields"})
+                return
+            stage = file_path.split("/")[0].split("-", 1)[1] if "-" in file_path.split("/")[0] else "context"
+            cmd = [sys.executable, os.path.join(FORGE_DIR, "scripts/run.py"), stage, "--output", file_path, "--critique", critique]
+            result = subprocess.run(cmd, cwd=REPO_ROOT)
+            if result.returncode == 0:
+                self._json_response(200, {"status": "success"})
+            else:
+                self._json_response(500, {"status": "failed"})
+            return
+
+        if path == "/api/reset":
+            stage_dirs = [
+                "00-context", "01-requirements", "02-design", "03-analysis",
+                "04-architecture", "05-delivery", "06-engineering", "07-quality",
+                "08-operations", "09-release", "10-marketing"
+            ]
+            cleared = 0
+            for d in stage_dirs:
+                dir_path = os.path.join(FORGE_DIR, d)
+                if os.path.isdir(dir_path):
+                    for fname in os.listdir(dir_path):
+                        if fname.endswith(".md"):
+                            with open(os.path.join(dir_path, fname), "w") as f:
+                                f.write("")
+                            cleared += 1
+            # Reset reviews
+            save_reviews({})
+            # Reset gates to PENDING
+            gates = [
+                "context-gate", "prd-gate", "design-gate", "architecture-gate",
+                "engineering-gate", "qa-gate", "release-gate", "marketing-gate"
+            ]
+            for gate in gates:
+                gate_path = os.path.join(FORGE_DIR, f"12-gates/{gate}.md")
+                if os.path.exists(gate_path):
+                    with open(gate_path, "r") as gf:
+                        lines = gf.readlines()
+                    new_lines = []
+                    in_status = False
+                    for line in lines:
+                        if line.strip().startswith("## Status"):
+                            in_status = True
+                            new_lines.append(line)
+                            continue
+                        if in_status and line.strip():
+                            in_status = False
+                            new_lines.append("PENDING\n")
+                            continue
+                        new_lines.append(line)
+                    with open(gate_path, "w") as gf:
+                        gf.writelines(new_lines)
+            # Reset run status
+            status_file = os.path.join(FORGE_DIR, "runs/status.json")
+            with open(status_file, "w") as sf:
+                json.dump({"status": "idle", "stage": "", "updated_at": datetime.now().isoformat()}, sf)
+            self._json_response(200, {"status": "reset", "cleared": cleared})
+            return
+
+        self._json_response(404, {"error": "not found"})
+
+def run_server(port=8080):
+    server_address = ("", port)
+    httpd = HTTPServer(server_address, ForgeHandler)
+    print(f"Forge Dashboard running at http://localhost:{port}")
+    try:
+        httpd.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    httpd.server_close()
+
+if __name__ == "__main__":
+    port = int(sys.argv[1]) if len(sys.argv) > 1 else 8080
+    run_server(port)
 """
 
 TEMPLATE = '''#!/usr/bin/env python3
@@ -1835,6 +1209,7 @@ import json
 from datetime import datetime
 
 FORGE_DIR = ".forge"
+FORGE_VERSION = "{FORGE_VERSION}"
 
 # -------------------------------------------------------------------------
 # Embedded Scripts for Initialization
@@ -1993,10 +1368,10 @@ def log_error(msg):
     print(f"[ERROR] {{msg}}")
 
 def log_info(msg):
-    print(f"[AEOS] {{msg}}")
+    print(f"[Forge] {{msg}}")
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="AEOS Pipeline Runner")
+    parser = argparse.ArgumentParser(description="Forge Pipeline Runner")
     parser.add_argument("stage", help="Stage name (e.g., context, requirements)")
     parser.add_argument("--model", default=os.environ.get("AI_MODEL", "gemini"), help="AI model to use")
     parser.add_argument("--output", help="Specific output file for multi-output stages")
@@ -2225,282 +1600,7 @@ if __name__ == "__main__":
     main()
 """
 
-SERVER_PY = r"""import os
-import sys
-import json
-import subprocess
-import time
-from http.server import HTTPServer, BaseHTTPRequestHandler
-
-REPO_ROOT = os.environ.get("AEOS_REPO_ROOT", ".")
-FORGE_DIR = os.path.join(REPO_ROOT, ".forge")
-REVIEWS_FILE = os.path.join(FORGE_DIR, "reviews.json")
-
-GATE_STAGE_MAP = {{
-    "context-gate": "00-context",
-    "prd-gate": "01-requirements",
-    "design-gate": "02-design",
-    "architecture-gate": "04-architecture",
-    "engineering-gate": "06-engineering",
-    "qa-gate": "07-quality",
-    "release-gate": "09-release",
-}}
-
-def load_reviews():
-    if os.path.exists(REVIEWS_FILE):
-        try:
-            with open(REVIEWS_FILE, "r") as f:
-                return json.load(f)
-        except Exception:
-            pass
-    return {{}}
-
-def save_reviews(reviews):
-    with open(REVIEWS_FILE, "w") as f:
-        json.dump(reviews, f, indent=2)
-
-def build_file_entry(stage_dir, filename, reviews=None):
-    file_path = os.path.join(stage_dir, filename)
-    file_stats = os.stat(file_path)
-    file_size = file_stats.st_size
-    modified_at = int(file_stats.st_mtime)
-    stage_name = os.path.basename(stage_dir)
-    rel_path = f"{{stage_name}}/{{filename}}"
-    if reviews is None:
-        reviews = {{}}
-    if file_size == 0:
-        status = "empty"
-    elif reviews.get(rel_path) == "reviewed":
-        status = "reviewed"
-    else:
-        status = "needs_review"
-    return {{
-        "name": filename,
-        "status": status,
-        "size": file_size,
-        "modifiedAt": modified_at,
-    }}
-
-def evaluate_gate(gate_name):
-    stage_dir_name = GATE_STAGE_MAP.get(gate_name)
-    if not stage_dir_name:
-        return "PENDING"
-    reviews = load_reviews()
-    stage_path = os.path.join(FORGE_DIR, stage_dir_name)
-    if not os.path.exists(stage_path):
-        return "PENDING"
-    md_files = [f for f in os.listdir(stage_path) if f.endswith(".md") and os.path.getsize(os.path.join(stage_path, f)) > 0]
-    if not md_files:
-        return "PENDING"
-    for fname in md_files:
-        if reviews.get(f"{{stage_dir_name}}/{{fname}}") != "reviewed":
-            return "PENDING"
-    return "PASSED"
-
-class ForgeHandler(BaseHTTPRequestHandler):
-    def _send_cors_headers(self):
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
-
-    def do_OPTIONS(self):
-        self.send_response(200)
-        self._send_cors_headers()
-        self.end_headers()
-
-    def do_GET(self):
-        if self.path == "/":
-            self.send_response(200)
-            self.send_header("Content-Type", "text/html")
-            self.end_headers()
-            with open(os.path.join(FORGE_DIR, "scripts/dashboard.html"), "rb") as f:
-                self.wfile.write(f.read())
-            return
-            
-        if self.path == "/api/state":
-            self.send_response(200)
-            self._send_cors_headers()
-            self.send_header("Content-Type", "application/json")
-            self.end_headers()
-            
-            gates = {{}}
-            gates_dir = os.path.join(FORGE_DIR, "12-gates")
-            if os.path.exists(gates_dir):
-                for g in os.listdir(gates_dir):
-                    if g.endswith(".md"):
-                        gate_name = g.replace(".md", "")
-                        if gate_name in GATE_STAGE_MAP:
-                            gates[gate_name] = evaluate_gate(gate_name)
-                        else:
-                            with open(os.path.join(gates_dir, g), "r") as f:
-                                content = f.read()
-                            gates[gate_name] = "PASSED" if "PASSED" in content or "APPROVED" in content else "PENDING"
-
-            reviews = load_reviews()
-            VALID_STAGE_PREFIXES = {{f"{{i:02d}}" for i in range(11)}}
-            files_tree = {{}}
-            stage_review_summary = {{}}
-            for d in sorted(os.listdir(FORGE_DIR)):
-                d_path = os.path.join(FORGE_DIR, d)
-                if os.path.isdir(d_path) and d[:2] in VALID_STAGE_PREFIXES:
-                    files_tree[d] = []
-                    reviewed_count = 0
-                    total_count = 0
-                    for f in os.listdir(d_path):
-                        if f.endswith(".md"):
-                            entry = build_file_entry(d_path, f, reviews)
-                            files_tree[d].append(entry)
-                            total_count += 1
-                            if entry["status"] == "reviewed":
-                                reviewed_count += 1
-                    stage_review_summary[d] = {{"reviewed": reviewed_count, "total": total_count}}
-                            
-            processing_status = {{"status": "idle"}}
-            status_file = os.path.join(FORGE_DIR, "runs/status.json")
-            if os.path.exists(status_file):
-                try:
-                    with open(status_file, "r") as sf:
-                        processing_status = json.load(sf)
-                except:
-                    pass
-                    
-            all_reviewed = all(
-                s["reviewed"] == s["total"] and s["total"] > 0
-                for s in stage_review_summary.values()
-            ) if stage_review_summary else False
-            state = {{
-                "gates": gates,
-                "tree": files_tree,
-                "processing": processing_status,
-                "stageReviewSummary": stage_review_summary,
-                "allReviewed": all_reviewed,
-            }}
-            self.wfile.write(json.dumps(state).encode())
-            return
-
-        if self.path.startswith("/api/file"):
-            import urllib.parse
-            parsed_path = urllib.parse.urlparse(self.path)
-            params = urllib.parse.parse_qs(parsed_path.query)
-            file_path = params.get("path", [None])[0]
-            
-            if not file_path:
-                self.send_response(400)
-                self.end_headers()
-                return
-                
-            abs_path = os.path.join(FORGE_DIR, file_path)
-            if os.path.exists(abs_path):
-                self.send_response(200)
-                self._send_cors_headers()
-                self.send_header("Content-Type", "text/plain")
-                self.end_headers()
-                with open(abs_path, "rb") as f:
-                    self.wfile.write(f.read())
-            else:
-                self.send_response(404)
-                self.end_headers()
-            return
-
-        self.send_response(404)
-        self.end_headers()
-
-    def do_POST(self):
-        content_length = int(self.headers.get('Content-Length', 0))
-        post_data = self.rfile.read(content_length)
-        data = json.loads(post_data.decode('utf-8'))
-        
-        if self.path == "/api/gate":
-            gate_name = data.get("gate")
-            gate_path = os.path.join(FORGE_DIR, f"12-gates/{{gate_name}}.md")
-            if os.path.exists(gate_path):
-                with open(gate_path, "r") as f:
-                    content = f.read()
-                content = content.replace("PENDING", "PASSED")
-                with open(gate_path, "w") as f:
-                    f.write(content)
-                self.send_response(200)
-                self._send_cors_headers()
-                self.end_headers()
-                self.wfile.write(json.dumps({{"status": "success"}}).encode())
-            else:
-                self.send_response(404)
-                self.end_headers()
-            return
-            
-        if self.path == "/api/review":
-            file_path = data.get("path")
-            status = data.get("status")
-            if not file_path or status not in ("reviewed", "needs_review"):
-                self.send_response(400)
-                self._send_cors_headers()
-                self.end_headers()
-                return
-            reviews = load_reviews()
-            if status == "reviewed":
-                reviews[file_path] = "reviewed"
-            else:
-                reviews.pop(file_path, None)
-            save_reviews(reviews)
-            for gate_name in GATE_STAGE_MAP:
-                gate_status = evaluate_gate(gate_name)
-                gate_path = os.path.join(FORGE_DIR, f"12-gates/{{gate_name}}.md")
-                if os.path.exists(gate_path):
-                    with open(gate_path, "r") as gf:
-                        content = gf.read()
-                    new_content = content
-                    if gate_status == "PASSED" and "PENDING" in content:
-                        new_content = content.replace("PENDING", "PASSED")
-                    elif gate_status == "PENDING" and "PASSED" in content:
-                        new_content = content.replace("PASSED", "PENDING")
-                    if new_content != content:
-                        with open(gate_path, "w") as gf:
-                            gf.write(new_content)
-            self.send_response(200)
-            self._send_cors_headers()
-            self.end_headers()
-            self.wfile.write(json.dumps({{"status": "success"}}).encode())
-            return
-
-        if self.path == "/api/fix":
-            file_path = data.get("path")
-            critique = data.get("critique")
-            
-            if not file_path or not critique:
-                self.send_response(400)
-                self.end_headers()
-                return
-                
-            stage = file_path.split("/")[0].split("-", 1)[1] if "-" in file_path.split("/")[0] else "context"
-            
-            cmd = [sys.executable, os.path.join(FORGE_DIR, "scripts/run.py"), stage, "--output", file_path, "--critique", critique]
-            result = subprocess.run(cmd, cwd=REPO_ROOT)
-            
-            if result.returncode == 0:
-                self.send_response(200)
-                self._send_cors_headers()
-                self.end_headers()
-                self.wfile.write(json.dumps({{"status": "success"}}).encode())
-            else:
-                self.send_response(500)
-                self._send_cors_headers()
-                self.end_headers()
-                self.wfile.write(json.dumps({{"status": "failed"}}).encode())
-            return
-            
-def run_server(port=8080):
-    server_address = ('', port)
-    httpd = HTTPServer(server_address, ForgeHandler)
-    print(f"Forge Dashboard running at http://localhost:{{port}}")
-    try:
-        httpd.serve_forever()
-    except KeyboardInterrupt:
-        pass
-    httpd.server_close()
-
-if __name__ == '__main__':
-    run_server()
-"""
+SERVER_PY = r\"\"\"{SERVER_PY_CONTENT}\"\"\"
 
 DASHBOARD_HTML = r\"\"\"{DASHBOARD_HTML_CONTENT}\"\"\"
 
@@ -2665,6 +1765,13 @@ PENDING
         with open(reviews_path, "w") as f:
             json.dump({{}}, f)
 
+    os.makedirs(os.path.join(FORGE_DIR, "00-raw-input"), exist_ok=True)
+
+    state_path = os.path.join(FORGE_DIR, "project-state.json")
+    if not os.path.exists(state_path):
+        with open(state_path, "w") as f:
+            json.dump({{}}, f)
+
     print("Forge OS environment initialized successfully in .forge/")
 
 PIPELINE_STAGES = [
@@ -2743,8 +1850,18 @@ def cmd_dashboard(port=8080):
         sys.exit(1)
 
     print(f"Starting Forge Dashboard on port {{port}}...")
-    result = subprocess.run([sys.executable, server_script], env={{**os.environ, "AEOS_REPO_ROOT": "."}})
+    project_root = os.path.dirname(os.path.abspath(FORGE_DIR))
+    forge_abs = os.path.abspath(sys.argv[0])
+    result = subprocess.run([sys.executable, server_script, str(port)], env={{**os.environ, "AEOS_REPO_ROOT": project_root, "FORGE_VERSION": FORGE_VERSION, "FORGE_SCRIPT": forge_abs}})
     sys.exit(result.returncode)
+
+def cmd_upgrade():
+    print(f"Forge OS v{{FORGE_VERSION}} — upgrading runtime scripts...")
+    if not os.path.exists(FORGE_DIR):
+        print("Forge not initialized. Run './forge init' first.")
+        sys.exit(1)
+    cmd_init()
+    print("Upgrade complete. Runtime scripts updated, project data preserved.")
 
 def cmd_dev(port=8080):
     forge_script = os.path.abspath(sys.argv[0])
@@ -2761,6 +1878,15 @@ def cmd_dev(port=8080):
     if result.returncode != 0:
         print("Init failed.")
         sys.exit(result.returncode)
+
+    # Symlink src/dashboard.html so edits are live without rebuilding
+    src_dash = os.path.join(os.path.dirname(forge_script), "src/dashboard.html")
+    dst_dash = os.path.join(FORGE_DIR, "scripts/dashboard.html")
+    if os.path.exists(src_dash):
+        if os.path.exists(dst_dash) or os.path.islink(dst_dash):
+            os.remove(dst_dash)
+        os.symlink(src_dash, dst_dash)
+        print("==> Live dashboard symlink established.")
 
     print(f"==> Starting dashboard on port {{port}}...")
     cmd_dashboard(port)
@@ -2781,12 +1907,18 @@ if __name__ == "__main__":
         args = args[2:]
 
     if not args:
-        print("Usage: ./forge [--project <path>] <init|generate [stage] [input]|pipeline [input]|dashboard [port]|dev [port]>")
+        print(f"Forge OS v{{FORGE_VERSION}}")
+        print("Usage: ./forge [--project <path>] <version|init|upgrade|generate [stage]|pipeline|dashboard [port]|dev [port]>")
         sys.exit(1)
 
     command = args[0]
 
-    if command == "init":
+    if command in ("version", "--version", "-v"):
+        print(f"Forge OS v{{FORGE_VERSION}}")
+        sys.exit(0)
+    elif command == "upgrade":
+        cmd_upgrade()
+    elif command == "init":
         cmd_init()
     elif command == "generate":
         if len(args) == 1:
@@ -2809,7 +1941,7 @@ if __name__ == "__main__":
         cmd_dev(port)
     else:
         print(f"Unknown command: {{command}}")
-        print("Available commands: init, generate [stage], pipeline, dashboard, dev")
+        print("Available commands: version, init, upgrade, generate [stage], pipeline, dashboard [port], dev [port]")
         sys.exit(1)
 '''
 
@@ -2840,7 +1972,9 @@ def build_forge():
         FILES_TO_TOUCH=FILES_TO_TOUCH,
         AGENT_CODE=agent_code,
         GATE_CODE=gate_code,
-        DASHBOARD_HTML_CONTENT=DASHBOARD_HTML_CONTENT
+        DASHBOARD_HTML_CONTENT=DASHBOARD_HTML_CONTENT,
+        FORGE_VERSION=FORGE_VERSION,
+        SERVER_PY_CONTENT=SERVER_PY_CONTENT,
     )
 
     with open("forge", "w") as f:

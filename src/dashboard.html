@@ -1,0 +1,2317 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Forge OS</title>
+<style>
+:root {
+  --bg: #0a0c0f;
+  --bg-1: #111318;
+  --bg-2: #181b22;
+  --bg-3: #1f2330;
+  --border: #252b38;
+  --border-light: #2e3548;
+  --text: #e2e8f5;
+  --text-2: #8892a4;
+  --text-3: #525d70;
+  --blue: #3b82f6;
+  --blue-dim: #1d3d7a;
+  --green: #22c55e;
+  --green-dim: #14532d;
+  --amber: #f59e0b;
+  --amber-dim: #78350f;
+  --red: #ef4444;
+  --red-dim: #7f1d1d;
+  --purple: #a855f7;
+  --purple-dim: #4c1d95;
+  --nav-w: 220px;
+  --topbar-h: 52px;
+  --r: 6px;
+  --trans: 0.15s ease;
+}
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { height: 100%; overflow: hidden; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.5;
+  display: flex;
+  flex-direction: column;
+}
+
+/* TOPBAR */
+#topbar {
+  height: var(--topbar-h);
+  background: var(--bg-1);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  padding: 0 20px;
+  gap: 20px;
+  flex-shrink: 0;
+  z-index: 100;
+}
+.logo {
+  font-weight: 700;
+  font-size: 15px;
+  letter-spacing: -0.02em;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.logo-icon {
+  width: 24px;
+  height: 24px;
+  background: linear-gradient(135deg, var(--blue), var(--purple));
+  border-radius: 5px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+}
+
+/* Phase stepper in topbar */
+#phase-stepper {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  flex: 1;
+  justify-content: center;
+}
+.phase-step {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-3);
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: var(--r);
+  transition: var(--trans);
+}
+.phase-step:hover { color: var(--text-2); }
+.phase-step.active { color: var(--blue); }
+.phase-step.done { color: var(--green); }
+.phase-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text-3);
+  flex-shrink: 0;
+}
+.phase-step.active .phase-dot { background: var(--blue); box-shadow: 0 0 6px var(--blue); }
+.phase-step.done .phase-dot { background: var(--green); }
+.phase-arrow {
+  color: var(--text-3);
+  font-size: 10px;
+  margin: 0 2px;
+}
+
+/* Status pill */
+#status-pill {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 20px;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  color: var(--text-2);
+  flex-shrink: 0;
+}
+#status-pill.running { color: var(--amber); border-color: var(--amber-dim); background: #1a1500; }
+#status-pill.running .pill-dot { background: var(--amber); animation: pulse 1s infinite; }
+.pill-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-3);
+}
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+/* LAYOUT */
+#app {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+/* SIDEBAR */
+#sidebar {
+  width: var(--nav-w);
+  background: var(--bg-1);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  padding: 12px 8px;
+  flex-shrink: 0;
+  overflow-y: auto;
+}
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 10px;
+  border-radius: var(--r);
+  cursor: pointer;
+  color: var(--text-2);
+  font-size: 13px;
+  font-weight: 500;
+  transition: var(--trans);
+  user-select: none;
+}
+.nav-item:hover { background: var(--bg-2); color: var(--text); }
+.nav-item.active { background: var(--blue-dim); color: var(--blue); }
+.nav-icon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.nav-icon svg { width: 16px; height: 16px; }
+.nav-label { flex: 1; }
+.nav-badge {
+  font-size: 10px;
+  font-weight: 700;
+  background: var(--red-dim);
+  color: var(--red);
+  border-radius: 8px;
+  padding: 1px 5px;
+  min-width: 18px;
+  text-align: center;
+}
+.nav-section-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-3);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 12px 10px 4px;
+}
+
+/* MAIN */
+#main {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.view {
+  display: none;
+  flex: 1;
+  overflow: hidden;
+  flex-direction: column;
+}
+.view.active { display: flex; }
+.view-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 24px;
+}
+.view-header {
+  padding: 18px 24px 0;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 14px;
+  flex-shrink: 0;
+}
+.view-title {
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+.view-subtitle { font-size: 12px; color: var(--text-2); margin-top: 2px; }
+
+/* Buttons */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border-radius: var(--r);
+  border: none;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: var(--trans);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.btn-primary { background: var(--blue); color: #fff; }
+.btn-primary:hover:not(:disabled) { background: #2563eb; }
+.btn-secondary { background: var(--bg-3); color: var(--text); border: 1px solid var(--border); }
+.btn-secondary:hover:not(:disabled) { background: var(--border); }
+.btn-danger { background: var(--red-dim); color: var(--red); border: 1px solid var(--red-dim); }
+.btn-danger:hover:not(:disabled) { background: #5c1010; }
+.btn-ghost { background: transparent; color: var(--text-2); border: 1px solid var(--border); }
+.btn-ghost:hover:not(:disabled) { background: var(--bg-2); color: var(--text); }
+.btn-sm { padding: 4px 10px; font-size: 11px; }
+.btn-xs { padding: 3px 8px; font-size: 10px; }
+.btn-icon { padding: 6px; width: 30px; height: 30px; justify-content: center; }
+.btn svg { flex-shrink: 0; }
+
+/* Cards */
+.card {
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+}
+.card-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-2);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 8px;
+}
+
+/* Stats grid */
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+  margin-bottom: 24px;
+}
+.stat-card {
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px 16px;
+}
+.stat-value { font-size: 26px; font-weight: 700; letter-spacing: -0.03em; }
+.stat-label { font-size: 11px; color: var(--text-2); margin-top: 2px; }
+
+/* Badges */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.badge-open { background: var(--amber-dim); color: var(--amber); }
+.badge-closed { background: var(--bg-3); color: var(--text-3); }
+.badge-pushed { background: var(--green-dim); color: var(--green); }
+.badge-error { background: var(--red-dim); color: var(--red); }
+.badge-pending { background: var(--bg-3); color: var(--text-3); }
+.badge-committed { background: var(--blue-dim); color: var(--blue); }
+.badge-running { background: var(--amber-dim); color: var(--amber); }
+.badge-passed { background: var(--green-dim); color: var(--green); }
+.badge-reviewed { background: var(--green-dim); color: var(--green); }
+.badge-needs-review { background: var(--amber-dim); color: var(--amber); }
+.badge-empty { background: var(--bg-3); color: var(--text-3); }
+.badge-in-progress { background: var(--blue-dim); color: var(--blue); }
+
+.priority-critical { background: var(--red-dim); color: var(--red); }
+.priority-high { background: var(--amber-dim); color: var(--amber); }
+.priority-medium { background: var(--blue-dim); color: var(--blue); }
+.priority-low { background: var(--bg-3); color: var(--text-3); }
+
+/* Forms */
+.form-group { margin-bottom: 14px; }
+.form-label { display: block; font-size: 11px; font-weight: 600; color: var(--text-2); margin-bottom: 5px; }
+.form-input, .form-select, .form-textarea {
+  width: 100%;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  padding: 8px 10px;
+  color: var(--text);
+  font-size: 12px;
+  font-family: inherit;
+  outline: none;
+  transition: var(--trans);
+}
+.form-input:focus, .form-select:focus, .form-textarea:focus {
+  border-color: var(--blue);
+}
+.form-select { cursor: pointer; }
+.form-textarea { resize: vertical; min-height: 80px; }
+
+/* Progress bar */
+.progress-bar {
+  height: 4px;
+  background: var(--bg-3);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.progress-fill {
+  height: 100%;
+  background: var(--blue);
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
+.progress-fill.green { background: var(--green); }
+
+/* Divider */
+.divider { height: 1px; background: var(--border); margin: 16px 0; }
+
+/* Toast */
+#toast-container {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.toast {
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  padding: 10px 16px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text);
+  box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+  animation: slideIn 0.2s ease;
+  max-width: 320px;
+}
+.toast.success { border-color: var(--green-dim); color: var(--green); }
+.toast.error { border-color: var(--red-dim); color: var(--red); }
+.toast.info { border-color: var(--blue-dim); color: var(--blue); }
+@keyframes slideIn { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: none; } }
+
+/* ===================== OVERVIEW VIEW ===================== */
+.lifecycle-stepper {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 20px 24px;
+  margin-bottom: 24px;
+}
+.lifecycle-step {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  cursor: pointer;
+  transition: var(--trans);
+  padding: 8px;
+  border-radius: var(--r);
+}
+.lifecycle-step:hover { background: var(--bg-2); }
+.step-circle {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--bg-3);
+  border: 2px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-3);
+  transition: var(--trans);
+}
+.lifecycle-step.active .step-circle {
+  background: var(--blue-dim);
+  border-color: var(--blue);
+  color: var(--blue);
+  box-shadow: 0 0 12px rgba(59,130,246,0.3);
+}
+.lifecycle-step.done .step-circle {
+  background: var(--green-dim);
+  border-color: var(--green);
+  color: var(--green);
+}
+.step-label { font-size: 11px; font-weight: 600; color: var(--text-3); text-align: center; }
+.lifecycle-step.active .step-label { color: var(--blue); }
+.lifecycle-step.done .step-label { color: var(--green); }
+.step-connector {
+  flex: 0 0 40px;
+  height: 2px;
+  background: var(--border);
+  margin-top: -14px;
+}
+.step-connector.done { background: var(--green); }
+
+/* Quick actions card */
+.quick-actions {
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 24px;
+}
+.quick-actions h3 { font-size: 12px; font-weight: 700; color: var(--text-2); margin-bottom: 10px; text-transform: uppercase; letter-spacing: 0.06em; }
+
+/* ===================== INPUT VIEW ===================== */
+.input-layout {
+  display: flex;
+  gap: 20px;
+  height: 100%;
+}
+.file-list-panel {
+  width: 260px;
+  flex-shrink: 0;
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.file-list-header {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+}
+.file-list-header span { font-size: 12px; font-weight: 600; color: var(--text-2); }
+.file-list-body { flex: 1; overflow-y: auto; }
+.file-item {
+  padding: 10px 14px;
+  cursor: pointer;
+  transition: var(--trans);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.file-item:hover { background: var(--bg-2); }
+.file-item.active { background: var(--blue-dim); }
+.file-item-name { font-size: 12px; font-weight: 500; color: var(--text); }
+.file-item.active .file-item-name { color: var(--blue); }
+.file-item-meta { font-size: 10px; color: var(--text-3); }
+.file-edit-panel {
+  flex: 1;
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.file-edit-header {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+}
+.file-edit-body {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+}
+#input-editor {
+  flex: 1;
+  background: var(--bg-2);
+  border: none;
+  outline: none;
+  padding: 16px;
+  color: var(--text);
+  font-family: 'JetBrains Mono', 'Fira Code', 'SF Mono', monospace;
+  font-size: 12px;
+  line-height: 1.7;
+  resize: none;
+  width: 100%;
+}
+.input-empty-state {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  text-align: center;
+  color: var(--text-2);
+  padding: 40px;
+}
+.empty-icon { width: 48px; height: 48px; color: var(--text-3); margin-bottom: 4px; }
+.empty-title { font-size: 16px; font-weight: 700; color: var(--text); }
+.empty-desc { font-size: 12px; color: var(--text-2); max-width: 300px; }
+
+/* ===================== GENERATE VIEW ===================== */
+.generate-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+}
+.stage-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px;
+}
+.stage-card {
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.stage-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+.stage-name { font-size: 12px; font-weight: 700; color: var(--text); }
+.stage-subtitle { font-size: 10px; color: var(--text-3); margin-top: 1px; }
+.stage-stats { font-size: 10px; color: var(--text-2); text-align: right; }
+
+/* ===================== REVIEW VIEW ===================== */
+.review-layout {
+  display: flex;
+  height: 100%;
+  gap: 0;
+}
+.review-tree {
+  width: 260px;
+  flex-shrink: 0;
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.review-tree-header {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.search-input {
+  width: 100%;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  padding: 6px 10px;
+  color: var(--text);
+  font-size: 11px;
+  outline: none;
+}
+.search-input:focus { border-color: var(--blue); }
+.review-tree-body { flex: 1; overflow-y: auto; }
+.stage-group { }
+.stage-group-header {
+  padding: 8px 12px;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-3);
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--bg);
+  position: sticky;
+  top: 0;
+}
+.tree-file-item {
+  padding: 7px 12px 7px 20px;
+  cursor: pointer;
+  transition: var(--trans);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-left: 2px solid transparent;
+  font-size: 11px;
+  color: var(--text-2);
+}
+.tree-file-item:hover { background: var(--bg-2); color: var(--text); }
+.tree-file-item.active { background: var(--blue-dim); color: var(--blue); border-left-color: var(--blue); }
+.tree-file-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.tree-file-dot.reviewed { background: var(--green); }
+.tree-file-dot.needs_review { background: var(--amber); }
+.tree-file-dot.empty { background: var(--text-3); }
+
+.review-viewer {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--border);
+}
+.review-viewer-header {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+}
+.review-viewer-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+  background: var(--bg);
+}
+#viewer-content {
+  font-family: 'JetBrains Mono', 'Fira Code', 'SF Mono', monospace;
+  font-size: 11.5px;
+  line-height: 1.7;
+  color: var(--text-2);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.review-panel {
+  width: 280px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  padding: 14px;
+  gap: 12px;
+}
+.review-panel-section { }
+.review-panel-label { font-size: 11px; font-weight: 600; color: var(--text-2); margin-bottom: 6px; }
+#critique-textarea {
+  width: 100%;
+  height: 100px;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  padding: 8px 10px;
+  color: var(--text);
+  font-size: 11px;
+  font-family: inherit;
+  resize: vertical;
+  outline: none;
+}
+#critique-textarea:focus { border-color: var(--blue); }
+.file-meta-info {
+  background: var(--bg-2);
+  border-radius: var(--r);
+  padding: 10px;
+  font-size: 10px;
+  color: var(--text-2);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.file-meta-row { display: flex; justify-content: space-between; }
+.file-meta-key { color: var(--text-3); }
+
+/* ===================== BUILD VIEW ===================== */
+.build-layout { display: flex; flex-direction: column; gap: 16px; }
+.build-history-item {
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px 16px;
+}
+.build-history-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.build-branch { font-size: 12px; font-weight: 600; font-family: monospace; color: var(--text); }
+.build-date { font-size: 10px; color: var(--text-3); margin-left: auto; }
+.build-log {
+  background: var(--bg);
+  border-radius: var(--r);
+  padding: 10px;
+  font-family: monospace;
+  font-size: 10px;
+  color: var(--text-3);
+  max-height: 120px;
+  overflow-y: auto;
+  line-height: 1.6;
+  white-space: pre;
+  margin-top: 8px;
+}
+.pr-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--blue);
+  text-decoration: none;
+  padding: 3px 8px;
+  background: var(--blue-dim);
+  border-radius: 4px;
+  margin-top: 6px;
+}
+.pr-link:hover { opacity: 0.8; }
+
+/* ===================== DEPLOY VIEW ===================== */
+.deploy-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+.env-card {
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 18px;
+}
+.env-name {
+  font-size: 14px;
+  font-weight: 700;
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.env-url {
+  font-family: monospace;
+  font-size: 11px;
+  color: var(--blue);
+  word-break: break-all;
+  background: var(--bg-2);
+  padding: 6px 10px;
+  border-radius: var(--r);
+  margin-bottom: 10px;
+}
+.env-field { display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 6px; }
+.env-field-key { color: var(--text-2); }
+.env-field-val { color: var(--text); font-family: monospace; }
+
+/* ===================== ISSUES VIEW ===================== */
+.issues-layout { display: flex; flex-direction: column; gap: 12px; }
+.issue-form {
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+}
+.issue-form h3 { font-size: 13px; font-weight: 700; margin-bottom: 14px; }
+.issue-form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.issue-item {
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px 16px;
+  cursor: pointer;
+  transition: var(--trans);
+}
+.issue-item:hover { border-color: var(--border-light); }
+.issue-item.expanded { border-color: var(--blue-dim); }
+.issue-item-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.issue-id { font-size: 10px; font-weight: 700; font-family: monospace; color: var(--text-3); }
+.issue-title { font-size: 13px; font-weight: 600; flex: 1; }
+.issue-body {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  display: none;
+}
+.issue-item.expanded .issue-body { display: block; }
+.issue-desc { font-size: 12px; color: var(--text-2); white-space: pre-wrap; margin-bottom: 10px; }
+.issue-actions { display: flex; gap: 8px; }
+.issue-type-icon { display: flex; align-items: center; color: var(--text-3); flex-shrink: 0; }
+
+/* ===================== SETTINGS VIEW ===================== */
+.settings-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+.settings-card {
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 18px;
+}
+.settings-card-title {
+  font-size: 13px;
+  font-weight: 700;
+  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text);
+}
+.settings-card-title svg { color: var(--text-2); flex-shrink: 0; }
+
+/* Scrollbars */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--border-light); }
+
+/* New file dialog */
+.dialog-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.6);
+  z-index: 500;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.dialog-overlay.hidden { display: none; }
+.dialog {
+  background: var(--bg-2);
+  border: 1px solid var(--border-light);
+  border-radius: 10px;
+  padding: 20px;
+  width: 380px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.7);
+}
+.dialog h3 { font-size: 14px; font-weight: 700; margin-bottom: 16px; }
+.dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+
+/* CI/CD info */
+.cicd-info {
+  background: var(--bg-2);
+  border-radius: var(--r);
+  padding: 14px;
+  font-size: 11px;
+  color: var(--text-2);
+  line-height: 1.7;
+}
+.cicd-code {
+  background: var(--bg);
+  border-radius: var(--r);
+  padding: 10px;
+  font-family: monospace;
+  font-size: 10px;
+  margin-top: 8px;
+  white-space: pre;
+  overflow-x: auto;
+  color: var(--green);
+}
+</style>
+</head>
+<body>
+
+<!-- Topbar -->
+<div id="topbar">
+  <div class="logo">
+    <div class="logo-icon">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+        <path d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z"/>
+      </svg>
+    </div>
+    Forge OS
+    <span id="topbar-product-name" style="display:none;font-weight:400;color:var(--text-3);font-size:13px;padding-left:6px;border-left:1px solid var(--border);margin-left:2px;"></span>
+  </div>
+
+  <div id="phase-stepper">
+    <!-- rendered by JS -->
+  </div>
+
+  <div id="status-pill">
+    <div class="pill-dot"></div>
+    <span id="status-text">Idle</span>
+  </div>
+</div>
+
+<!-- App layout -->
+<div id="app">
+  <!-- Sidebar -->
+  <nav id="sidebar">
+    <div class="nav-item active" data-view="overview" onclick="switchView('overview')">
+      <span class="nav-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/>
+          <rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>
+        </svg>
+      </span>
+      <span class="nav-label">Overview</span>
+    </div>
+    <div class="nav-section-label">Lifecycle</div>
+    <div class="nav-item" data-view="input" onclick="switchView('input')">
+      <span class="nav-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"/>
+        </svg>
+      </span>
+      <span class="nav-label">Input</span>
+    </div>
+    <div class="nav-item" data-view="generate" onclick="switchView('generate')">
+      <span class="nav-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456z"/>
+        </svg>
+      </span>
+      <span class="nav-label">Generate</span>
+    </div>
+    <div class="nav-item" data-view="review" onclick="switchView('review')">
+      <span class="nav-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z"/>
+          <path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+        </svg>
+      </span>
+      <span class="nav-label">Review</span>
+    </div>
+    <div class="nav-item" data-view="build" onclick="switchView('build')">
+      <span class="nav-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M6 3v12"/>
+          <circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/>
+          <path d="M18 9a9 9 0 01-9 9"/>
+        </svg>
+      </span>
+      <span class="nav-label">Build</span>
+    </div>
+    <div class="nav-item" data-view="deploy" onclick="switchView('deploy')">
+      <span class="nav-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 16.5V9.75m0 0l3 3m-3-3l-3 3M6.75 19.5a4.5 4.5 0 01-1.41-8.775 5.25 5.25 0 0110.233-2.33 3 3 0 013.758 3.848A3.752 3.752 0 0118 19.5H6.75z"/>
+        </svg>
+      </span>
+      <span class="nav-label">Deploy</span>
+    </div>
+    <div class="nav-section-label">Manage</div>
+    <div class="nav-item" data-view="issues" onclick="switchView('issues')">
+      <span class="nav-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="9"/>
+          <path d="M12 8v4m0 4h.01"/>
+        </svg>
+      </span>
+      <span class="nav-label">Issues</span>
+      <span class="nav-badge" id="issues-badge" style="display:none">0</span>
+    </div>
+    <div class="nav-item" data-view="settings" onclick="switchView('settings')">
+      <span class="nav-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.325.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.431l-1.003.827c-.293.241-.438.613-.43.992a7.723 7.723 0 010 .255c-.008.378.137.75.43.991l1.004.827c.424.35.534.955.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.47 6.47 0 01-.22.128c-.331.183-.581.495-.644.869l-.213 1.281c-.09.543-.56.94-1.11.94h-2.594c-.55 0-1.019-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 01-1.369-.49l-1.297-2.247a1.125 1.125 0 01.26-1.431l1.004-.827c.292-.24.437-.613.43-.991a6.932 6.932 0 010-.255c.007-.38-.138-.751-.43-.992l-1.004-.827a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.086.22-.128.332-.183.582-.495.644-.869l.214-1.28z"/>
+          <path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+        </svg>
+      </span>
+      <span class="nav-label">Settings</span>
+    </div>
+  </nav>
+
+  <!-- Main content -->
+  <div id="main">
+
+    <!-- OVERVIEW -->
+    <div class="view active" id="view-overview">
+      <div class="view-header">
+        <div>
+          <div class="view-title">Overview</div>
+          <div class="view-subtitle" id="overview-subtitle">Forge OS — Product Lifecycle</div>
+        </div>
+        <div id="overview-quick-action"></div>
+      </div>
+      <div class="view-body">
+        <div class="lifecycle-stepper" id="lifecycle-stepper"></div>
+        <div class="stats-grid" id="overview-stats"></div>
+        <div class="quick-actions">
+          <h3>What to do next</h3>
+          <div id="overview-guidance" style="font-size:12px;color:var(--text-2);">Loading...</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- INPUT -->
+    <div class="view" id="view-input">
+      <div class="view-header">
+        <div>
+          <div class="view-title">Input Files</div>
+          <div class="view-subtitle">Raw markdown files that drive the AI pipeline</div>
+        </div>
+        <button class="btn btn-primary btn-sm" onclick="openNewFileDialog()">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+          New File
+        </button>
+      </div>
+      <div class="view-body" style="padding:0;overflow:hidden;display:flex;flex:1;">
+        <div class="input-layout" style="padding:16px;width:100%;height:100%;">
+          <div class="file-list-panel" id="input-file-list-panel">
+            <div class="file-list-header">
+              <span>Files</span>
+              <span id="input-file-count" style="font-size:10px;color:var(--text-3);">0</span>
+            </div>
+            <div class="file-list-body" id="input-file-list"></div>
+          </div>
+          <div class="file-edit-panel" id="file-edit-panel">
+            <div id="input-empty-state" class="input-empty-state">
+              <div class="empty-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="width:48px;height:48px">
+                  <path d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"/>
+                </svg>
+              </div>
+              <div class="empty-title">No input files yet</div>
+              <div class="empty-desc">Create your first input file to start the product lifecycle. Describe your product idea in detail.</div>
+              <button class="btn btn-primary" onclick="openNewFileDialog()">Create First Input File</button>
+            </div>
+            <div id="input-editor-container" style="display:none;flex:1;flex-direction:column;height:100%;">
+              <div class="file-edit-header">
+                <span id="editing-filename" style="font-size:12px;font-weight:600;font-family:monospace;color:var(--text);">untitled.md</span>
+                <div style="display:flex;gap:8px;">
+                  <button class="btn btn-danger btn-sm" onclick="deleteCurrentFile()">Delete</button>
+                  <button class="btn btn-primary btn-sm" onclick="saveCurrentFile()">Save</button>
+                </div>
+              </div>
+              <div class="file-edit-body">
+                <textarea id="input-editor" placeholder="# My Product Idea&#10;&#10;Describe your product here..."></textarea>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- GENERATE -->
+    <div class="view" id="view-generate">
+      <div class="view-header">
+        <div>
+          <div class="view-title">Generate</div>
+          <div class="view-subtitle">AI-powered document generation across all pipeline stages</div>
+        </div>
+        <button class="btn btn-primary" id="btn-generate-all" onclick="generate('all')">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z"/>
+          </svg>
+          Generate All Stages
+        </button>
+      </div>
+      <div class="view-body">
+        <div class="generate-top">
+          <div id="generate-status-bar" style="font-size:12px;color:var(--text-2);">Select a stage to generate or run all at once.</div>
+        </div>
+        <div class="stage-grid" id="stage-grid"></div>
+      </div>
+    </div>
+
+    <!-- REVIEW -->
+    <div class="view" id="view-review">
+      <div class="review-layout">
+        <div class="review-tree">
+          <div class="review-tree-header">
+            <input class="search-input" type="text" placeholder="Search files..." id="review-search" oninput="filterReviewTree(this.value)">
+          </div>
+          <div class="review-tree-body" id="review-tree-body"></div>
+        </div>
+        <div class="review-viewer">
+          <div class="review-viewer-header">
+            <span id="viewer-filename" style="font-size:12px;font-weight:600;font-family:monospace;color:var(--text-2);">Select a file</span>
+            <div style="display:flex;gap:8px;">
+              <button class="btn btn-ghost btn-sm" id="btn-needs-review" onclick="markFile('needs_review')" style="display:none">Needs Review</button>
+              <button class="btn btn-primary btn-sm" id="btn-mark-reviewed" onclick="markFile('reviewed')" style="display:none">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 12.75l6 6 9-13.5"/></svg>
+                Mark Reviewed
+              </button>
+            </div>
+          </div>
+          <div class="review-viewer-body">
+            <pre id="viewer-content" style="white-space:pre-wrap;word-break:break-word;font-family:'JetBrains Mono','Fira Code','SF Mono',monospace;font-size:11.5px;line-height:1.7;color:var(--text-2);">Select a file from the tree to review its contents.</pre>
+          </div>
+        </div>
+        <div class="review-panel">
+          <div class="review-panel-section">
+            <div class="review-panel-label">AI Critique</div>
+            <textarea id="critique-textarea" placeholder="Describe what needs to be improved..."></textarea>
+          </div>
+          <button class="btn btn-secondary" style="width:100%" onclick="submitFix()">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"/>
+            </svg>
+            Regenerate with Critique
+          </button>
+          <div class="divider"></div>
+          <div class="review-panel-section">
+            <div class="review-panel-label">File Info</div>
+            <div class="file-meta-info" id="file-meta-info">
+              <div class="file-meta-row"><span class="file-meta-key">Path</span><span id="meta-path">—</span></div>
+              <div class="file-meta-row"><span class="file-meta-key">Status</span><span id="meta-status">—</span></div>
+              <div class="file-meta-row"><span class="file-meta-key">Size</span><span id="meta-size">—</span></div>
+              <div class="file-meta-row"><span class="file-meta-key">Modified</span><span id="meta-modified">—</span></div>
+            </div>
+          </div>
+          <div class="review-panel-section">
+            <div class="review-panel-label">Gates</div>
+            <div id="review-gates-summary"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- BUILD -->
+    <div class="view" id="view-build">
+      <div class="view-header">
+        <div>
+          <div class="view-title">Build</div>
+          <div class="view-subtitle">Git branch, commit, and PR creation</div>
+        </div>
+        <button class="btn btn-primary" onclick="startBuild()" id="btn-start-build">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M6 3v12"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 01-9 9"/>
+          </svg>
+          Start Build
+        </button>
+      </div>
+      <div class="view-body">
+        <div class="card" style="margin-bottom:16px;">
+          <div class="card-title">Git Configuration</div>
+          <div id="build-git-summary" style="font-size:12px;color:var(--text-2);">Configure git in Settings to enable push and PR creation.</div>
+        </div>
+        <div style="font-size:12px;font-weight:600;color:var(--text-2);margin-bottom:10px;text-transform:uppercase;letter-spacing:0.06em;">Build History</div>
+        <div class="build-layout" id="build-history"></div>
+      </div>
+    </div>
+
+    <!-- DEPLOY -->
+    <div class="view" id="view-deploy">
+      <div class="view-header">
+        <div>
+          <div class="view-title">Deploy</div>
+          <div class="view-subtitle">Environment management and CI/CD setup</div>
+        </div>
+      </div>
+      <div class="view-body">
+        <div class="deploy-grid" id="deploy-envs"></div>
+        <div class="card">
+          <div class="card-title">CI/CD Setup</div>
+          <div class="cicd-info">
+            Generate a GitHub Actions workflow to auto-commit Forge docs on every run.
+            <div class="cicd-code"># .github/workflows/forge-docs.yml
+name: Forge Docs
+on: [push]
+jobs:
+  forge:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Generate docs
+        run: ./forge generate all
+      - name: Commit
+        run: |
+          git config user.email "forge@ci"
+          git config user.name "Forge Bot"
+          git add .forge/
+          git diff --staged --quiet || git commit -m "forge: auto-generated docs"
+          git push</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ISSUES -->
+    <div class="view" id="view-issues">
+      <div class="view-header">
+        <div>
+          <div class="view-title">Issues</div>
+          <div class="view-subtitle">Bug and feature tracker</div>
+        </div>
+        <button class="btn btn-primary btn-sm" onclick="toggleIssueForm()">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+          New Issue
+        </button>
+      </div>
+      <div class="view-body">
+        <div class="issue-form" id="issue-create-form" style="display:none;margin-bottom:16px;">
+          <h3>New Issue</h3>
+          <div class="issue-form-grid">
+            <div class="form-group">
+              <label class="form-label">Type</label>
+              <select class="form-select" id="new-issue-type">
+                <option value="bug">Bug</option>
+                <option value="feature">Feature</option>
+                <option value="improvement">Improvement</option>
+                <option value="question">Question</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Priority</label>
+              <select class="form-select" id="new-issue-priority">
+                <option value="low">Low</option>
+                <option value="medium" selected>Medium</option>
+                <option value="high">High</option>
+                <option value="critical">Critical</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Title</label>
+            <input type="text" class="form-input" id="new-issue-title" placeholder="Brief description of the issue">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Description</label>
+            <textarea class="form-textarea" id="new-issue-desc" placeholder="Detailed description, steps to reproduce, expected behavior..."></textarea>
+          </div>
+          <div style="display:flex;justify-content:flex-end;gap:8px;">
+            <button class="btn btn-ghost btn-sm" onclick="toggleIssueForm()">Cancel</button>
+            <button class="btn btn-primary btn-sm" onclick="createIssue()">Create Issue</button>
+          </div>
+        </div>
+        <div class="issues-layout" id="issue-list"></div>
+      </div>
+    </div>
+
+    <!-- SETTINGS -->
+    <div class="view" id="view-settings">
+      <div class="view-header">
+        <div>
+          <div class="view-title">Settings</div>
+          <div class="view-subtitle">Configure AI, Git, and environments</div>
+        </div>
+        <button class="btn btn-primary btn-sm" onclick="saveSettings()">Save Settings</button>
+      </div>
+      <div class="view-body">
+        <!-- Project -->
+        <div style="background:var(--bg-1);border:1px solid var(--border);border-radius:8px;padding:18px;margin-bottom:16px;">
+          <div style="font-size:13px;font-weight:700;margin-bottom:16px;display:flex;align-items:center;gap:8px;color:var(--text);">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-2)" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M2.25 12.75V12A2.25 2.25 0 014.5 9.75h15A2.25 2.25 0 0121.75 12v.75m-8.69-6.44l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.379a1.5 1.5 0 01-1.06-.44z"/>
+            </svg>
+            Project
+          </div>
+          <div class="form-group" style="margin-bottom:0;">
+            <label class="form-label">Product Name</label>
+            <input type="text" class="form-input" id="settings-product-name" placeholder="e.g. Acme SaaS, MyApp, Project Atlas">
+          </div>
+        </div>
+
+        <div class="settings-grid">
+          <!-- AI Runtime -->
+          <div class="settings-card">
+            <div class="settings-card-title">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M8.25 3v1.5M4.5 8.25H3m18 0h-1.5M4.5 12H3m18 0h-1.5m-15 3.75H3m18 0h-1.5M8.25 19.5V21M12 3v1.5m0 15V21m3.75-18v1.5m0 15V21m-9-1.5h10.5a2.25 2.25 0 002.25-2.25V6.75a2.25 2.25 0 00-2.25-2.25H6.75A2.25 2.25 0 004.5 6.75v10.5a2.25 2.25 0 002.25 2.25zm.75-12h9v9h-9v-9z"/>
+              </svg>
+              AI Runtime
+            </div>
+            <div class="form-group">
+              <label class="form-label">Tool</label>
+              <select class="form-select" id="settings-tool">
+                <option value="gemini">Gemini CLI</option>
+                <option value="claude">Claude CLI</option>
+                <option value="openai">OpenAI API</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Model / Identifier</label>
+              <input type="text" class="form-input" id="settings-model" placeholder="e.g. gemini-2.0-flash">
+            </div>
+          </div>
+
+          <!-- Git Config -->
+          <div class="settings-card">
+            <div class="settings-card-title">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M6 3v12"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 01-9 9"/>
+              </svg>
+              Git Configuration
+            </div>
+            <div class="form-group">
+              <label class="form-label">Repository URL</label>
+              <input type="text" class="form-input" id="settings-repo-url" placeholder="https://github.com/user/repo">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Username</label>
+              <input type="text" class="form-input" id="settings-username" placeholder="git username">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Email</label>
+              <input type="email" class="form-input" id="settings-email" placeholder="git email">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Personal Access Token</label>
+              <input type="password" class="form-input" id="settings-token" placeholder="ghp_...">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Default Branch</label>
+              <input type="text" class="form-input" id="settings-default-branch" placeholder="main">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Branch Prefix</label>
+              <input type="text" class="form-input" id="settings-branch-prefix" placeholder="forge">
+            </div>
+          </div>
+
+          <!-- Staging -->
+          <div class="settings-card">
+            <div class="settings-card-title">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M9.75 3.104v5.714a2.25 2.25 0 01-.659 1.591L5 14.5M9.75 3.104c-.251.023-.501.05-.75.082m.75-.082a24.301 24.301 0 014.5 0m0 0v5.714c0 .597.237 1.17.659 1.591L19.8 15.3M14.25 3.104c.251.023.501.05.75.082M19.8 15.3l-1.57.393A9.065 9.065 0 0112 15a9.065 9.065 0 00-6.23-.693L5 14.5m14.8.8l1.402 1.402c1.232 1.232.65 3.318-1.067 3.611A48.309 48.309 0 0112 21c-2.773 0-5.491-.235-8.135-.687-1.718-.293-2.3-2.379-1.067-3.61L5 14.5"/>
+              </svg>
+              Staging Environment
+            </div>
+            <div class="form-group">
+              <label class="form-label">URL</label>
+              <input type="text" class="form-input" id="settings-staging-url" placeholder="https://staging.example.com">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Branch</label>
+              <input type="text" class="form-input" id="settings-staging-branch" placeholder="staging">
+            </div>
+          </div>
+
+          <!-- Production -->
+          <div class="settings-card">
+            <div class="settings-card-title">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M5.25 14.25h13.5m-13.5 0a3 3 0 01-3-3m3 3a3 3 0 003 3h6a3 3 0 003-3m-12 0V9.75m0 0a3 3 0 013-3h6a3 3 0 013 3m-12 0h12m0 4.5V9.75m0 0a3 3 0 00-3-3"/>
+              </svg>
+              Production Environment
+            </div>
+            <div class="form-group">
+              <label class="form-label">URL</label>
+              <input type="text" class="form-input" id="settings-production-url" placeholder="https://example.com">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Branch</label>
+              <input type="text" class="form-input" id="settings-production-branch" placeholder="main">
+            </div>
+          </div>
+        </div>
+
+        <!-- Danger Zone -->
+        <div style="margin-top:8px;">
+          <div style="background:var(--bg-1);border:1px solid var(--red-dim);border-radius:8px;padding:18px;">
+            <div style="font-size:13px;font-weight:700;color:var(--red);margin-bottom:6px;display:flex;align-items:center;gap:8px;">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"/>
+              </svg>
+              Danger Zone
+            </div>
+            <div style="font-size:12px;color:var(--text-2);margin-bottom:14px;">
+              Destructive actions that cannot be undone. Raw input files and project settings are preserved.
+            </div>
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 14px;background:var(--bg-2);border-radius:var(--r);border:1px solid var(--border);">
+              <div>
+                <div style="font-size:12px;font-weight:600;color:var(--text);">Reset Pipeline</div>
+                <div style="font-size:11px;color:var(--text-3);margin-top:2px;">Clear all generated documents, reviews, and gate statuses. Returns pipeline to the Generate phase.</div>
+              </div>
+              <button class="btn btn-danger btn-sm" onclick="openResetDialog()" style="margin-left:16px;flex-shrink:0;">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"/>
+                </svg>
+                Reset Pipeline
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- Reset Confirmation Dialog -->
+<div class="dialog-overlay hidden" id="reset-dialog">
+  <div class="dialog">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--red)" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"/>
+      </svg>
+      <h3 style="color:var(--red);margin:0;">Reset Pipeline</h3>
+    </div>
+    <p style="font-size:12px;color:var(--text-2);margin-bottom:10px;line-height:1.6;">This will permanently clear:</p>
+    <ul style="font-size:12px;color:var(--text-2);margin-bottom:16px;padding-left:18px;line-height:2;">
+      <li>All generated documents across all 11 stages</li>
+      <li>All review statuses</li>
+      <li>All gate statuses (reset to PENDING)</li>
+      <li>Current run status</li>
+    </ul>
+    <p style="font-size:12px;color:var(--text-2);margin-bottom:16px;padding:10px;background:var(--bg-3);border-radius:var(--r);">
+      Raw input files, project settings, git config, issues, and build history are <strong>not</strong> affected.
+    </p>
+    <div style="font-size:11px;color:var(--text-3);margin-bottom:14px;">Type <code style="background:var(--bg-3);padding:1px 5px;border-radius:3px;">reset</code> to confirm:</div>
+    <input type="text" class="form-input" id="reset-confirm-input" placeholder="reset" oninput="document.getElementById('btn-confirm-reset').disabled = this.value !== 'reset'">
+    <div class="dialog-actions" style="margin-top:14px;">
+      <button class="btn btn-ghost btn-sm" onclick="closeResetDialog()">Cancel</button>
+      <button class="btn btn-danger btn-sm" id="btn-confirm-reset" disabled onclick="resetPipeline()">Reset Pipeline</button>
+    </div>
+  </div>
+</div>
+
+<!-- New File Dialog -->
+<div class="dialog-overlay hidden" id="new-file-dialog">
+  <div class="dialog">
+    <h3>New Input File</h3>
+    <div class="form-group">
+      <label class="form-label">File Name</label>
+      <input type="text" class="form-input" id="new-file-name" placeholder="raw-input.md" value="raw-input.md">
+    </div>
+    <div class="dialog-actions">
+      <button class="btn btn-ghost btn-sm" onclick="closeNewFileDialog()">Cancel</button>
+      <button class="btn btn-primary btn-sm" onclick="createNewFile()">Create</button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast container -->
+<div id="toast-container"></div>
+
+<script>
+// ============================================================
+// Icons
+// ============================================================
+const ICONS = {
+  sparkles: `<path d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z"/>`,
+  check: `<path d="M4.5 12.75l6 6 9-13.5"/>`,
+  arrowPath: `<path d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"/>`,
+  externalLink: `<path d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25"/>`,
+  gitBranch: `<path d="M6 3v12"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 01-9 9"/>`,
+  cloudUp: `<path d="M12 16.5V9.75m0 0l3 3m-3-3l-3 3M6.75 19.5a4.5 4.5 0 01-1.41-8.775 5.25 5.25 0 0110.233-2.33 3 3 0 013.758 3.848A3.752 3.752 0 0118 19.5H6.75z"/>`,
+  eye: `<path d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z"/><path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>`,
+  wrench: `<path d="M11.42 15.17L17.25 21A2.652 2.652 0 0021 17.25l-5.877-5.877M11.42 15.17l2.496-3.03c.317-.384.74-.626 1.208-.766M11.42 15.17l-4.655 5.653a2.548 2.548 0 11-3.586-3.586l6.837-5.63m5.108-.233c.55-.164 1.163-.188 1.743-.14a4.5 4.5 0 004.486-6.336l-3.276 3.277a3.004 3.004 0 01-2.25-2.25l3.276-3.276a4.5 4.5 0 00-6.336 4.486c.091 1.076-.071 2.264-.904 2.95l-.102.085m-1.745 1.437L5.909 7.5H4.5L2.25 3.75l1.5-1.5L7.5 4.5v1.409l4.26 4.26m-1.745 1.437l1.745-1.437"/>`,
+  star: `<path d="M11.48 3.499a.562.562 0 011.04 0l2.125 5.111a.563.563 0 00.475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 00-.182.557l1.285 5.385a.562.562 0 01-.84.61l-4.725-2.885a.562.562 0 00-.586 0L6.982 20.54a.562.562 0 01-.84-.61l1.285-5.386a.562.562 0 00-.182-.557l-4.204-3.602a.562.562 0 01.321-.988l5.518-.442a.563.563 0 00.475-.345L11.48 3.5z"/>`,
+  trendUp: `<path d="M2.25 18L9 11.25l4.306 4.307a11.95 11.95 0 015.814-5.519l2.74-1.22m0 0l-5.94-2.28m5.94 2.28l-2.28 5.941"/>`,
+  questionCircle: `<path d="M9.879 7.519c1.171-1.025 3.071-1.025 4.242 0 1.172 1.025 1.172 2.687 0 3.712-.203.179-.43.326-.67.442-.745.361-1.45.999-1.45 1.827v.75M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9 5.25h.008v.008H12v-.008z"/>`,
+  server: `<path d="M21.75 17.25v.75a3 3 0 01-3 3h-13.5a3 3 0 01-3-3v-.75m19.5 0a3 3 0 00-3-3H5.25a3 3 0 00-3 3m19.5 0v.75M2.25 11.25h19.5M2.25 6.75h19.5M5.25 6.75V3.75m13.5 3V3.75M5.25 11.25V8.25m13.5 3V8.25"/>`,
+  beaker: `<path d="M9.75 3.104v5.714a2.25 2.25 0 01-.659 1.591L5 14.5M9.75 3.104c-.251.023-.501.05-.75.082m.75-.082a24.301 24.301 0 014.5 0m0 0v5.714c0 .597.237 1.17.659 1.591L19.8 15.3M14.25 3.104c.251.023.501.05.75.082M19.8 15.3l-1.57.393A9.065 9.065 0 0112 15a9.065 9.065 0 00-6.23-.693L5 14.5m14.8.8l1.402 1.402c1.232 1.232.65 3.318-1.067 3.611A48.309 48.309 0 0112 21c-2.773 0-5.491-.235-8.135-.687-1.718-.293-2.3-2.379-1.067-3.61L5 14.5"/>`,
+};
+
+function icon(name, size = 14) {
+  const paths = ICONS[name] || '';
+  return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0">${paths}</svg>`;
+}
+
+const ISSUE_TYPE_ICONS = {
+  bug: 'wrench',
+  feature: 'star',
+  improvement: 'trendUp',
+  question: 'questionCircle',
+};
+
+// ============================================================
+// State
+// ============================================================
+let state = {};
+let currentView = 'overview';
+let currentInputFile = null;
+let currentReviewFile = null;
+let runtimeInitialized = false;
+let pollInterval = null;
+
+const PHASES = ['input', 'generate', 'review', 'build', 'deploy'];
+const PHASE_LABELS = { input: 'Input', generate: 'Generate', review: 'Review', build: 'Build', deploy: 'Deploy' };
+
+const STAGES = [
+  { key: 'context', label: 'Context', dir: '00-context', desc: 'Product vision & market' },
+  { key: 'requirements', label: 'Requirements', dir: '01-requirements', desc: 'BRD, PRD, metrics' },
+  { key: 'design', label: 'Design', dir: '02-design', desc: 'UX, design system' },
+  { key: 'analysis', label: 'Analysis', dir: '03-analysis', desc: 'Domain model, journeys' },
+  { key: 'architecture', label: 'Architecture', dir: '04-architecture', desc: 'System design, APIs' },
+  { key: 'delivery', label: 'Delivery', dir: '05-delivery', desc: 'Roadmap, sprints' },
+  { key: 'engineering', label: 'Engineering', dir: '06-engineering', desc: 'Specs, implementation' },
+  { key: 'qa', label: 'Quality', dir: '07-quality', desc: 'Test strategy, acceptance' },
+  { key: 'operations', label: 'Operations', dir: '08-operations', desc: 'Runbooks, monitoring' },
+  { key: 'release', label: 'Release', dir: '09-release', desc: 'Notes, rollout strategy' },
+  { key: 'marketing', label: 'Marketing', dir: '10-marketing', desc: 'GTM, positioning' },
+];
+
+// ============================================================
+// Core
+// ============================================================
+async function loadState() {
+  try {
+    const res = await fetch('/api/state');
+    if (!res.ok) return;
+    state = await res.json();
+    renderAll();
+  } catch (e) {
+    console.warn('State fetch failed', e);
+  }
+}
+
+function renderAll() {
+  renderTopbar();
+  renderOverview();
+  renderInput();
+  renderGenerate();
+  renderReview();
+  renderBuild();
+  renderDeploy();
+  renderIssues();
+  if (!runtimeInitialized) {
+    renderSettings();
+    runtimeInitialized = true;
+  }
+}
+
+function startPolling() {
+  loadState();
+  pollInterval = setInterval(loadState, 3000);
+}
+
+// ============================================================
+// Topbar
+// ============================================================
+function renderTopbar() {
+  const phase = state.phase || 'input';
+  const phaseIdx = PHASES.indexOf(phase);
+
+  const stepper = document.getElementById('phase-stepper');
+  stepper.innerHTML = PHASES.map((p, i) => {
+    const cls = i < phaseIdx ? 'done' : (i === phaseIdx ? 'active' : '');
+    const arrow = i < PHASES.length - 1 ? '<span class="phase-arrow">›</span>' : '';
+    return `
+      <span class="phase-step ${cls}" onclick="switchView('${p}')">
+        <span class="phase-dot"></span>${PHASE_LABELS[p]}
+      </span>${arrow}`;
+  }).join('');
+
+  const pill = document.getElementById('status-pill');
+  const statusText = document.getElementById('status-text');
+  const processing = state.processing || {};
+  if (processing.status === 'running') {
+    pill.className = 'running';
+    const stageLabel = processing.stage ? ` — ${processing.stage}` : '';
+    statusText.textContent = `Generating${stageLabel}`;
+  } else {
+    pill.className = '';
+    statusText.textContent = 'Idle';
+  }
+
+  // Product name in topbar
+  const nameEl = document.getElementById('topbar-product-name');
+  const pname = state.project_name || '';
+  if (pname) {
+    nameEl.textContent = pname;
+    nameEl.style.display = '';
+  } else {
+    nameEl.style.display = 'none';
+  }
+
+  const issues = (state.issues || []).filter(i => i.status === 'open');
+  const badge = document.getElementById('issues-badge');
+  if (issues.length > 0) {
+    badge.textContent = issues.length;
+    badge.style.display = '';
+  } else {
+    badge.style.display = 'none';
+  }
+}
+
+// ============================================================
+// Overview
+// ============================================================
+function renderOverview() {
+  const phase = state.phase || 'input';
+  const phaseIdx = PHASES.indexOf(phase);
+  const summary = state.stageReviewSummary || {};
+  const gates = state.gates || {};
+  const issues = state.issues || [];
+
+  const pname = state.project_name || 'Unnamed Project';
+  document.getElementById('overview-subtitle').textContent = pname;
+
+  // Lifecycle stepper
+  const stepperEl = document.getElementById('lifecycle-stepper');
+  stepperEl.innerHTML = '';
+  PHASES.forEach((p, i) => {
+    const cls = i < phaseIdx ? 'done' : (i === phaseIdx ? 'active' : '');
+    const num = i + 1;
+    const circleContent = i < phaseIdx
+      ? `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 12.75l6 6 9-13.5"/></svg>`
+      : num;
+    stepperEl.insertAdjacentHTML('beforeend', `
+      <div class="lifecycle-step ${cls}" onclick="switchView('${p}')">
+        <div class="step-circle">${circleContent}</div>
+        <div class="step-label">${PHASE_LABELS[p]}</div>
+      </div>
+      ${i < PHASES.length - 1 ? `<div class="step-connector ${i < phaseIdx ? 'done' : ''}"></div>` : ''}
+    `);
+  });
+
+  // Stats
+  const totalGenerated = Object.values(summary).reduce((a, s) => a + s.generated, 0);
+  const totalReviewed = Object.values(summary).reduce((a, s) => a + s.reviewed, 0);
+  const gatesPassed = Object.values(gates).filter(v => v === 'PASSED').length;
+  const openIssues = issues.filter(i => i.status === 'open').length;
+
+  document.getElementById('overview-stats').innerHTML = `
+    <div class="stat-card">
+      <div class="stat-value" style="color:var(--blue)">${totalGenerated}</div>
+      <div class="stat-label">Docs Generated</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value" style="color:var(--green)">${totalReviewed}</div>
+      <div class="stat-label">Docs Reviewed</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value" style="color:var(--purple)">${gatesPassed}</div>
+      <div class="stat-label">Gates Passed</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value" style="color:${openIssues > 0 ? 'var(--amber)' : 'var(--text-3)'}">${openIssues}</div>
+      <div class="stat-label">Open Issues</div>
+    </div>
+  `;
+
+  const guidance = {
+    input: 'Create your first input file describing your product idea. Go to <b>Input</b> and click "New File".',
+    generate: 'You have input files ready. Go to <b>Generate</b> and click "Generate All Stages" to start the AI pipeline.',
+    review: 'Documents have been generated. Go to <b>Review</b>, read each document, and mark them as reviewed.',
+    build: 'All documents are reviewed. Go to <b>Build</b> to create a git branch and commit your docs.',
+    deploy: 'Build is complete. Go to <b>Deploy</b> to see your environments and set up CI/CD.',
+  };
+  document.getElementById('overview-guidance').innerHTML = guidance[phase] || 'Continue to the next phase.';
+
+  const actions = {
+    input: `<button class="btn btn-primary btn-sm" onclick="switchView('input');openNewFileDialog()">${icon('sparkles',12)} Create Input File</button>`,
+    generate: `<button class="btn btn-primary btn-sm" onclick="switchView('generate');generate('all')">${icon('sparkles',12)} Generate All</button>`,
+    review: `<button class="btn btn-primary btn-sm" onclick="switchView('review')">${icon('eye',12)} Start Review</button>`,
+    build: `<button class="btn btn-primary btn-sm" onclick="switchView('build');startBuild()">${icon('gitBranch',12)} Start Build</button>`,
+    deploy: `<button class="btn btn-primary btn-sm" onclick="switchView('deploy')">${icon('cloudUp',12)} View Deploy</button>`,
+  };
+  document.getElementById('overview-quick-action').innerHTML = actions[phase] || '';
+}
+
+// ============================================================
+// Input
+// ============================================================
+function renderInput() {
+  const rawInputs = state.rawInputs || [];
+  const count = rawInputs.length;
+
+  document.getElementById('input-file-count').textContent = count;
+
+  const listEl = document.getElementById('input-file-list');
+  listEl.innerHTML = '';
+
+  if (count === 0) {
+    document.getElementById('input-empty-state').style.display = '';
+    document.getElementById('input-editor-container').style.display = 'none';
+    currentInputFile = null;
+    return;
+  }
+
+  rawInputs.forEach(f => {
+    const isActive = currentInputFile === f.name;
+    const size = f.size > 0 ? `${(f.size/1024).toFixed(1)}KB` : 'empty';
+    const modified = f.modifiedAt ? new Date(f.modifiedAt * 1000).toLocaleDateString() : '';
+    listEl.insertAdjacentHTML('beforeend', `
+      <div class="file-item ${isActive ? 'active' : ''}" onclick="openInputFile('${f.name}')">
+        <div class="file-item-name">${f.name}</div>
+        <div class="file-item-meta">${size} · ${modified}</div>
+      </div>
+    `);
+  });
+}
+
+async function openInputFile(name) {
+  currentInputFile = name;
+  document.getElementById('input-empty-state').style.display = 'none';
+  const container = document.getElementById('input-editor-container');
+  container.style.display = 'flex';
+  document.getElementById('editing-filename').textContent = name;
+
+  document.querySelectorAll('#input-file-list .file-item').forEach(el => {
+    el.classList.toggle('active', el.querySelector('.file-item-name').textContent === name);
+  });
+
+  try {
+    const res = await fetch(`/api/raw-input?name=${encodeURIComponent(name)}`);
+    const text = await res.text();
+    document.getElementById('input-editor').value = text;
+  } catch (e) {
+    showToast('Failed to load file', 'error');
+  }
+}
+
+async function saveCurrentFile() {
+  if (!currentInputFile) return;
+  const content = document.getElementById('input-editor').value;
+  try {
+    await fetch('/api/raw-input', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: currentInputFile, content })
+    });
+    showToast('File saved', 'success');
+    loadState();
+  } catch (e) {
+    showToast('Save failed', 'error');
+  }
+}
+
+async function deleteCurrentFile() {
+  if (!currentInputFile) return;
+  if (!confirm(`Delete ${currentInputFile}?`)) return;
+  try {
+    await fetch('/api/raw-input', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: currentInputFile })
+    });
+    currentInputFile = null;
+    document.getElementById('input-empty-state').style.display = '';
+    document.getElementById('input-editor-container').style.display = 'none';
+    showToast('File deleted', 'success');
+    loadState();
+  } catch (e) {
+    showToast('Delete failed', 'error');
+  }
+}
+
+function openNewFileDialog() {
+  document.getElementById('new-file-name').value = 'raw-input.md';
+  document.getElementById('new-file-dialog').classList.remove('hidden');
+}
+
+function closeNewFileDialog() {
+  document.getElementById('new-file-dialog').classList.add('hidden');
+}
+
+async function createNewFile() {
+  const name = document.getElementById('new-file-name').value.trim();
+  if (!name) return;
+  const fname = name.endsWith('.md') ? name : name + '.md';
+  try {
+    await fetch('/api/raw-input', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: fname, content: `# ${fname.replace('.md','')}\n\nDescribe your product idea here...\n` })
+    });
+    closeNewFileDialog();
+    await loadState();
+    openInputFile(fname);
+    switchView('input');
+  } catch (e) {
+    showToast('Create failed', 'error');
+  }
+}
+
+// ============================================================
+// Generate
+// ============================================================
+function renderGenerate() {
+  const processing = state.processing || {};
+  const isRunning = processing.status === 'running';
+  const summary = state.stageReviewSummary || {};
+
+  document.getElementById('btn-generate-all').disabled = isRunning;
+
+  if (isRunning) {
+    document.getElementById('generate-status-bar').innerHTML =
+      `<span style="display:flex;align-items:center;gap:6px;color:var(--amber)">${icon('sparkles',13)} Generating: <b>${processing.stage || 'all'}</b>...</span>`;
+  } else {
+    document.getElementById('generate-status-bar').innerHTML =
+      `Ready to generate. Run all stages or click individual stage buttons.`;
+  }
+
+  const grid = document.getElementById('stage-grid');
+  grid.innerHTML = '';
+
+  STAGES.forEach(s => {
+    const stageSummary = summary[s.dir] || { generated: 0, reviewed: 0, total: 0 };
+    const { generated, reviewed, total } = stageSummary;
+    const pct = total > 0 ? Math.round((generated / total) * 100) : 0;
+    const isThisRunning = isRunning && processing.stage === s.key;
+
+    grid.insertAdjacentHTML('beforeend', `
+      <div class="stage-card">
+        <div class="stage-card-header">
+          <div>
+            <div class="stage-name">${s.label}</div>
+            <div class="stage-subtitle">${s.desc}</div>
+          </div>
+          <div class="stage-stats">${generated}/${total}</div>
+        </div>
+        <div class="progress-bar">
+          <div class="progress-fill ${reviewed === total && total > 0 ? 'green' : ''}" style="width:${pct}%"></div>
+        </div>
+        <button class="btn btn-secondary btn-sm" ${isRunning ? 'disabled' : ''} onclick="generate('${s.key}')">
+          ${icon('sparkles', 12)}
+          ${isThisRunning ? 'Running...' : 'Generate'}
+        </button>
+      </div>
+    `);
+  });
+}
+
+async function generate(stage) {
+  try {
+    await fetch('/api/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ stage })
+    });
+    showToast(`Generation started: ${stage}`, 'info');
+    loadState();
+  } catch (e) {
+    showToast('Generate request failed', 'error');
+  }
+}
+
+// ============================================================
+// Review
+// ============================================================
+function renderReview() {
+  const tree = state.tree || {};
+  const gates = state.gates || {};
+
+  const treeEl = document.getElementById('review-tree-body');
+  const searchVal = document.getElementById('review-search').value.toLowerCase();
+  treeEl.innerHTML = '';
+
+  Object.entries(tree).forEach(([dir, files]) => {
+    const filtered = searchVal
+      ? files.filter(f => f.name.toLowerCase().includes(searchVal))
+      : files;
+    if (filtered.length === 0) return;
+
+    const summary = state.stageReviewSummary?.[dir] || {};
+    treeEl.insertAdjacentHTML('beforeend', `
+      <div class="stage-group">
+        <div class="stage-group-header">
+          <span>${dir}</span>
+          <span style="font-size:9px;color:var(--text-3)">${summary.reviewed||0}/${summary.generated||0}</span>
+        </div>
+        ${filtered.map(f => {
+          const path = `${dir}/${f.name}`;
+          const isActive = currentReviewFile === path;
+          return `
+            <div class="tree-file-item ${isActive ? 'active' : ''}" onclick="openReviewFile('${path}','${f.status}',${f.size},${f.modifiedAt})">
+              <span class="tree-file-dot ${f.status}"></span>
+              ${f.name.replace('.md','')}
+            </div>
+          `;
+        }).join('')}
+      </div>
+    `);
+  });
+
+  const gatesEl = document.getElementById('review-gates-summary');
+  gatesEl.innerHTML = Object.entries(gates).map(([g, status]) => `
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px;">
+      <span style="font-size:10px;color:var(--text-2)">${g}</span>
+      <span class="badge badge-${status.toLowerCase()}">${status}</span>
+    </div>
+  `).join('');
+}
+
+function filterReviewTree(val) {
+  renderReview();
+}
+
+async function openReviewFile(path, status, size, modifiedAt) {
+  currentReviewFile = path;
+
+  document.getElementById('viewer-filename').textContent = path;
+  document.getElementById('btn-mark-reviewed').style.display = '';
+  document.getElementById('btn-needs-review').style.display = '';
+
+  document.getElementById('meta-path').textContent = path;
+  document.getElementById('meta-status').innerHTML = `<span class="badge badge-${status.replace('_','-')}">${status.replace('_',' ')}</span>`;
+  document.getElementById('meta-size').textContent = size > 0 ? `${(size/1024).toFixed(1)} KB` : '0 bytes';
+  document.getElementById('meta-modified').textContent = modifiedAt ? new Date(modifiedAt * 1000).toLocaleString() : '—';
+
+  try {
+    const res = await fetch(`/api/file?path=${encodeURIComponent(path)}`);
+    if (res.ok) {
+      const text = await res.text();
+      document.getElementById('viewer-content').textContent = text || '(empty file)';
+    } else {
+      document.getElementById('viewer-content').textContent = '(file not found)';
+    }
+  } catch (e) {
+    document.getElementById('viewer-content').textContent = '(error loading file)';
+  }
+
+  renderReview();
+}
+
+async function markFile(status) {
+  if (!currentReviewFile) return;
+  try {
+    await fetch('/api/review', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: currentReviewFile, status })
+    });
+    showToast(status === 'reviewed' ? 'Marked as reviewed' : 'Marked for review', 'success');
+    loadState();
+  } catch (e) {
+    showToast('Failed', 'error');
+  }
+}
+
+async function submitFix() {
+  if (!currentReviewFile) { showToast('Select a file first', 'error'); return; }
+  const critique = document.getElementById('critique-textarea').value.trim();
+  if (!critique) { showToast('Enter a critique first', 'error'); return; }
+  try {
+    await fetch('/api/fix', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: currentReviewFile, critique })
+    });
+    document.getElementById('critique-textarea').value = '';
+    showToast('Regeneration triggered', 'info');
+    loadState();
+  } catch (e) {
+    showToast('Failed', 'error');
+  }
+}
+
+// ============================================================
+// Build
+// ============================================================
+function renderBuild() {
+  const git = state.git || {};
+  const builds = state.builds || [];
+
+  const gitSummary = document.getElementById('build-git-summary');
+  if (git.repo_url) {
+    gitSummary.innerHTML = `
+      <div style="display:flex;flex-direction:column;gap:4px;">
+        <div><span style="color:var(--text-3)">Repo:</span> <code style="font-size:11px">${git.repo_url}</code></div>
+        <div><span style="color:var(--text-3)">Branch prefix:</span> <code style="font-size:11px">${git.branch_prefix || 'forge'}</code></div>
+        <div><span style="color:var(--text-3)">Default branch:</span> <code style="font-size:11px">${git.default_branch || 'main'}</code></div>
+      </div>
+    `;
+  } else {
+    gitSummary.innerHTML = `<span style="color:var(--text-3)">No git repository configured. <a href="#" onclick="switchView('settings')" style="color:var(--blue)">Configure in Settings</a></span>`;
+  }
+
+  const historyEl = document.getElementById('build-history');
+  if (builds.length === 0) {
+    historyEl.innerHTML = `<div style="font-size:12px;color:var(--text-3);padding:20px;text-align:center;">No builds yet. Click "Start Build" to create your first build.</div>`;
+    return;
+  }
+
+  historyEl.innerHTML = [...builds].reverse().map(b => {
+    const logs = (b.log || []).join('\n');
+    const prHtml = b.pr_url
+      ? `<a href="${b.pr_url}" target="_blank" class="pr-link">${icon('externalLink',11)} Open PR</a>`
+      : '';
+    return `
+      <div class="build-history-item">
+        <div class="build-history-header">
+          <span class="badge badge-${b.status}">${b.status}</span>
+          <span class="build-branch">${b.branch}</span>
+          <span class="build-date">${new Date(b.created_at).toLocaleString()}</span>
+        </div>
+        ${prHtml}
+        ${logs ? `<div class="build-log">${escapeHtml(logs)}</div>` : ''}
+      </div>
+    `;
+  }).join('');
+}
+
+async function startBuild() {
+  try {
+    const res = await fetch('/api/build', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({})
+    });
+    const data = await res.json();
+    showToast(`Build started: ${data.branch || ''}`, 'info');
+    loadState();
+  } catch (e) {
+    showToast('Build failed to start', 'error');
+  }
+}
+
+// ============================================================
+// Deploy
+// ============================================================
+function renderDeploy() {
+  const envs = state.environments || {};
+  const envsEl = document.getElementById('deploy-envs');
+
+  const envDefs = [
+    { key: 'staging', label: 'Staging', iconName: 'beaker' },
+    { key: 'production', label: 'Production', iconName: 'server' },
+  ];
+
+  envsEl.innerHTML = envDefs.map(def => {
+    const env = envs[def.key] || {};
+    const url = env.url || '';
+    const branch = env.branch || '—';
+    const status = env.status || 'not_deployed';
+    const deployedAt = env.deployed_at ? new Date(env.deployed_at).toLocaleString() : 'Never';
+    const statusBadge = status === 'deployed'
+      ? '<span class="badge badge-pushed">Deployed</span>'
+      : '<span class="badge badge-pending">Not Deployed</span>';
+
+    return `
+      <div class="env-card">
+        <div class="env-name">${icon(def.iconName, 16)} ${def.label}</div>
+        ${url ? `<div class="env-url"><a href="${url}" target="_blank" style="color:var(--blue);text-decoration:none">${url}</a></div>` : '<div class="env-url" style="color:var(--text-3)">No URL configured</div>'}
+        <div class="env-field"><span class="env-field-key">Status</span><span>${statusBadge}</span></div>
+        <div class="env-field"><span class="env-field-key">Branch</span><span class="env-field-val">${branch}</span></div>
+        <div class="env-field"><span class="env-field-key">Last Deploy</span><span class="env-field-val">${deployedAt}</span></div>
+        ${url ? `<a href="${url}" target="_blank" class="btn btn-ghost btn-sm" style="margin-top:8px;display:inline-flex">${icon('externalLink',12)} Open</a>` : ''}
+      </div>
+    `;
+  }).join('');
+}
+
+// ============================================================
+// Issues
+// ============================================================
+function renderIssues() {
+  const issues = state.issues || [];
+  const listEl = document.getElementById('issue-list');
+
+  if (issues.length === 0) {
+    listEl.innerHTML = `<div style="font-size:12px;color:var(--text-3);padding:20px;text-align:center;">No issues yet. Click "New Issue" to create one.</div>`;
+    return;
+  }
+
+  listEl.innerHTML = [...issues].reverse().map(issue => {
+    const iconName = ISSUE_TYPE_ICONS[issue.type] || 'questionCircle';
+    const statusCls = issue.status === 'open' ? 'badge-open'
+      : issue.status === 'in-progress' ? 'badge-in-progress'
+      : 'badge-closed';
+    const priorCls = `priority-${issue.priority || 'medium'}`;
+
+    return `
+      <div class="issue-item" id="issue-${issue.id}" onclick="toggleIssue('${issue.id}')">
+        <div class="issue-item-header">
+          <span class="issue-id">${issue.id}</span>
+          <span class="issue-type-icon">${icon(iconName, 14)}</span>
+          <span class="issue-title">${escapeHtml(issue.title)}</span>
+          <span class="badge ${priorCls}">${issue.priority || 'medium'}</span>
+          <span class="badge ${statusCls}">${issue.status}</span>
+        </div>
+        <div class="issue-body">
+          <div class="issue-desc">${escapeHtml(issue.description || '')}</div>
+          <div style="font-size:10px;color:var(--text-3);margin-bottom:8px">Created: ${new Date(issue.created_at).toLocaleString()}</div>
+          <div class="issue-actions">
+            ${issue.status !== 'closed'
+              ? `<button class="btn btn-ghost btn-xs" onclick="event.stopPropagation();updateIssue('${issue.id}',{status:'closed'})">Close</button>`
+              : `<button class="btn btn-ghost btn-xs" onclick="event.stopPropagation();updateIssue('${issue.id}',{status:'open'})">Reopen</button>`
+            }
+            ${issue.status === 'open'
+              ? `<button class="btn btn-ghost btn-xs" onclick="event.stopPropagation();updateIssue('${issue.id}',{status:'in-progress'})">Start</button>`
+              : ''
+            }
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function toggleIssue(id) {
+  const el = document.getElementById(`issue-${id}`);
+  if (el) el.classList.toggle('expanded');
+}
+
+function toggleIssueForm() {
+  const form = document.getElementById('issue-create-form');
+  form.style.display = form.style.display === 'none' ? '' : 'none';
+}
+
+async function createIssue() {
+  const type = document.getElementById('new-issue-type').value;
+  const priority = document.getElementById('new-issue-priority').value;
+  const title = document.getElementById('new-issue-title').value.trim();
+  const description = document.getElementById('new-issue-desc').value.trim();
+  if (!title) { showToast('Title is required', 'error'); return; }
+
+  try {
+    await fetch('/api/issue', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type, priority, title, description })
+    });
+    document.getElementById('new-issue-title').value = '';
+    document.getElementById('new-issue-desc').value = '';
+    toggleIssueForm();
+    showToast('Issue created', 'success');
+    loadState();
+  } catch (e) {
+    showToast('Failed to create issue', 'error');
+  }
+}
+
+async function updateIssue(id, data) {
+  try {
+    await fetch('/api/issue', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, ...data })
+    });
+    showToast('Issue updated', 'success');
+    loadState();
+  } catch (e) {
+    showToast('Failed to update issue', 'error');
+  }
+}
+
+// ============================================================
+// Settings
+// ============================================================
+function renderSettings() {
+  const git = state.git || {};
+  const envs = state.environments || {};
+
+  setValue('settings-product-name', state.project_name || '');
+  setValue('settings-tool', state.tool || 'gemini');
+  setValue('settings-model', state.model || '');
+  setValue('settings-repo-url', git.repo_url || '');
+  setValue('settings-username', git.username || '');
+  setValue('settings-email', git.email || '');
+  setValue('settings-token', git.token || '');
+  setValue('settings-default-branch', git.default_branch || 'main');
+  setValue('settings-branch-prefix', git.branch_prefix || 'forge');
+  setValue('settings-staging-url', (envs.staging || {}).url || '');
+  setValue('settings-staging-branch', (envs.staging || {}).branch || 'staging');
+  setValue('settings-production-url', (envs.production || {}).url || '');
+  setValue('settings-production-branch', (envs.production || {}).branch || 'main');
+}
+
+async function saveSettings() {
+  const data = {
+    project_name: getValue('settings-product-name'),
+    tool: getValue('settings-tool'),
+    model: getValue('settings-model'),
+    git: {
+      repo_url: getValue('settings-repo-url'),
+      username: getValue('settings-username'),
+      email: getValue('settings-email'),
+      token: getValue('settings-token'),
+      default_branch: getValue('settings-default-branch'),
+      branch_prefix: getValue('settings-branch-prefix'),
+    },
+    environments: {
+      staging: {
+        url: getValue('settings-staging-url'),
+        branch: getValue('settings-staging-branch'),
+      },
+      production: {
+        url: getValue('settings-production-url'),
+        branch: getValue('settings-production-branch'),
+      }
+    }
+  };
+
+  try {
+    await fetch('/api/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+    showToast('Settings saved', 'success');
+    runtimeInitialized = false;
+    loadState();
+  } catch (e) {
+    showToast('Failed to save settings', 'error');
+  }
+}
+
+// ============================================================
+// Navigation
+// ============================================================
+function switchView(name) {
+  currentView = name;
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+
+  const viewEl = document.getElementById(`view-${name}`);
+  if (viewEl) viewEl.classList.add('active');
+
+  const navEl = document.querySelector(`.nav-item[data-view="${name}"]`);
+  if (navEl) navEl.classList.add('active');
+}
+
+// ============================================================
+// Utilities
+// ============================================================
+function showToast(msg, type = 'info') {
+  const container = document.getElementById('toast-container');
+  const toast = document.createElement('div');
+  toast.className = `toast ${type}`;
+  toast.textContent = msg;
+  container.appendChild(toast);
+  setTimeout(() => toast.remove(), 3500);
+}
+
+function escapeHtml(s) {
+  if (!s) return '';
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function setValue(id, val) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.value = val;
+}
+
+function getValue(id) {
+  const el = document.getElementById(id);
+  return el ? el.value : '';
+}
+
+// ============================================================
+// Reset
+// ============================================================
+function openResetDialog() {
+  document.getElementById('reset-confirm-input').value = '';
+  document.getElementById('btn-confirm-reset').disabled = true;
+  document.getElementById('reset-dialog').classList.remove('hidden');
+  document.getElementById('reset-confirm-input').focus();
+}
+
+function closeResetDialog() {
+  document.getElementById('reset-dialog').classList.add('hidden');
+}
+
+async function resetPipeline() {
+  closeResetDialog();
+  try {
+    const res = await fetch('/api/reset', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+    const data = await res.json();
+    showToast(`Pipeline reset — ${data.cleared} files cleared`, 'success');
+    currentReviewFile = null;
+    document.getElementById('viewer-content').textContent = 'Select a file from the tree to review its contents.';
+    document.getElementById('viewer-filename').textContent = 'Select a file';
+    document.getElementById('btn-mark-reviewed').style.display = 'none';
+    document.getElementById('btn-needs-review').style.display = 'none';
+    loadState();
+  } catch (e) {
+    showToast('Reset failed', 'error');
+  }
+}
+
+// ============================================================
+// Keyboard shortcuts
+// ============================================================
+const viewKeys = ['overview','input','generate','review','build','deploy','issues','settings'];
+document.addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
+  const n = parseInt(e.key);
+  if (n >= 1 && n <= viewKeys.length) {
+    switchView(viewKeys[n - 1]);
+  }
+});
+
+// ============================================================
+// Init
+// ============================================================
+startPolling();
+</script>
+</body>
+</html>
