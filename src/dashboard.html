@@ -1389,6 +1389,22 @@ jobs:
           </div>
         </div>
 
+        <!-- About -->
+        <div style="background:var(--bg-1);border:1px solid var(--border);border-radius:8px;padding:14px 18px;margin-top:8px;display:flex;align-items:center;justify-content:space-between;">
+          <div style="display:flex;align-items:center;gap:10px;">
+            <div style="width:28px;height:28px;background:linear-gradient(135deg,var(--blue),var(--purple));border-radius:5px;display:flex;align-items:center;justify-content:center;">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="white"><path d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z"/></svg>
+            </div>
+            <div>
+              <div style="font-size:13px;font-weight:700;color:var(--text);">Forge OS</div>
+              <div style="font-size:11px;color:var(--text-3);" id="settings-version-label">v—</div>
+            </div>
+          </div>
+          <div style="font-size:11px;color:var(--text-3);text-align:right;line-height:1.6;">
+            Zero-dependency PDLC automation<br>Python stdlib only
+          </div>
+        </div>
+
         <!-- Danger Zone -->
         <div style="margin-top:8px;">
           <div style="background:var(--bg-1);border:1px solid var(--red-dim);border-radius:8px;padding:18px;">
@@ -2169,6 +2185,8 @@ function renderSettings() {
   const envs = state.environments || {};
 
   setValue('settings-product-name', state.project_name || '');
+  const vl = document.getElementById('settings-version-label');
+  if (vl) vl.textContent = state.version ? `v${state.version}` : 'v—';
   setValue('settings-tool', state.tool || 'gemini');
   setValue('settings-model', state.model || '');
   setValue('settings-repo-url', git.repo_url || '');
