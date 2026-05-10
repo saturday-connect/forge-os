@@ -504,6 +504,7 @@ SERVER_PY_CONTENT = r"""import os
 import sys
 import json
 import subprocess
+import shutil
 import time
 import threading
 import urllib.parse
@@ -512,6 +513,44 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 
 REPO_ROOT = os.environ.get("AEOS_REPO_ROOT", ".")
 FORGE_DIR = os.path.join(REPO_ROOT, ".forge")
+
+KNOWN_TOOLS = {
+    "gemini": {
+        "label": "Gemini CLI",
+        "models": [
+            {"id": "gemini-3-flash-preview",  "label": "Gemini 3 Flash (recommended)"},
+            {"id": "gemini-3-pro-preview",     "label": "Gemini 3 Pro"},
+            {"id": "gemini-2.5-flash",         "label": "Gemini 2.5 Flash"},
+            {"id": "gemini-2.5-pro",           "label": "Gemini 2.5 Pro"},
+            {"id": "gemini-2.5-flash-lite",    "label": "Gemini 2.5 Flash Lite (fastest)"},
+        ]
+    },
+    "claude": {
+        "label": "Claude Code CLI",
+        "models": [
+            {"id": "claude-sonnet-4-6",         "label": "Claude Sonnet 4.6 (recommended)"},
+            {"id": "claude-opus-4-7",            "label": "Claude Opus 4.7"},
+            {"id": "claude-haiku-4-5-20251001",  "label": "Claude Haiku 4.5 (fastest)"},
+        ]
+    },
+    "codex": {
+        "label": "Codex CLI",
+        "models": [
+            {"id": "o4-mini",    "label": "o4 Mini (recommended)"},
+            {"id": "o3",         "label": "o3"},
+            {"id": "gpt-4.1",    "label": "GPT-4.1"},
+            {"id": "gpt-4.1-mini", "label": "GPT-4.1 Mini"},
+        ]
+    },
+    "openai": {
+        "label": "OpenAI API (direct)",
+        "models": [
+            {"id": "gpt-4o",      "label": "GPT-4o"},
+            {"id": "gpt-4o-mini", "label": "GPT-4o Mini"},
+            {"id": "o3-mini",     "label": "o3 Mini"},
+        ]
+    },
+}
 REVIEWS_FILE = os.path.join(FORGE_DIR, "reviews.json")
 STATE_FILE = os.path.join(FORGE_DIR, "project-state.json")
 RAW_INPUT_DIR = os.path.join(FORGE_DIR, "00-raw-input")
@@ -587,19 +626,48 @@ def save_project_state(state):
         json.dump(state, f, indent=2)
 
 def list_raw_inputs():
+    # Walk 00-raw-input/ recursively and return all .md files with relative paths.
     if not os.path.exists(RAW_INPUT_DIR):
         return []
     files = []
-    for fname in sorted(os.listdir(RAW_INPUT_DIR)):
-        if fname.endswith(".md"):
-            fpath = os.path.join(RAW_INPUT_DIR, fname)
-            st = os.stat(fpath)
-            files.append({
-                "name": fname,
-                "size": st.st_size,
-                "modifiedAt": int(st.st_mtime)
-            })
+    for dirpath, dirnames, filenames in os.walk(RAW_INPUT_DIR):
+        dirnames.sort()  # stable order
+        for fname in sorted(filenames):
+            if fname.endswith(".md"):
+                fpath = os.path.join(dirpath, fname)
+                rel = os.path.relpath(fpath, RAW_INPUT_DIR)
+                st = os.stat(fpath)
+                files.append({
+                    "name": rel,
+                    "size": st.st_size,
+                    "modifiedAt": int(st.st_mtime)
+                })
     return files
+
+def get_combined_raw_input_path():
+    # Combine all raw input files into a single temp file and return its path (or None).
+    import tempfile
+    files = list_raw_inputs()
+    if not files:
+        return None
+    parts = []
+    for f in files:
+        fpath = os.path.join(RAW_INPUT_DIR, f["name"])
+        try:
+            with open(fpath, "r", encoding="utf-8") as fp:
+                content = fp.read().strip()
+            if content:
+                label = f["name"].replace("/", " / ").replace(".md", "")
+                parts.append(f"# [{label}]\n\n{content}")
+        except Exception:
+            pass
+    if not parts:
+        return None
+    combined = "\n\n---\n\n".join(parts)
+    tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False, encoding="utf-8", prefix="forge_raw_")
+    tmp.write(combined)
+    tmp.close()
+    return tmp.name
 
 def build_file_entry(stage_dir, filename, reviews):
     file_path = os.path.join(stage_dir, filename)
@@ -655,8 +723,18 @@ def set_processing(status, stage=""):
     runs_dir = os.path.join(FORGE_DIR, "runs")
     if os.path.exists(runs_dir):
         try:
+            data = {"status": status, "stage": stage}
+            # When transitioning to idle, preserve any last_error written by stage_runner
+            if status == "idle" and os.path.exists(status_file):
+                try:
+                    with open(status_file, "r") as sf:
+                        existing = json.load(sf)
+                    if "last_error" in existing:
+                        data["last_error"] = existing["last_error"]
+                except Exception:
+                    pass
             with open(status_file, "w") as sf:
-                json.dump({"status": status, "stage": stage}, sf)
+                json.dump(data, sf)
         except Exception:
             pass
 
@@ -834,7 +912,10 @@ class ForgeHandler(BaseHTTPRequestHandler):
             if not name:
                 self._json_response(400, {"error": "missing name"})
                 return
-            fpath = os.path.join(RAW_INPUT_DIR, name)
+            fpath = os.path.normpath(os.path.join(RAW_INPUT_DIR, name))
+            if not fpath.startswith(RAW_INPUT_DIR):
+                self._json_response(400, {"error": "invalid path"})
+                return
             if os.path.exists(fpath):
                 self.send_response(200)
                 self._send_cors_headers()
@@ -844,6 +925,61 @@ class ForgeHandler(BaseHTTPRequestHandler):
                     self.wfile.write(f.read())
             else:
                 self._json_response(404, {"error": "not found"})
+            return
+
+        if path == "/api/tools":
+            result = {}
+            for tool_id, info in KNOWN_TOOLS.items():
+                found = shutil.which(tool_id)
+                result[tool_id] = {
+                    "installed": bool(found),
+                    "path": found,
+                    "label": info["label"],
+                    "models": info["models"],
+                }
+            self._json_response(200, result)
+            return
+
+        if path == "/api/versions":
+            file_path = params.get("path", [""])[0]
+            if not file_path:
+                self._json_response(400, {"error": "missing path"})
+                return
+            stem = file_path[:-3] if file_path.endswith(".md") else file_path
+            ver_dir = os.path.join(FORGE_DIR, "versions", stem)
+            versions = []
+            if os.path.isdir(ver_dir):
+                for fname in sorted(os.listdir(ver_dir), reverse=True):
+                    if fname.endswith(".md"):
+                        fpath = os.path.join(ver_dir, fname)
+                        ts_raw = fname[:-3]
+                        try:
+                            dt = datetime.strptime(ts_raw, "%Y%m%d-%H%M%S")
+                            ts_iso = dt.isoformat()
+                        except Exception:
+                            ts_iso = ts_raw
+                        versions.append({"id": ts_raw, "timestamp": ts_iso, "size": os.path.getsize(fpath)})
+            self._json_response(200, {"path": file_path, "versions": versions})
+            return
+
+        if path == "/api/version":
+            file_path = params.get("path", [""])[0]
+            ver_id    = params.get("id", [""])[0]
+            if not file_path or not ver_id:
+                self._json_response(400, {"error": "missing path or id"})
+                return
+            stem = file_path[:-3] if file_path.endswith(".md") else file_path
+            ver_path = os.path.join(FORGE_DIR, "versions", stem, f"{ver_id}.md")
+            if not os.path.exists(ver_path):
+                self._json_response(404, {"error": "version not found"})
+                return
+            with open(ver_path, "r", encoding="utf-8") as f:
+                content = f.read()
+            self.send_response(200)
+            self._send_cors_headers()
+            self.send_header("Content-Type", "text/plain; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(content.encode("utf-8"))
             return
 
         self._json_response(404, {"error": "not found"})
@@ -863,9 +999,17 @@ class ForgeHandler(BaseHTTPRequestHandler):
             if not name:
                 self._json_response(400, {"error": "missing name"})
                 return
-            fpath = os.path.join(RAW_INPUT_DIR, name)
+            fpath = os.path.normpath(os.path.join(RAW_INPUT_DIR, name))
+            if not fpath.startswith(RAW_INPUT_DIR):
+                self._json_response(400, {"error": "invalid path"})
+                return
             if os.path.exists(fpath):
                 os.remove(fpath)
+                # Clean up empty parent directories (up to RAW_INPUT_DIR)
+                parent = os.path.dirname(fpath)
+                while parent != RAW_INPUT_DIR and os.path.isdir(parent) and not os.listdir(parent):
+                    os.rmdir(parent)
+                    parent = os.path.dirname(parent)
                 self._json_response(200, {"status": "deleted"})
             else:
                 self._json_response(404, {"error": "not found"})
@@ -890,8 +1034,12 @@ class ForgeHandler(BaseHTTPRequestHandler):
             if not name:
                 self._json_response(400, {"error": "missing name"})
                 return
-            os.makedirs(RAW_INPUT_DIR, exist_ok=True)
-            fpath = os.path.join(RAW_INPUT_DIR, name)
+            # Sanitize: prevent escaping RAW_INPUT_DIR
+            fpath = os.path.normpath(os.path.join(RAW_INPUT_DIR, name))
+            if not fpath.startswith(RAW_INPUT_DIR):
+                self._json_response(400, {"error": "invalid path"})
+                return
+            os.makedirs(os.path.dirname(fpath), exist_ok=True)
             with open(fpath, "w", encoding="utf-8") as f:
                 f.write(content)
             self._json_response(200, {"status": "saved"})
@@ -903,34 +1051,41 @@ class ForgeHandler(BaseHTTPRequestHandler):
 
             def run_generate():
                 set_processing("running", stage)
+                tmp_combined = None
                 try:
+                    # Combine ALL raw input files into a single temp file for context generation
+                    tmp_combined = get_combined_raw_input_path()
+                    # Pass tool + model from project-state so run.py uses the right model
+                    proj = load_project_state()
+                    base_env = {
+                        **os.environ,
+                        "FORGE_TOOL": proj.get("tool", "gemini"),
+                        "FORGE_MODEL": proj.get("model", ""),
+                    }
                     if stage == "all":
-                        # Find all raw input files
-                        raw_inputs = list_raw_inputs()
-                        raw_input_arg = None
-                        if raw_inputs:
-                            raw_input_arg = os.path.join(RAW_INPUT_DIR, raw_inputs[0]["name"])
                         pipeline_stages = [
                             "context", "requirements", "design", "analysis", "architecture",
                             "delivery", "engineering", "qa", "operations", "release", "marketing"
                         ]
+                        skip_env = {**base_env, "FORGE_SKIP_EXISTING": "1"}
                         for s in pipeline_stages:
                             set_processing("running", s)
                             cmd = [forge_script, "generate", s]
-                            if raw_input_arg and s == "context":
-                                cmd.append(raw_input_arg)
-                            subprocess.run(cmd, cwd=REPO_ROOT)
+                            if tmp_combined and s == "context":
+                                cmd.append(tmp_combined)
+                            subprocess.run(cmd, cwd=REPO_ROOT, env=skip_env)
                     else:
-                        raw_inputs = list_raw_inputs()
-                        raw_input_arg = None
-                        if raw_inputs and stage == "context":
-                            raw_input_arg = os.path.join(RAW_INPUT_DIR, raw_inputs[0]["name"])
                         cmd = [forge_script, "generate", stage]
-                        if raw_input_arg:
-                            cmd.append(raw_input_arg)
-                        subprocess.run(cmd, cwd=REPO_ROOT)
+                        if tmp_combined and stage == "context":
+                            cmd.append(tmp_combined)
+                        subprocess.run(cmd, cwd=REPO_ROOT, env=base_env)
                 finally:
                     set_processing("idle")
+                    if tmp_combined and os.path.exists(tmp_combined):
+                        try:
+                            os.remove(tmp_combined)
+                        except Exception:
+                            pass
 
             t = threading.Thread(target=run_generate, daemon=True)
             t.start()
@@ -1128,12 +1283,47 @@ class ForgeHandler(BaseHTTPRequestHandler):
                 self._json_response(400, {"error": "missing fields"})
                 return
             stage = file_path.split("/")[0].split("-", 1)[1] if "-" in file_path.split("/")[0] else "context"
-            cmd = [sys.executable, os.path.join(FORGE_DIR, "scripts/run.py"), stage, "--output", file_path, "--critique", critique]
-            result = subprocess.run(cmd, cwd=REPO_ROOT)
-            if result.returncode == 0:
-                self._json_response(200, {"status": "success"})
-            else:
-                self._json_response(500, {"status": "failed"})
+            status_file = os.path.join(FORGE_DIR, "runs/status.json")
+            def run_fix():
+                try:
+                    if os.path.exists(os.path.join(FORGE_DIR, "runs")):
+                        with open(status_file, "w") as sf:
+                            json.dump({"status": "fixing", "stage": stage, "file": file_path, "updated_at": datetime.now().isoformat()}, sf)
+                    cmd = [sys.executable, os.path.join(FORGE_DIR, "scripts/run.py"), stage, "--output", file_path, "--critique", critique]
+                    subprocess.run(cmd, cwd=REPO_ROOT)
+                finally:
+                    if os.path.exists(os.path.join(FORGE_DIR, "runs")):
+                        with open(status_file, "w") as sf:
+                            json.dump({"status": "idle", "stage": stage, "file": file_path, "updated_at": datetime.now().isoformat()}, sf)
+            t = threading.Thread(target=run_fix, daemon=True)
+            t.start()
+            self._json_response(200, {"status": "started"})
+            return
+
+        if path == "/api/version/restore":
+            file_path = data.get("path")
+            ver_id    = data.get("id")
+            if not file_path or not ver_id:
+                self._json_response(400, {"error": "missing path or id"})
+                return
+            stem = file_path.rstrip(".md").rstrip(".")
+            ver_path  = os.path.join(FORGE_DIR, "versions", stem, f"{ver_id}.md")
+            dest_path = os.path.join(FORGE_DIR, file_path)
+            if not os.path.exists(ver_path):
+                self._json_response(404, {"error": "version not found"})
+                return
+            # Snapshot current file before restoring
+            if os.path.exists(dest_path) and os.path.getsize(dest_path) > 0:
+                ver_dir = os.path.join(FORGE_DIR, "versions", stem)
+                os.makedirs(ver_dir, exist_ok=True)
+                ts = datetime.now().strftime("%Y%m%d-%H%M%S")
+                import shutil
+                shutil.copy2(dest_path, os.path.join(ver_dir, f"{ts}.md"))
+            with open(ver_path, "r", encoding="utf-8") as f:
+                content = f.read()
+            with open(dest_path, "w", encoding="utf-8") as f:
+                f.write(content)
+            self._json_response(200, {"status": "restored"})
             return
 
         if path == "/api/reset":
@@ -1234,30 +1424,48 @@ def main():
 
     if stage in STAGE_MULTI_OUTPUTS:
         outputs = STAGE_MULTI_OUTPUTS[stage]
-        print(f"[STAGE-RUNNER] Documents to generate: {{len(outputs)}}")
+        skip_existing = os.environ.get("FORGE_SKIP_EXISTING") == "1"
+        if skip_existing:
+            pending = [f for f in outputs if not (os.path.exists(f) and os.path.getsize(f) > 0)]
+            skipped = len(outputs) - len(pending)
+            if skipped:
+                print(f"[STAGE-RUNNER] Skipping {{skipped}} already-generated file(s)")
+        else:
+            pending = outputs
+        print(f"[STAGE-RUNNER] Documents to generate: {{len(pending)}}")
 
         success_count = 0
         failed_count = 0
+        last_err = None
 
-        for output_file in outputs:
-            print(f"[STAGE-RUNNER] Generating: {{output_file}}")
-            
-            status_file = os.path.join("runs", "status.json")
+        total_files = len(pending)
+        status_file = os.path.join("runs", "status.json")
+        run_error_file = os.path.join("runs", "last-run-error.json")
+
+        for file_idx, output_file in enumerate(pending):
+            print(f"[STAGE-RUNNER] Generating: {{output_file}} ({{file_idx+1}}/{{total_files}})")
+
             if os.path.exists("runs"):
-                import json
                 with open(status_file, "w") as sf:
-                    json.dump({{"stage": stage, "file": output_file, "status": "generating"}}, sf)
-            
+                    json.dump({{
+                        "status": "running",
+                        "stage": stage,
+                        "file": output_file,
+                        "file_index": file_idx + 1,
+                        "file_total": total_files,
+                        "updated_at": __import__("datetime").datetime.now().isoformat()
+                    }}, sf)
+
+            # Clear any prior error file before each run
+            if os.path.exists(run_error_file):
+                try: os.remove(run_error_file)
+                except Exception: pass
+
             cmd = [sys.executable, "scripts/run.py", stage, "--output", output_file]
             if raw_input:
                 cmd.extend(["--raw-input", raw_input])
-                
-            result = subprocess.run(cmd)
 
-            if os.path.exists("runs"):
-                import json
-                with open(status_file, "w") as sf:
-                    json.dump({{"status": "idle"}}, sf)
+            result = subprocess.run(cmd)
 
             if result.returncode == 0:
                 success_count += 1
@@ -1276,8 +1484,32 @@ def main():
             else:
                 failed_count += 1
                 print(f"[ERROR] Failed to generate: {{output_file}}")
+                # Read friendly message written by run.py
+                err_msg = "Generation failed — the AI model may have reached its usage limit. Try again in a few minutes."
+                if os.path.exists(run_error_file):
+                    try:
+                        with open(run_error_file) as ef:
+                            err_msg = json.load(ef).get("message", err_msg)
+                    except Exception:
+                        pass
+                last_err = {{
+                    "stage": stage,
+                    "file": output_file,
+                    "message": err_msg,
+                    "timestamp": __import__("datetime").datetime.now().isoformat()
+                }}
 
         print(f"[STAGE-RUNNER] Stage complete. Success: {{success_count}}, Failed: {{failed_count}}")
+        if os.path.exists("runs"):
+            idle_data = {{
+                "status": "idle",
+                "stage": stage,
+                "updated_at": __import__("datetime").datetime.now().isoformat()
+            }}
+            if last_err:
+                idle_data["last_error"] = last_err
+            with open(status_file, "w") as sf:
+                json.dump(idle_data, sf)
         if failed_count > 0:
             sys.exit(1)
     else:
@@ -1301,6 +1533,7 @@ import tempfile
 import json
 import urllib.request
 import urllib.error
+import shutil
 from datetime import datetime, timezone
 
 # Configuration
@@ -1308,6 +1541,7 @@ REPO_ROOT = os.environ.get("AEOS_REPO_ROOT", ".")
 LOG_LEVEL = os.environ.get("AEOS_LOG_LEVEL", "info")
 os.environ["GEMINI_CLI_TRUST_WORKSPACE"] = "true"
 AGENTS_DIR = os.path.join(REPO_ROOT, "11-agents")
+VERSIONS_DIR = os.path.join(REPO_ROOT, "versions")
 GATES_DIR = os.path.join(REPO_ROOT, "12-gates")
 RUNS_LOG = os.path.join(REPO_ROOT, "runs/run-log.md")
 
@@ -1470,11 +1704,23 @@ def invoke_model(prompt, output_path):
         tmp_path = tmp.name
 
     try:
-        if state.model == "gemini":
-            subprocess.run(["gemini", "--skip-trust", "-p", prompt], stdout=open(tmp_path, 'w'), check=True)
-        elif state.model == "claude":
+        tool = getattr(state, "tool", state.model)
+        model_id = getattr(state, "model_id", "")
+        if tool == "gemini":
+            cmd = ["gemini", "--skip-trust"]
+            if model_id:
+                cmd += ["-m", model_id]
+            cmd += ["-p", prompt]
+            subprocess.run(cmd, stdout=open(tmp_path, 'w'), check=True)
+        elif tool == "claude":
             subprocess.run(["claude"], input=prompt, text=True, stdout=open(tmp_path, 'w'), check=True)
-        elif state.model == "openai":
+        elif tool == "codex":
+            cmd = ["codex", "exec", "--dangerously-bypass-approvals-and-sandbox", "--ephemeral",
+                   "-o", tmp_path]
+            if model_id:
+                cmd += ["-m", model_id]
+            subprocess.run(cmd, input=prompt, text=True, check=True)
+        elif tool == "openai":
             api_key = os.environ.get("OPENAI_API_KEY")
             if not api_key:
                 log_error("OPENAI_API_KEY environment variable is not set.")
@@ -1505,7 +1751,7 @@ def invoke_model(prompt, output_path):
                 log_error(f"OpenAI API request failed: {{e}}")
                 sys.exit(1)
         else:
-            log_error(f"Unsupported model: '{{state.model}}'. Supported: gemini, claude, openai")
+            log_error(f"Unsupported tool: '{{tool}}'. Supported: gemini, claude, openai")
             sys.exit(1)
             
         with open(tmp_path, 'r', encoding='utf-8') as f:
@@ -1515,9 +1761,21 @@ def invoke_model(prompt, output_path):
             log_error(f"Model returned empty output for: {{output_path}}")
             sys.exit(1)
             
+        # Save existing content as a version before overwriting
+        if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
+            try:
+                rel = os.path.relpath(output_path, REPO_ROOT)          # e.g. 00-context/product-vision.md
+                stem = os.path.splitext(rel)[0]
+                ver_dir = os.path.join(VERSIONS_DIR, stem)
+                os.makedirs(ver_dir, exist_ok=True)
+                ts = datetime.now().strftime("%Y%m%d-%H%M%S")
+                shutil.copy2(output_path, os.path.join(ver_dir, f"{{ts}}.md"))
+            except Exception as e:
+                log_info(f"Version save skipped: {{e}}")
+
         with open(output_path, 'w', encoding='utf-8') as f:
             f.write(result_content)
-            
+
         log_info(f"Output written: {{output_path}}")
     finally:
         if os.path.exists(tmp_path):
@@ -1560,13 +1818,44 @@ def main():
         
     output_path = os.path.join(REPO_ROOT, output_file)
     
+    # FORGE_TOOL / FORGE_MODEL env vars (set by server) take precedence over --model arg
+    state.tool = os.environ.get("FORGE_TOOL", state.model)
+    state.model_id = os.environ.get("FORGE_MODEL", "")
+
     prompt = build_prompt(agent_path, inputs, output_file, args.critique)
-    
-    log_info(f"Invoking model: {{state.model}}")
-    invoke_model(prompt, output_path)
-    
+
+    log_info(f"Invoking model: {{state.tool}} {{state.model_id or '(default)'}}")
+    try:
+        invoke_model(prompt, output_path)
+    except subprocess.CalledProcessError as e:
+        if e.returncode == 127:
+            msg = "AI tool not found — make sure it is installed and available in your terminal."
+        else:
+            msg = "The AI model returned an error. It may have reached its usage limit — wait a minute and try again."
+        log_error(msg)
+        _write_run_error(output_file, msg)
+        sys.exit(1)
+    except Exception as e:
+        msg = "An unexpected error occurred during generation."
+        log_error(str(e))
+        _write_run_error(output_file, msg)
+        sys.exit(1)
+
     log_run()
     log_info("Stage complete.")
+
+def _write_run_error(output_file, message):
+    err_path = os.path.join(REPO_ROOT, "runs", "last-run-error.json")
+    try:
+        os.makedirs(os.path.dirname(err_path), exist_ok=True)
+        with open(err_path, "w") as f:
+            json.dump({{
+                "file": output_file,
+                "message": message,
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            }}, f)
+    except Exception:
+        pass
 
 if __name__ == "__main__":
     main()

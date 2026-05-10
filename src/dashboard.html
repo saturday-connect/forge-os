@@ -136,7 +136,9 @@ body {
   background: var(--text-3);
 }
 @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+@keyframes spin { to { transform: rotate(360deg); } }
 
+/* GENERATION BANNER */
 /* LAYOUT */
 #app {
   display: flex;
@@ -359,6 +361,8 @@ body {
   transition: width 0.3s ease;
 }
 .progress-fill.green { background: var(--green); }
+.progress-fill.amber { background: var(--amber); }
+@keyframes progress-pulse { 0%,100% { opacity: 0.5; } 50% { opacity: 1; } }
 
 /* Divider */
 .divider { height: 1px; background: var(--border); margin: 16px 0; }
@@ -496,9 +500,23 @@ body {
 }
 .file-item:hover { background: var(--bg-2); }
 .file-item.active { background: var(--blue-dim); }
-.file-item-name { font-size: 12px; font-weight: 500; color: var(--text); }
+.file-item-name { font-size: 12px; font-weight: 500; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .file-item.active .file-item-name { color: var(--blue); }
 .file-item-meta { font-size: 10px; color: var(--text-3); }
+.file-folder-header {
+  padding: 6px 14px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.file-folder-header svg { flex-shrink: 0; }
 .file-edit-panel {
   flex: 1;
   background: var(--bg-1);
@@ -552,9 +570,20 @@ body {
 /* ===================== GENERATE VIEW ===================== */
 .generate-top {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
+  flex-direction: column;
+  gap: 10px;
   margin-bottom: 20px;
+}
+#generate-error-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 14px;
+  background: var(--red-dim, #1a0505);
+  border: 1px solid #5a1a1a;
+  border-radius: var(--r);
+  font-size: 11px;
+  color: var(--red);
 }
 .stage-grid {
   display: grid;
@@ -569,14 +598,58 @@ body {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  position: relative;
+  transition: border-color 0.4s ease, box-shadow 0.4s ease, background 0.4s ease;
 }
+/* Pulsing border — running state */
+.stage-card.running {
+  border-color: transparent;
+  background: #0c0900;
+  box-shadow:
+    0 0 0 1.5px rgba(245,158,11,0.9),
+    0 0 0 4px rgba(245,158,11,0.12),
+    0 0 24px rgba(245,158,11,0.06);
+  animation: card-pulse 2s ease-in-out infinite;
+}
+@keyframes card-pulse {
+  0%, 100% {
+    box-shadow:
+      0 0 0 1.5px rgba(245,158,11,0.9),
+      0 0 0 4px rgba(245,158,11,0.12),
+      0 0 24px rgba(245,158,11,0.06);
+  }
+  50% {
+    box-shadow:
+      0 0 0 1.5px rgba(245,158,11,0.5),
+      0 0 0 6px rgba(245,158,11,0.06),
+      0 0 32px rgba(245,158,11,0.12);
+  }
+}
+/* Needs review — generated but not yet fully reviewed */
+.stage-card.needs-review {
+  border-color: rgba(245,158,11,0.3);
+  background: var(--bg-1);
+}
+/* All reviewed — fully done */
+.stage-card.reviewed {
+  border-color: rgba(34,197,94,0.3);
+  background: #030a04;
+}
+/* Generation failed */
+.stage-card.error {
+  border-color: rgba(239,68,68,0.35);
+  background: #130404;
+}
+.stage-card.error .stage-name { color: var(--red); }
 .stage-card-header {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 8px;
 }
-.stage-name { font-size: 12px; font-weight: 700; color: var(--text); }
+.stage-name { font-size: 12px; font-weight: 700; color: var(--text); transition: color 0.3s; }
+.stage-card.running .stage-name { color: var(--amber); }
+.stage-card.reviewed .stage-name { color: var(--green); }
 .stage-subtitle { font-size: 10px; color: var(--text-3); margin-top: 1px; }
 .stage-stats { font-size: 10px; color: var(--text-2); text-align: right; }
 
@@ -669,14 +742,57 @@ body {
   overflow-y: auto;
   padding: 16px;
   background: var(--bg);
+  position: relative;
+}
+#viewer-fix-overlay {
+  display: none;
+  position: absolute;
+  inset: 0;
+  background: rgba(13,14,16,0.82);
+  backdrop-filter: blur(2px);
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  z-index: 10;
+}
+.fix-overlay-spinner {
+  width: 28px; height: 28px;
+  border: 2px solid var(--amber-dim);
+  border-top-color: var(--amber);
+  border-radius: 50%;
+  animation: spin-ccw 0.8s linear infinite;
+}
+@keyframes spin-ccw { to { transform: rotate(360deg); } }
+.tree-file-dot.fixing {
+  background: var(--amber);
+  animation: pulse 0.8s ease-in-out infinite;
 }
 #viewer-content {
-  font-family: 'JetBrains Mono', 'Fira Code', 'SF Mono', monospace;
-  font-size: 11.5px;
+  font-size: 13px;
   line-height: 1.7;
   color: var(--text-2);
-  white-space: pre-wrap;
-  word-break: break-word;
+}
+.viewer-mode-toggle {
+  display: flex;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  overflow: hidden;
+}
+.toggle-btn {
+  background: none;
+  border: none;
+  color: var(--text-3);
+  font-size: 11px;
+  font-weight: 500;
+  padding: 3px 10px;
+  cursor: pointer;
+  transition: background var(--trans), color var(--trans);
+}
+.toggle-btn.active {
+  background: var(--bg-3);
+  color: var(--text);
 }
 
 .review-panel {
@@ -716,6 +832,35 @@ body {
 }
 .file-meta-row { display: flex; justify-content: space-between; }
 .file-meta-key { color: var(--text-3); }
+#viewer-version-banner {
+  display: none;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 16px;
+  background: #1a1500;
+  border-bottom: 1px solid var(--amber-dim);
+  font-size: 11px;
+  color: var(--amber);
+  flex-shrink: 0;
+}
+#viewer-version-banner .vb-label { flex: 1; }
+.version-list { display: flex; flex-direction: column; gap: 3px; }
+.version-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 5px 8px;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 10px;
+  color: var(--text-2);
+  background: var(--bg-2);
+  border: 1px solid transparent;
+  transition: border-color 0.15s;
+}
+.version-item:hover { border-color: var(--border); }
+.version-item.active { border-color: var(--amber-dim); color: var(--amber); }
+.version-item .vi-meta { color: var(--text-3); font-size: 9px; }
 
 /* ===================== BUILD VIEW ===================== */
 .build-layout { display: flex; flex-direction: column; gap: 16px; }
@@ -860,6 +1005,157 @@ body {
 }
 .settings-card-title svg { color: var(--text-2); flex-shrink: 0; }
 
+/* ===================== MARKDOWN BODY ===================== */
+.md-body {
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.8;
+  font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
+  word-break: break-word;
+}
+.md-body > *:first-child { margin-top: 0 !important; }
+.md-body h1,.md-body h2,.md-body h3,.md-body h4,.md-body h5,.md-body h6 {
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin: 1.6em 0 0.5em;
+  line-height: 1.3;
+  color: var(--text);
+}
+.md-body h1 { font-size: 1.55em; border-bottom: 1px solid var(--border); padding-bottom: 0.35em; margin-top: 0; }
+.md-body h2 { font-size: 1.25em; border-bottom: 1px solid var(--border); padding-bottom: 0.25em; }
+.md-body h3 { font-size: 1.08em; }
+.md-body h4 { font-size: 1em; color: var(--text-2); }
+.md-body h5,.md-body h6 { font-size: 0.9em; color: var(--text-3); }
+.md-body p { margin: 0.7em 0; color: var(--text-2); }
+.md-body strong { font-weight: 700; color: var(--text); }
+.md-body em { font-style: italic; }
+.md-body del { text-decoration: line-through; color: var(--text-3); }
+.md-body a { color: var(--blue); text-decoration: none; border-bottom: 1px solid transparent; transition: border-color 0.1s; }
+.md-body a:hover { border-bottom-color: var(--blue); }
+.md-body ul,.md-body ol { padding-left: 1.6em; margin: 0.6em 0; color: var(--text-2); }
+.md-body li { margin: 0.25em 0; line-height: 1.7; }
+.md-body li > ul,.md-body li > ol { margin: 0.15em 0; }
+.md-body li > p { margin: 0.3em 0; }
+.md-body input[type="checkbox"] { margin-right: 6px; accent-color: var(--blue); transform: translateY(1px); }
+
+/* Inline code */
+.md-body :not(pre) > code {
+  font-family: 'JetBrains Mono','Fira Code','SF Mono',monospace;
+  font-size: 0.855em;
+  background: var(--bg-3);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 0.12em 0.42em;
+  color: #e06c75;
+}
+
+/* Code block wrapper */
+.md-code-block {
+  position: relative;
+  background: #0d1117;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin: 1em 0;
+  overflow: hidden;
+}
+.md-code-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 14px;
+  background: var(--bg-1);
+  border-bottom: 1px solid var(--border);
+}
+.md-code-lang {
+  font-family: 'JetBrains Mono',monospace;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-3);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+.md-code-block pre {
+  margin: 0;
+  padding: 14px 16px;
+  overflow-x: auto;
+  background: transparent;
+}
+.md-code-block code {
+  background: none !important;
+  border: none !important;
+  padding: 0 !important;
+  font-family: 'JetBrains Mono','Fira Code','SF Mono',monospace;
+  font-size: 12px;
+  color: #abb2bf;
+  border-radius: 0 !important;
+  line-height: 1.65;
+  white-space: pre;
+}
+/* Syntax tokens — One Dark palette */
+.sk { color: #c678dd; }          /* keyword */
+.ss { color: #98c379; }          /* string */
+.sc { color: #7f848e; font-style:italic; } /* comment */
+.sn { color: #d19a66; }          /* number */
+.sf { color: #61afef; }          /* function/builtin */
+.so { color: #56b6c2; }          /* operator/special */
+.sa { color: #e5c07b; }          /* attribute/type */
+.sp { color: #abb2bf; }          /* punctuation */
+
+/* Blockquote */
+.md-body blockquote {
+  margin: 1em 0;
+  padding: 10px 14px;
+  border-left: 3px solid var(--blue);
+  background: rgba(59,130,246,0.06);
+  border-radius: 0 6px 6px 0;
+  color: var(--text-2);
+}
+.md-body blockquote p { margin: 0; }
+.md-body blockquote > blockquote { margin-top: 8px; border-left-color: var(--purple); background: rgba(168,85,247,0.06); }
+
+/* Tables */
+.md-body table { width: 100%; border-collapse: collapse; margin: 1em 0; font-size: 12px; }
+.md-body th {
+  background: var(--bg-2);
+  font-weight: 700;
+  color: var(--text);
+  text-align: left;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+}
+.md-body td {
+  padding: 7px 12px;
+  border: 1px solid var(--border);
+  color: var(--text-2);
+  vertical-align: top;
+  line-height: 1.5;
+}
+.md-body tr:nth-child(even) td { background: rgba(255,255,255,0.02); }
+.md-body tr:hover td { background: rgba(255,255,255,0.04); }
+
+/* HR */
+.md-body hr { border: none; border-top: 1px solid var(--border); margin: 1.5em 0; }
+
+/* Images */
+.md-body img { max-width: 100%; border-radius: 6px; border: 1px solid var(--border); }
+
+/* Raw mode toggle */
+#viewer-raw-pre {
+  display: none;
+  font-family: 'JetBrains Mono','Fira Code','SF Mono',monospace;
+  font-size: 11.5px;
+  line-height: 1.7;
+  color: var(--text-2);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+#viewer-content.raw-mode { display: none; }
+#viewer-raw-pre.raw-mode { display: block; }
+
 /* Scrollbars */
 ::-webkit-scrollbar { width: 5px; height: 5px; }
 ::-webkit-scrollbar-track { background: transparent; }
@@ -887,6 +1183,19 @@ body {
 }
 .dialog h3 { font-size: 14px; font-weight: 700; margin-bottom: 16px; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+.category-chip {
+  background: var(--bg-3);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  color: var(--text-2);
+  font-size: 11px;
+  font-weight: 500;
+  padding: 4px 12px;
+  cursor: pointer;
+  transition: background var(--trans), border-color var(--trans), color var(--trans);
+}
+.category-chip:hover { border-color: var(--border-light); color: var(--text); }
+.category-chip.active { background: var(--blue-dim); border-color: var(--blue); color: var(--blue); }
 
 /* CI/CD info */
 .cicd-info {
@@ -933,6 +1242,7 @@ body {
     <span id="status-text">Idle</span>
   </div>
 </div>
+
 
 <!-- App layout -->
 <div id="app">
@@ -1101,6 +1411,11 @@ body {
       <div class="view-body">
         <div class="generate-top">
           <div id="generate-status-bar" style="font-size:12px;color:var(--text-2);">Select a stage to generate or run all at once.</div>
+          <div id="generate-error-bar" style="display:none;">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            <span id="generate-error-text" style="flex:1;"></span>
+            <button class="btn btn-ghost btn-sm" onclick="dismissGenerationError()" style="padding:2px 8px;font-size:10px;color:var(--red);border-color:var(--red-dim);">Dismiss</button>
+          </div>
         </div>
         <div class="stage-grid" id="stage-grid"></div>
       </div>
@@ -1118,7 +1433,11 @@ body {
         <div class="review-viewer">
           <div class="review-viewer-header">
             <span id="viewer-filename" style="font-size:12px;font-weight:600;font-family:monospace;color:var(--text-2);">Select a file</span>
-            <div style="display:flex;gap:8px;">
+            <div style="display:flex;gap:8px;align-items:center;">
+              <div class="viewer-mode-toggle" id="viewer-mode-toggle" style="display:none;">
+                <button class="toggle-btn active" id="btn-mode-rendered" onclick="setViewerMode('rendered')">Rendered</button>
+                <button class="toggle-btn" id="btn-mode-raw" onclick="setViewerMode('raw')">Raw</button>
+              </div>
               <button class="btn btn-ghost btn-sm" id="btn-needs-review" onclick="markFile('needs_review')" style="display:none">Needs Review</button>
               <button class="btn btn-primary btn-sm" id="btn-mark-reviewed" onclick="markFile('reviewed')" style="display:none">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 12.75l6 6 9-13.5"/></svg>
@@ -1126,8 +1445,20 @@ body {
               </button>
             </div>
           </div>
+          <div id="viewer-version-banner">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            <span class="vb-label" id="vb-label">Viewing historic version</span>
+            <button class="btn btn-ghost btn-sm" onclick="restoreVersion()" style="color:var(--amber);border-color:var(--amber-dim);padding:2px 8px;font-size:10px;">Restore</button>
+            <button class="btn btn-ghost btn-sm" onclick="closeVersion()" style="padding:2px 8px;font-size:10px;">Close</button>
+          </div>
           <div class="review-viewer-body">
-            <pre id="viewer-content" style="white-space:pre-wrap;word-break:break-word;font-family:'JetBrains Mono','Fira Code','SF Mono',monospace;font-size:11.5px;line-height:1.7;color:var(--text-2);">Select a file from the tree to review its contents.</pre>
+            <div id="viewer-fix-overlay">
+              <div class="fix-overlay-spinner"></div>
+              <div style="font-size:12px;color:var(--amber);font-weight:600;">Regenerating</div>
+              <div id="viewer-fix-filename" style="font-size:10px;color:var(--text-3);font-family:monospace;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></div>
+            </div>
+            <div id="viewer-content" class="md-body">Select a file from the tree to review its contents.</div>
+            <pre id="viewer-raw-pre" style="display:none;white-space:pre-wrap;word-break:break-word;font-family:'JetBrains Mono','Fira Code','SF Mono',monospace;font-size:11.5px;line-height:1.7;color:var(--text-2);margin:0;"></pre>
           </div>
         </div>
         <div class="review-panel">
@@ -1135,7 +1466,7 @@ body {
             <div class="review-panel-label">AI Critique</div>
             <textarea id="critique-textarea" placeholder="Describe what needs to be improved..."></textarea>
           </div>
-          <button class="btn btn-secondary" style="width:100%" onclick="submitFix()">
+          <button id="btn-fix-regenerate" class="btn btn-secondary" style="width:100%" onclick="submitFix()">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
               <path d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"/>
             </svg>
@@ -1154,6 +1485,13 @@ body {
           <div class="review-panel-section">
             <div class="review-panel-label">Gates</div>
             <div id="review-gates-summary"></div>
+          </div>
+          <div class="divider"></div>
+          <div class="review-panel-section">
+            <div class="review-panel-label" id="versions-label">Version History</div>
+            <div id="version-list" class="version-list">
+              <span style="font-size:10px;color:var(--text-3)">Select a file to see its history.</span>
+            </div>
           </div>
         </div>
       </div>
@@ -1306,15 +1644,16 @@ jobs:
             </div>
             <div class="form-group">
               <label class="form-label">Tool</label>
-              <select class="form-select" id="settings-tool">
+              <select class="form-select" id="settings-tool" onchange="populateModelDropdown(this.value,'')">
                 <option value="gemini">Gemini CLI</option>
                 <option value="claude">Claude CLI</option>
                 <option value="openai">OpenAI API</option>
               </select>
             </div>
             <div class="form-group">
-              <label class="form-label">Model / Identifier</label>
-              <input type="text" class="form-input" id="settings-model" placeholder="e.g. gemini-2.0-flash">
+              <label class="form-label">Model</label>
+              <select class="form-select" id="settings-model" onchange="void 0"></select>
+              <div style="font-size:10px;color:var(--text-3);margin-top:4px;" id="settings-model-hint"></div>
             </div>
           </div>
 
@@ -1467,21 +1806,166 @@ jobs:
 
 <!-- New File Dialog -->
 <div class="dialog-overlay hidden" id="new-file-dialog">
-  <div class="dialog">
+  <div class="dialog" style="width:420px">
     <h3>New Input File</h3>
     <div class="form-group">
+      <label class="form-label">Category</label>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:4px;" id="category-chips">
+        <button class="category-chip active" data-cat="" onclick="selectCategory(this,'')">General</button>
+        <button class="category-chip" data-cat="product" onclick="selectCategory(this,'product')">Product</button>
+        <button class="category-chip" data-cat="design" onclick="selectCategory(this,'design')">Design</button>
+        <button class="category-chip" data-cat="technical" onclick="selectCategory(this,'technical')">Technical</button>
+        <button class="category-chip" data-cat="research" onclick="selectCategory(this,'research')">Research</button>
+        <button class="category-chip" data-cat="marketing" onclick="selectCategory(this,'marketing')">Marketing</button>
+      </div>
+    </div>
+    <div class="form-group">
       <label class="form-label">File Name</label>
-      <input type="text" class="form-input" id="new-file-name" placeholder="raw-input.md" value="raw-input.md">
+      <input type="text" class="form-input" id="new-file-name" placeholder="brief.md" oninput="updateFilePreview()" onkeydown="if(event.key==='Enter')createNewFile()">
+      <div style="margin-top:5px;font-size:11px;color:var(--text-3);">Will be saved as: <code id="new-file-preview" style="color:var(--text-2);"></code></div>
     </div>
     <div class="dialog-actions">
       <button class="btn btn-ghost btn-sm" onclick="closeNewFileDialog()">Cancel</button>
-      <button class="btn btn-primary btn-sm" onclick="createNewFile()">Create</button>
+      <button class="btn btn-primary btn-sm" onclick="createNewFile()">Create File</button>
     </div>
   </div>
 </div>
 
 <!-- Toast container -->
 <div id="toast-container"></div>
+
+<!-- inline markdown parser (no external deps) -->
+<script>
+function parseMarkdown(src) {
+  var e = function(s) {
+    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  };
+  var inline = function(s) {
+    s = e(s);
+    s = s.replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>');
+    s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+    s = s.replace(/__(.+?)__/g, '<strong>$1</strong>');
+    s = s.replace(/\*([^*\n]+?)\*/g, '<em>$1</em>');
+    s = s.replace(/_([^_\n]+?)_/g, '<em>$1</em>');
+    s = s.replace(/~~(.+?)~~/g, '<del>$1</del>');
+    s = s.replace(/`([^`]+)`/g, '<code>$1</code>');
+    s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+    return s;
+  };
+  var lines = src.replace(/\r\n/g, '\n').split('\n');
+  var out = '';
+  var i = 0;
+  var inCode = false, codeLang = '', codeLines = [];
+  var inUL = false, inOL = false;
+  var para = [];
+
+  function flushPara() {
+    if (para.length) { out += '<p>' + inline(para.join(' ')) + '</p>\n'; para = []; }
+  }
+  function closeList() {
+    if (inUL) { out += '</ul>\n'; inUL = false; }
+    if (inOL) { out += '</ol>\n'; inOL = false; }
+  }
+
+  while (i < lines.length) {
+    var line = lines[i]; i++;
+
+    // fenced code block
+    if (/^`{3}/.test(line)) {
+      if (!inCode) {
+        flushPara(); closeList();
+        codeLang = line.slice(3).trim() || 'code';
+        codeLines = []; inCode = true;
+      } else {
+        var codeHtml = e(codeLines.join('\n'));
+        out += '<div class="md-code-block"><div class="md-code-header"><span class="md-code-lang">' + e(codeLang) + '</span></div><pre class="md-code-pre"><code>' + codeHtml + '</code></pre></div>\n';
+        inCode = false;
+      }
+      continue;
+    }
+    if (inCode) { codeLines.push(line); continue; }
+
+    // heading
+    var hm = line.match(/^(#{1,6})\s+(.*)/);
+    if (hm) {
+      flushPara(); closeList();
+      var hl = hm[1].length;
+      out += '<h' + hl + '>' + inline(hm[2].trim()) + '</h' + hl + '>\n';
+      continue;
+    }
+
+    // hr
+    if (/^(\*{3,}|-{3,}|_{3,})\s*$/.test(line)) {
+      flushPara(); closeList();
+      out += '<hr>\n'; continue;
+    }
+
+    // blockquote
+    if (/^>\s/.test(line)) {
+      flushPara(); closeList();
+      out += '<blockquote><p>' + inline(line.replace(/^>\s*/, '')) + '</p></blockquote>\n';
+      continue;
+    }
+
+    // unordered list
+    var ulm = line.match(/^[ \t]*[-*+]\s+(.*)/);
+    if (ulm) {
+      flushPara();
+      if (inOL) { out += '</ol>\n'; inOL = false; }
+      if (!inUL) { out += '<ul>\n'; inUL = true; }
+      out += '<li>' + inline(ulm[1]) + '</li>\n';
+      continue;
+    }
+
+    // ordered list
+    var olm = line.match(/^\d+\.\s+(.*)/);
+    if (olm) {
+      flushPara();
+      if (inUL) { out += '</ul>\n'; inUL = false; }
+      if (!inOL) { out += '<ol>\n'; inOL = true; }
+      out += '<li>' + inline(olm[1]) + '</li>\n';
+      continue;
+    }
+
+    // table row
+    if (/^\|/.test(line)) {
+      flushPara(); closeList();
+      // separator row — skip
+      if (/^\|[\s:|:-]+\|/.test(line)) { continue; }
+      var cells = line.replace(/^\||\|$/g, '').split('|');
+      // peek back — if previous output ended with </thead> we're in body, else header
+      var tag = out.endsWith('</thead>\n') ? 'td' : 'th';
+      if (tag === 'th' && !out.endsWith('</table>\n')) {
+        out += '<table>\n<thead>\n';
+      } else if (tag === 'td' && out.endsWith('</thead>\n')) {
+        out += '<tbody>\n';
+      }
+      out += '<tr>' + cells.map(function(c) { return '<' + tag + '>' + inline(c.trim()) + '</' + tag + '>'; }).join('') + '</tr>\n';
+      if (tag === 'th') out += '</thead>\n';
+      continue;
+    }
+    // close table
+    if (out.includes('<tbody>') && !out.endsWith('</table>\n') && line.trim() === '') {
+      out += '</tbody></table>\n';
+    }
+
+    // blank line
+    if (line.trim() === '') {
+      flushPara(); closeList(); continue;
+    }
+
+    // paragraph accumulation
+    closeList();
+    para.push(line.trim());
+  }
+
+  flushPara(); closeList();
+  if (inCode) {
+    out += '<pre class="md-code-pre"><code>' + e(codeLines.join('\n')) + '</code></pre>\n';
+  }
+  return out;
+}
+</script>
 
 <script>
 // ============================================================
@@ -1516,6 +2000,80 @@ const ISSUE_TYPE_ICONS = {
 };
 
 // ============================================================
+// Markdown Renderer Setup
+// ============================================================
+function escHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// Minimal syntax highlighter — One Dark palette, handles common tokens
+function simpleHighlight(code, lang) {
+  const esc = escHtml(code);
+  if (!lang) return esc;
+  const L = lang.toLowerCase();
+  // Tokeniser patterns, applied in order (order matters)
+  // Note: avoid triple-quote sequences to prevent issues with Python string embedding
+  const q3 = '"'.repeat(3); // dynamically builds triple-quote for regex without appearing literally
+  const patterns = [
+    // block comments first (before line comments)
+    [/\/\*[\s\S]*?\*\//g, '<span class="sc">$&</span>'],
+    // line comments (//, #, --)
+    [/\/\/[^\n]*|(?:^|\s)#[^\n]*/g, '<span class="sc">$&</span>'],
+    // template literals / backtick strings
+    [/`[^`]*`/g, '<span class="ss">$&</span>'],
+    // double-quoted strings (single-line)
+    [/"(?:\\.|[^"\\])*"/g, '<span class="ss">$&</span>'],
+    // single-quoted strings (single-line)
+    [/'(?:\\.|[^'\\])*'/g, '<span class="ss">$&</span>'],
+    // numbers
+    [/\b(0x[\da-fA-F]+|\d+\.?\d*(?:[eE][+-]?\d+)?)\b/g, '<span class="sn">$&</span>'],
+    // keywords (broad coverage)
+    [/\b(import|export|from|as|default|const|let|var|function|return|class|extends|new|this|super|if|else|for|while|do|switch|case|break|continue|try|catch|finally|throw|async|await|yield|typeof|instanceof|in|of|void|delete|null|undefined|true|false|None|True|False|def|pass|lambda|with|global|nonlocal|raise|except|and|or|not|is|elif|require|module|use|pub|fn|mut|impl|struct|enum|trait|type|interface|abstract|static|public|private|protected|readonly|override|virtual|sealed|namespace|using|include|package|go|chan|select|defer|map|range)\b/g, '<span class="sk">$&</span>'],
+    // built-in types
+    [/\b(string|number|boolean|int|float|double|char|byte|bool|void|any|object|Array|Object|Promise|Error|Set|Map|String|Number|Boolean)\b/g, '<span class="sa">$&</span>'],
+    // function/method calls
+    [/\b([a-zA-Z_]\w*)\s*(?=\()/g, '<span class="sf">$&</span>'],
+    // decorators / annotations
+    [/@[a-zA-Z_]\w*/g, '<span class="so">$&</span>'],
+  ];
+  let out = esc;
+  // Only apply if language looks like code (not bash one-liners etc)
+  if (!['text','txt','markdown','md','plaintext'].includes(L)) {
+    for (const [re, tpl] of patterns) {
+      out = out.replace(re, tpl);
+    }
+  }
+  return out;
+}
+
+// marked replaced by inline parseMarkdown()
+
+let viewerRawMode = false;
+
+function setViewerMode(mode) {
+  viewerRawMode = (mode === 'raw');
+  const rendered = document.getElementById('viewer-content');
+  const raw = document.getElementById('viewer-raw-pre');
+  const btnR = document.getElementById('btn-mode-rendered');
+  const btnRaw = document.getElementById('btn-mode-raw');
+  if (viewerRawMode) {
+    rendered.style.display = 'none';
+    raw.style.display = 'block';
+    btnR.classList.remove('active');
+    btnRaw.classList.add('active');
+  } else {
+    rendered.style.display = '';
+    raw.style.display = 'none';
+    btnR.classList.add('active');
+    btnRaw.classList.remove('active');
+  }
+}
+
+function renderMarkdown(text) {
+  try { return parseMarkdown(text); } catch(e) { return '<pre style="white-space:pre-wrap">' + escHtml(text) + '</pre>'; }
+}
+
+// ============================================================
 // State
 // ============================================================
 let state = {};
@@ -1524,6 +2082,15 @@ let currentInputFile = null;
 let currentReviewFile = null;
 let runtimeInitialized = false;
 let pollInterval = null;
+
+// Generation tracking
+let lastProcessingStatus = 'idle';
+let lastSeenErrorTs = localStorage.getItem('forge_lastSeenErrorTs') || null;
+let optimisticRunning = null;  // {stage, startTime} — card spinner only, never drives toasts
+let fixingFile = null;
+let viewingVersion = null;  // {id, timestamp} when viewing a historic version, null = current
+
+const PIPELINE_STAGE_ORDER = ['context','requirements','design','analysis','architecture','delivery','engineering','qa','operations','release','marketing'];
 
 const PHASES = ['input', 'generate', 'review', 'build', 'deploy'];
 const PHASE_LABELS = { input: 'Input', generate: 'Generate', review: 'Review', build: 'Build', deploy: 'Deploy' };
@@ -1596,14 +2163,46 @@ function renderTopbar() {
   const pill = document.getElementById('status-pill');
   const statusText = document.getElementById('status-text');
   const processing = state.processing || {};
-  if (processing.status === 'running') {
+  const processingStatus = processing.status || 'idle';
+  const isRunning = processingStatus === 'running';
+  const isFixing = processingStatus === 'fixing';
+
+  if (isRunning) {
     pill.className = 'running';
     const stageLabel = processing.stage ? ` — ${processing.stage}` : '';
     statusText.textContent = `Generating${stageLabel}`;
+  } else if (isFixing) {
+    pill.className = 'running';
+    const shortFile = (processing.file || '').split('/').pop().replace('.md','');
+    statusText.textContent = `Fixing — ${shortFile}`;
+    fixingFile = processing.file || fixingFile;
   } else {
     pill.className = '';
     statusText.textContent = 'Idle';
+    const lastError = state.processing?.last_error;
+    if (lastProcessingStatus === 'running') {
+      // Only show success if the run didn't produce any errors
+      if (!lastError) {
+        showToast('Generation complete', 'success');
+      }
+    }
+    if (lastProcessingStatus === 'fixing' && fixingFile) {
+      if (!lastError) {
+        showToast('Regeneration complete', 'success');
+      }
+      if (currentReviewFile === fixingFile) {
+        reloadCurrentFile();
+      }
+      fixingFile = null;
+    }
+    // Show error toast once per unique error
+    if (lastError && lastError.timestamp !== lastSeenErrorTs) {
+      lastSeenErrorTs = lastError.timestamp;
+      localStorage.setItem('forge_lastSeenErrorTs', lastSeenErrorTs);
+      showToast(lastError.message, 'error');
+    }
   }
+  lastProcessingStatus = processingStatus;
 
   // Product name in topbar
   const nameEl = document.getElementById('topbar-product-name');
@@ -1703,6 +2302,22 @@ function renderOverview() {
 // ============================================================
 // Input
 // ============================================================
+let newFileCat = '';
+
+function selectCategory(btn, cat) {
+  newFileCat = cat;
+  document.querySelectorAll('#category-chips .category-chip').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  updateFilePreview();
+}
+
+function updateFilePreview() {
+  const name = document.getElementById('new-file-name').value.trim();
+  const fname = name ? (name.endsWith('.md') ? name : name + '.md') : '';
+  const full = newFileCat ? `${newFileCat}/${fname || 'untitled.md'}` : (fname || 'untitled.md');
+  document.getElementById('new-file-preview').textContent = full;
+}
+
 function renderInput() {
   const rawInputs = state.rawInputs || [];
   const count = rawInputs.length;
@@ -1719,17 +2334,52 @@ function renderInput() {
     return;
   }
 
+  document.getElementById('input-empty-state').style.display = 'none';
+
+  // Group files by folder
+  const grouped = {};
   rawInputs.forEach(f => {
-    const isActive = currentInputFile === f.name;
-    const size = f.size > 0 ? `${(f.size/1024).toFixed(1)}KB` : 'empty';
-    const modified = f.modifiedAt ? new Date(f.modifiedAt * 1000).toLocaleDateString() : '';
-    listEl.insertAdjacentHTML('beforeend', `
-      <div class="file-item ${isActive ? 'active' : ''}" onclick="openInputFile('${f.name}')">
-        <div class="file-item-name">${f.name}</div>
-        <div class="file-item-meta">${size} · ${modified}</div>
-      </div>
-    `);
+    const parts = f.name.split('/');
+    const folder = parts.length > 1 ? parts[0] : '';
+    const base = parts[parts.length - 1];
+    if (!grouped[folder]) grouped[folder] = [];
+    grouped[folder].push({ ...f, base });
   });
+
+  // Render: root files first (empty folder key), then alphabetical folders
+  const folders = Object.keys(grouped).sort((a, b) => {
+    if (a === '') return -1;
+    if (b === '') return 1;
+    return a.localeCompare(b);
+  });
+
+  folders.forEach(folder => {
+    if (folder !== '') {
+      // Folder header
+      listEl.insertAdjacentHTML('beforeend', `
+        <div class="file-folder-header">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/></svg>
+          ${escHtmlJs(folder)}
+        </div>
+      `);
+    }
+    grouped[folder].forEach(f => {
+      const isActive = currentInputFile === f.name;
+      const size = f.size > 0 ? `${(f.size/1024).toFixed(1)} KB` : 'empty';
+      const modified = f.modifiedAt ? new Date(f.modifiedAt * 1000).toLocaleDateString() : '';
+      const indent = folder ? 'padding-left:22px;' : '';
+      listEl.insertAdjacentHTML('beforeend', `
+        <div class="file-item ${isActive ? 'active' : ''}" style="${indent}" onclick="openInputFile('${escHtmlJs(f.name)}')">
+          <div class="file-item-name" title="${escHtmlJs(f.name)}">${escHtmlJs(f.base)}</div>
+          <div class="file-item-meta">${size} · ${modified}</div>
+        </div>
+      `);
+    });
+  });
+}
+
+function escHtmlJs(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
 
 async function openInputFile(name) {
@@ -1737,11 +2387,11 @@ async function openInputFile(name) {
   document.getElementById('input-empty-state').style.display = 'none';
   const container = document.getElementById('input-editor-container');
   container.style.display = 'flex';
-  document.getElementById('editing-filename').textContent = name;
+  // Show just the filename portion in the header (not the full path)
+  const displayName = name.includes('/') ? name : name;
+  document.getElementById('editing-filename').textContent = displayName;
 
-  document.querySelectorAll('#input-file-list .file-item').forEach(el => {
-    el.classList.toggle('active', el.querySelector('.file-item-name').textContent === name);
-  });
+  renderInput(); // re-render to update active highlight
 
   try {
     const res = await fetch(`/api/raw-input?name=${encodeURIComponent(name)}`);
@@ -1788,8 +2438,12 @@ async function deleteCurrentFile() {
 }
 
 function openNewFileDialog() {
-  document.getElementById('new-file-name').value = 'raw-input.md';
+  newFileCat = '';
+  document.querySelectorAll('#category-chips .category-chip').forEach((b, i) => b.classList.toggle('active', i === 0));
+  document.getElementById('new-file-name').value = '';
+  document.getElementById('new-file-preview').textContent = 'untitled.md';
   document.getElementById('new-file-dialog').classList.remove('hidden');
+  document.getElementById('new-file-name').focus();
 }
 
 function closeNewFileDialog() {
@@ -1797,18 +2451,23 @@ function closeNewFileDialog() {
 }
 
 async function createNewFile() {
-  const name = document.getElementById('new-file-name').value.trim();
-  if (!name) return;
-  const fname = name.endsWith('.md') ? name : name + '.md';
+  const rawName = document.getElementById('new-file-name').value.trim();
+  if (!rawName) { showToast('Enter a file name', 'error'); return; }
+  const fname = rawName.endsWith('.md') ? rawName : rawName + '.md';
+  const fullPath = newFileCat ? `${newFileCat}/${fname}` : fname;
+  const title = fname.replace('.md', '').replace(/[-_]/g, ' ');
+  const placeholder = newFileCat
+    ? `# ${title.charAt(0).toUpperCase() + title.slice(1)}\n\nDescribe your ${newFileCat} details here...\n`
+    : `# ${title.charAt(0).toUpperCase() + title.slice(1)}\n\nDescribe your product idea here...\n`;
   try {
     await fetch('/api/raw-input', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: fname, content: `# ${fname.replace('.md','')}\n\nDescribe your product idea here...\n` })
+      body: JSON.stringify({ name: fullPath, content: placeholder })
     });
     closeNewFileDialog();
     await loadState();
-    openInputFile(fname);
+    openInputFile(fullPath);
     switchView('input');
   } catch (e) {
     showToast('Create failed', 'error');
@@ -1818,45 +2477,132 @@ async function createNewFile() {
 // ============================================================
 // Generate
 // ============================================================
+function dismissGenerationError() {
+  lastSeenErrorTs = 'dismissed';
+  localStorage.setItem('forge_lastSeenErrorTs', lastSeenErrorTs);
+  document.getElementById('generate-error-bar').style.display = 'none';
+}
+
 function renderGenerate() {
   const processing = state.processing || {};
-  const isRunning = processing.status === 'running';
+  const serverRunning = processing.status === 'running';
+
+  // Clear optimistic spinner once server confirms real running state (or after 15 s timeout)
+  if (optimisticRunning) {
+    if (serverRunning || Date.now() - optimisticRunning.startTime > 15000) {
+      optimisticRunning = null;
+    }
+  }
+
+  const isRunning = serverRunning || !!optimisticRunning;
   const summary = state.stageReviewSummary || {};
 
   document.getElementById('btn-generate-all').disabled = isRunning;
 
+  // Error bar — show when there's an unacknowledged error from the last run
+  const errBar = document.getElementById('generate-error-bar');
+  const lastError = processing.last_error;
+  if (lastError && lastSeenErrorTs !== 'dismissed' && lastError.timestamp === lastSeenErrorTs) {
+    const shortFile = (lastError.file || '').split('/').pop().replace('.md', '');
+    document.getElementById('generate-error-text').textContent =
+      shortFile ? `${shortFile}: ${lastError.message}` : lastError.message;
+    errBar.style.display = 'flex';
+  } else if (!lastError || isRunning) {
+    errBar.style.display = 'none';
+  }
+
+  // Determine which stages are "done" (have generated content)
+  const runningIdx = PIPELINE_STAGE_ORDER.indexOf(processing.stage);
+
   if (isRunning) {
+    const stageObj = STAGES.find(s => s.key === processing.stage);
+    const label = stageObj ? stageObj.label : (processing.stage || 'pipeline');
     document.getElementById('generate-status-bar').innerHTML =
-      `<span style="display:flex;align-items:center;gap:6px;color:var(--amber)">${icon('sparkles',13)} Generating: <b>${processing.stage || 'all'}</b>...</span>`;
+      `<span style="display:flex;align-items:center;gap:8px;">
+        <span class="gen-spinner" style="width:11px;height:11px;border-width:1.5px;"></span>
+        <span style="color:var(--amber);font-weight:600;">Generating ${label}</span>
+        <span style="color:var(--text-3);">— other stages queued</span>
+      </span>`;
   } else {
-    document.getElementById('generate-status-bar').innerHTML =
-      `Ready to generate. Run all stages or click individual stage buttons.`;
+    const totalDone = STAGES.filter(s => (summary[s.dir] || {}).generated > 0).length;
+    document.getElementById('generate-status-bar').innerHTML = totalDone > 0
+      ? `<span style="color:var(--green);">${icon('check',12)} ${totalDone} stage${totalDone!==1?'s':''} generated</span> <span style="color:var(--text-3);margin-left:8px;">Ready to generate more or proceed to Review.</span>`
+      : `Ready to generate. Run all stages or trigger individual stages below.`;
   }
 
   const grid = document.getElementById('stage-grid');
   grid.innerHTML = '';
 
-  STAGES.forEach(s => {
+  STAGES.forEach((s, idx) => {
     const stageSummary = summary[s.dir] || { generated: 0, reviewed: 0, total: 0 };
     const { generated, reviewed, total } = stageSummary;
     const pct = total > 0 ? Math.round((generated / total) * 100) : 0;
-    const isThisRunning = isRunning && processing.stage === s.key;
+    const effectiveStage = serverRunning ? processing.stage : (optimisticRunning ? optimisticRunning.stage : null);
+    const isThisRunning  = isRunning && (effectiveStage === s.key || (optimisticRunning && optimisticRunning.stage === null));
+    const stageIdx       = PIPELINE_STAGE_ORDER.indexOf(s.key);
+    const isQueued       = serverRunning && stageIdx > runningIdx && runningIdx >= 0;
+    const hasContent    = generated > 0 && !isThisRunning;
+    const allReviewed   = hasContent && reviewed === total && total > 0;
+    const needsReview   = hasContent && !allReviewed;
+    const hasError      = !isRunning && processing.last_error?.stage === s.key;
+
+    // Card class drives border/bg
+    const cardClass = isThisRunning ? 'running' : (allReviewed ? 'reviewed' : (needsReview ? 'needs-review' : (hasError ? 'error' : '')));
+
+    // Progress bar colour
+    const progressColor = allReviewed ? 'green' : (isThisRunning ? 'amber' : '');
+
+    // Per-file progress from stage_runner
+    const fileIdx   = isThisRunning ? (processing.file_index || 1) : 0;
+    const fileTotal = isThisRunning ? (processing.file_total  || total || 1) : 0;
+    const fileName  = isThisRunning ? (processing.file || '') : '';
+    const fileBase  = fileName.split('/').pop().replace(/\.md$/, '');
+    const filePct   = isThisRunning && fileTotal > 0 ? Math.round(((fileIdx - 1) / fileTotal) * 100) : pct;
+
+    // Top-right badge
+    let statusBadge = '';
+    if (isThisRunning) {
+      statusBadge = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--amber)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="animation:spin 1.2s linear infinite;flex-shrink:0"><path d="M21 12a9 9 0 11-6.219-8.56"/></svg>`;
+    } else if (hasError) {
+      statusBadge = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--red)" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>`;
+    } else if (allReviewed) {
+      statusBadge = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--green)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 12.75l6 6 9-13.5"/></svg>`;
+    } else if (needsReview) {
+      statusBadge = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--amber)" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z"/><path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>`;
+    }
+
+    // Stats label
+    const statsLabel = isThisRunning
+      ? `${fileIdx}/${fileTotal} files`
+      : needsReview
+        ? `${reviewed}/${total} reviewed`
+        : `${generated}/${total} files`;
+
+    // Subtitle
+    const subtitle = isThisRunning && fileBase
+      ? fileBase
+      : hasError
+        ? (processing.last_error?.file || '').split('/').pop().replace(/\.md$/, '') || 'failed'
+        : s.desc;
 
     grid.insertAdjacentHTML('beforeend', `
-      <div class="stage-card">
+      <div class="stage-card ${cardClass}" style="${isQueued ? 'opacity:0.45;pointer-events:none' : ''}">
         <div class="stage-card-header">
           <div>
             <div class="stage-name">${s.label}</div>
-            <div class="stage-subtitle">${s.desc}</div>
+            <div class="stage-subtitle" style="${needsReview ? 'color:var(--amber);' : ''}">${needsReview ? 'Needs review' : subtitle}</div>
           </div>
-          <div class="stage-stats">${generated}/${total}</div>
+          <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;">
+            ${statusBadge}
+            <div class="stage-stats">${statsLabel}</div>
+          </div>
         </div>
         <div class="progress-bar">
-          <div class="progress-fill ${reviewed === total && total > 0 ? 'green' : ''}" style="width:${pct}%"></div>
+          <div class="progress-fill ${progressColor}" style="width:${Math.max(filePct, pct)}%;${isThisRunning ? 'animation:progress-pulse 1.5s ease-in-out infinite;' : ''}"></div>
         </div>
         <button class="btn btn-secondary btn-sm" ${isRunning ? 'disabled' : ''} onclick="generate('${s.key}')">
           ${icon('sparkles', 12)}
-          ${isThisRunning ? 'Running...' : 'Generate'}
+          ${isThisRunning ? 'Generating...' : 'Regenerate'}
         </button>
       </div>
     `);
@@ -1864,15 +2610,22 @@ function renderGenerate() {
 }
 
 async function generate(stage) {
+  // Show spinner on the card immediately WITHOUT touching state.processing.
+  // Mutating state.processing would corrupt lastProcessingStatus and fire false toasts.
+  optimisticRunning = { stage: stage === 'all' ? null : stage, startTime: Date.now() };
+  renderGenerate();
+
   try {
     await fetch('/api/generate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ stage })
     });
-    showToast(`Generation started: ${stage}`, 'info');
+    switchView('generate');
     loadState();
   } catch (e) {
+    optimisticRunning = null;
+    renderGenerate();
     showToast('Generate request failed', 'error');
   }
 }
@@ -1904,9 +2657,11 @@ function renderReview() {
         ${filtered.map(f => {
           const path = `${dir}/${f.name}`;
           const isActive = currentReviewFile === path;
+          const isBeingFixed = fixingFile === path;
+          const dotClass = isBeingFixed ? 'fixing' : f.status;
           return `
             <div class="tree-file-item ${isActive ? 'active' : ''}" onclick="openReviewFile('${path}','${f.status}',${f.size},${f.modifiedAt})">
-              <span class="tree-file-dot ${f.status}"></span>
+              <span class="tree-file-dot ${dotClass}"></span>
               ${f.name.replace('.md','')}
             </div>
           `;
@@ -1922,6 +2677,18 @@ function renderReview() {
       <span class="badge badge-${status.toLowerCase()}">${status}</span>
     </div>
   `).join('');
+
+  // Overlay: show when the currently-viewed file is being fixed
+  const isViewerBeingFixed = !!(fixingFile && fixingFile === currentReviewFile);
+  const overlay = document.getElementById('viewer-fix-overlay');
+  if (overlay) {
+    overlay.style.display = isViewerBeingFixed ? 'flex' : 'none';
+    if (isViewerBeingFixed) {
+      document.getElementById('viewer-fix-filename').textContent = fixingFile;
+    }
+  }
+  const fixBtn = document.getElementById('btn-fix-regenerate');
+  if (fixBtn) fixBtn.disabled = !!fixingFile;
 }
 
 function filterReviewTree(val) {
@@ -1931,9 +2698,18 @@ function filterReviewTree(val) {
 async function openReviewFile(path, status, size, modifiedAt) {
   currentReviewFile = path;
 
+  // Clear any active version view when switching files
+  viewingVersion = null;
+  document.getElementById('viewer-version-banner').style.display = 'none';
+  document.getElementById('btn-mark-reviewed').style.opacity = '';
+  document.getElementById('btn-mark-reviewed').style.pointerEvents = '';
+  document.getElementById('btn-needs-review').style.opacity = '';
+  document.getElementById('btn-needs-review').style.pointerEvents = '';
+
   document.getElementById('viewer-filename').textContent = path;
   document.getElementById('btn-mark-reviewed').style.display = '';
   document.getElementById('btn-needs-review').style.display = '';
+  document.getElementById('viewer-mode-toggle').style.display = '';
 
   document.getElementById('meta-path').textContent = path;
   document.getElementById('meta-status').innerHTML = `<span class="badge badge-${status.replace('_','-')}">${status.replace('_',' ')}</span>`;
@@ -1944,15 +2720,22 @@ async function openReviewFile(path, status, size, modifiedAt) {
     const res = await fetch(`/api/file?path=${encodeURIComponent(path)}`);
     if (res.ok) {
       const text = await res.text();
-      document.getElementById('viewer-content').textContent = text || '(empty file)';
+      const raw = text || '(empty file)';
+      document.getElementById('viewer-content').innerHTML = renderMarkdown(raw);
+      document.getElementById('viewer-raw-pre').textContent = raw;
     } else {
-      document.getElementById('viewer-content').textContent = '(file not found)';
+      document.getElementById('viewer-content').innerHTML = '<p style="color:var(--text-3)">(file not found)</p>';
+      document.getElementById('viewer-raw-pre').textContent = '(file not found)';
     }
   } catch (e) {
-    document.getElementById('viewer-content').textContent = '(error loading file)';
+    document.getElementById('viewer-content').innerHTML = '<p style="color:var(--red)">(error loading file)</p>';
+    document.getElementById('viewer-raw-pre').textContent = '(error loading file)';
   }
+  // Always open in rendered mode for a fresh file
+  setViewerMode('rendered');
 
   renderReview();
+  fetchVersions(path);
 }
 
 async function markFile(status) {
@@ -1964,27 +2747,150 @@ async function markFile(status) {
       body: JSON.stringify({ path: currentReviewFile, status })
     });
     showToast(status === 'reviewed' ? 'Marked as reviewed' : 'Marked for review', 'success');
+    document.getElementById('meta-status').innerHTML = `<span class="badge badge-${status.replace('_','-')}">${status.replace('_',' ')}</span>`;
     loadState();
   } catch (e) {
     showToast('Failed', 'error');
   }
 }
 
+// ============================================================
+// Version History
+// ============================================================
+function timeAgo(isoStr) {
+  const diff = Math.floor((Date.now() - new Date(isoStr)) / 1000);
+  if (diff < 60) return `${diff}s ago`;
+  if (diff < 3600) return `${Math.floor(diff/60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff/3600)}h ago`;
+  return `${Math.floor(diff/86400)}d ago`;
+}
+
+async function fetchVersions(path) {
+  const listEl = document.getElementById('version-list');
+  const labelEl = document.getElementById('versions-label');
+  listEl.innerHTML = '<span style="font-size:10px;color:var(--text-3)">Loading...</span>';
+  try {
+    const res = await fetch(`/api/versions?path=${encodeURIComponent(path)}`);
+    const data = await res.json();
+    const versions = data.versions || [];
+    labelEl.textContent = versions.length ? `Version History (${versions.length})` : 'Version History';
+    if (versions.length === 0) {
+      listEl.innerHTML = '<span style="font-size:10px;color:var(--text-3)">No prior versions yet.</span>';
+      return;
+    }
+    listEl.innerHTML = versions.map((v, i) => {
+      const isActive = viewingVersion && viewingVersion.id === v.id;
+      const label = i === 0 ? 'Latest saved' : `v${versions.length - i}`;
+      return `
+        <div class="version-item ${isActive ? 'active' : ''}" onclick="openVersion('${v.id}','${v.timestamp}')">
+          <span>${label}</span>
+          <span class="vi-meta">${timeAgo(v.timestamp)} · ${(v.size/1024).toFixed(1)}KB</span>
+        </div>`;
+    }).join('');
+  } catch(e) {
+    listEl.innerHTML = '<span style="font-size:10px;color:var(--red)">Failed to load.</span>';
+  }
+}
+
+async function openVersion(id, timestamp) {
+  if (!currentReviewFile) return;
+  try {
+    const res = await fetch(`/api/version?path=${encodeURIComponent(currentReviewFile)}&id=${encodeURIComponent(id)}`);
+    if (!res.ok) { showToast('Version not found', 'error'); return; }
+    const text = await res.text();
+    viewingVersion = { id, timestamp };
+
+    document.getElementById('viewer-content').innerHTML = renderMarkdown(text);
+    document.getElementById('viewer-raw-pre').textContent = text;
+
+    const banner = document.getElementById('viewer-version-banner');
+    banner.style.display = 'flex';
+    document.getElementById('vb-label').textContent =
+      `Viewing version from ${new Date(timestamp).toLocaleString()} — not the current file`;
+
+    // Dim action buttons while viewing historic version
+    document.getElementById('btn-mark-reviewed').style.opacity = '0.3';
+    document.getElementById('btn-mark-reviewed').style.pointerEvents = 'none';
+    document.getElementById('btn-needs-review').style.opacity = '0.3';
+    document.getElementById('btn-needs-review').style.pointerEvents = 'none';
+
+    // Re-render version list to highlight active
+    fetchVersions(currentReviewFile);
+  } catch(e) {
+    showToast('Failed to load version', 'error');
+  }
+}
+
+function closeVersion() {
+  viewingVersion = null;
+  document.getElementById('viewer-version-banner').style.display = 'none';
+  document.getElementById('btn-mark-reviewed').style.opacity = '';
+  document.getElementById('btn-mark-reviewed').style.pointerEvents = '';
+  document.getElementById('btn-needs-review').style.opacity = '';
+  document.getElementById('btn-needs-review').style.pointerEvents = '';
+  // Reload current live file
+  reloadCurrentFile().then(() => fetchVersions(currentReviewFile));
+}
+
+async function restoreVersion() {
+  if (!currentReviewFile || !viewingVersion) return;
+  try {
+    const res = await fetch('/api/version/restore', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: currentReviewFile, id: viewingVersion.id })
+    });
+    if (!res.ok) { showToast('Restore failed', 'error'); return; }
+    showToast('Version restored as current file', 'success');
+    closeVersion();
+    loadState();
+  } catch(e) {
+    showToast('Restore failed', 'error');
+  }
+}
+
+async function reloadCurrentFile() {
+  if (!currentReviewFile) return;
+  try {
+    const res = await fetch(`/api/file?path=${encodeURIComponent(currentReviewFile)}`);
+    if (res.ok) {
+      const text = await res.text();
+      const raw = text || '(empty file)';
+      document.getElementById('viewer-content').innerHTML = renderMarkdown(raw);
+      document.getElementById('viewer-raw-pre').textContent = raw;
+    }
+  } catch (e) {}
+}
+
 async function submitFix() {
   if (!currentReviewFile) { showToast('Select a file first', 'error'); return; }
   const critique = document.getElementById('critique-textarea').value.trim();
   if (!critique) { showToast('Enter a critique first', 'error'); return; }
+
+  // Immediately show fixing state before the request even goes out
+  fixingFile = currentReviewFile;
+  document.getElementById('critique-textarea').value = '';
+  const overlay = document.getElementById('viewer-fix-overlay');
+  if (overlay) {
+    overlay.style.display = 'flex';
+    document.getElementById('viewer-fix-filename').textContent = fixingFile;
+  }
+  const fixBtn = document.getElementById('btn-fix-regenerate');
+  if (fixBtn) fixBtn.disabled = true;
+  document.getElementById('meta-status').innerHTML = `<span class="badge badge-needs-review">regenerating</span>`;
+
   try {
     await fetch('/api/fix', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ path: currentReviewFile, critique })
     });
-    document.getElementById('critique-textarea').value = '';
-    showToast('Regeneration triggered', 'info');
-    loadState();
+    showToast('Regeneration started', 'info');
   } catch (e) {
-    showToast('Failed', 'error');
+    showToast('Failed to start regeneration', 'error');
+    fixingFile = null;
+    if (overlay) overlay.style.display = 'none';
+    if (fixBtn) fixBtn.disabled = false;
   }
 }
 
@@ -2180,6 +3086,42 @@ async function updateIssue(id, data) {
 // ============================================================
 // Settings
 // ============================================================
+let detectedTools = null;  // populated from /api/tools on settings open
+
+async function fetchDetectedTools() {
+  try {
+    const res = await fetch('/api/tools');
+    detectedTools = await res.json();
+    // Rebuild tool dropdown to show only installed tools (with badge for uninstalled)
+    const toolSel = document.getElementById('settings-tool');
+    if (!toolSel) return;
+    const currentTool = getValue('settings-tool') || state.tool || 'gemini';
+    toolSel.innerHTML = Object.entries(detectedTools).map(([id, info]) => {
+      const badge = info.installed ? '' : ' (not installed)';
+      return `<option value="${id}" ${id === currentTool ? 'selected' : ''} ${info.installed ? '' : 'style="color:var(--text-3)"'}>${info.label}${badge}</option>`;
+    }).join('');
+    populateModelDropdown(currentTool, state.model || '');
+  } catch(e) {}
+}
+
+function populateModelDropdown(tool, currentModel) {
+  const sel = document.getElementById('settings-model');
+  const hint = document.getElementById('settings-model-hint');
+  if (!sel) return;
+  const toolInfo = detectedTools ? detectedTools[tool] : null;
+  const opts = toolInfo ? toolInfo.models : [];
+  sel.innerHTML = opts.map(o =>
+    `<option value="${o.id}" ${o.id === currentModel ? 'selected' : ''}>${o.label}</option>`
+  ).join('');
+  if (currentModel && !opts.find(o => o.id === currentModel)) {
+    sel.insertAdjacentHTML('afterbegin', `<option value="${currentModel}" selected>${currentModel}</option>`);
+  }
+  const installed = toolInfo ? toolInfo.installed : true;
+  if (hint) hint.textContent = installed
+    ? `Passed as -m flag to the ${tool} CLI`
+    : `⚠ ${tool} is not installed — generation will fail`;
+}
+
 function renderSettings() {
   const git = state.git || {};
   const envs = state.environments || {};
@@ -2188,7 +3130,8 @@ function renderSettings() {
   const vl = document.getElementById('settings-version-label');
   if (vl) vl.textContent = state.version ? `v${state.version}` : 'v—';
   setValue('settings-tool', state.tool || 'gemini');
-  setValue('settings-model', state.model || '');
+  populateModelDropdown(state.tool || 'gemini', state.model || '');
+  fetchDetectedTools();
   setValue('settings-repo-url', git.repo_url || '');
   setValue('settings-username', git.username || '');
   setValue('settings-email', git.email || '');
@@ -2304,10 +3247,12 @@ async function resetPipeline() {
     const data = await res.json();
     showToast(`Pipeline reset — ${data.cleared} files cleared`, 'success');
     currentReviewFile = null;
-    document.getElementById('viewer-content').textContent = 'Select a file from the tree to review its contents.';
+    document.getElementById('viewer-content').innerHTML = 'Select a file from the tree to review its contents.';
+    document.getElementById('viewer-raw-pre').textContent = '';
     document.getElementById('viewer-filename').textContent = 'Select a file';
     document.getElementById('btn-mark-reviewed').style.display = 'none';
     document.getElementById('btn-needs-review').style.display = 'none';
+    document.getElementById('viewer-mode-toggle').style.display = 'none';
     loadState();
   } catch (e) {
     showToast('Reset failed', 'error');
