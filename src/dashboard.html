@@ -1218,6 +1218,7 @@ body {
   color: var(--green);
 }
 </style>
+<script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.52.0/min/vs/loader.js"></script>
 </head>
 <body>
 
@@ -1502,20 +1503,34 @@ body {
       <div class="view-header">
         <div>
           <div class="view-title">Build</div>
-          <div class="view-subtitle">Git branch, commit, and PR creation</div>
+          <div class="view-subtitle">Generate code from specs, then commit and push</div>
         </div>
-        <button class="btn btn-primary" onclick="startBuild()" id="btn-start-build">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M6 3v12"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 01-9 9"/>
-          </svg>
-          Start Build
+        <button class="btn btn-primary" onclick="runBuildStep('all')" id="btn-build-all">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+          Build All
         </button>
       </div>
       <div class="view-body">
+
+        <!-- Build System -->
+        <div style="font-size:12px;font-weight:600;color:var(--text-2);margin-bottom:10px;text-transform:uppercase;letter-spacing:0.06em;">Build System</div>
+        <div id="build-steps-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px;margin-bottom:20px;"></div>
+
+        <!-- Code viewer (opens as full-screen modal) -->
+        <div id="build-code-panel" style="display:none;"></div>
+
+        <!-- Git -->
+        <div style="font-size:12px;font-weight:600;color:var(--text-2);margin-bottom:10px;text-transform:uppercase;letter-spacing:0.06em;">Git &amp; PR</div>
         <div class="card" style="margin-bottom:16px;">
           <div class="card-title">Git Configuration</div>
           <div id="build-git-summary" style="font-size:12px;color:var(--text-2);">Configure git in Settings to enable push and PR creation.</div>
         </div>
+        <button class="btn btn-secondary" onclick="startBuild()" id="btn-start-build" style="margin-bottom:16px;">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M6 3v12"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 01-9 9"/>
+          </svg>
+          Create Git Branch &amp; PR
+        </button>
         <div style="font-size:12px;font-weight:600;color:var(--text-2);margin-bottom:10px;text-transform:uppercase;letter-spacing:0.06em;">Build History</div>
         <div class="build-layout" id="build-history"></div>
       </div>
@@ -2897,7 +2912,137 @@ async function submitFix() {
 // ============================================================
 // Build
 // ============================================================
+// ============================================================
+// Build System
+// ============================================================
+const BUILD_STEPS_META = {
+  backend:     { label: 'Backend & API',     desc: 'Models, endpoints, business logic' },
+  frontend:    { label: 'Frontend UI',       desc: 'Components, pages, routing' },
+  integration: { label: 'Integration Layer', desc: 'API client, third-party adapters' },
+  tests:       { label: 'Test Suite',        desc: 'Unit, integration, and e2e tests' },
+  infra:       { label: 'Infrastructure',    desc: 'Docker, CI/CD, monitoring config' },
+};
+
+let buildStepsState = {};  // populated from /api/build-system
+let buildCodePanelStep = null;
+
+async function fetchBuildSteps() {
+  try {
+    const res = await fetch('/api/build-system');
+    if (res.ok) {
+      const data = await res.json();
+      buildStepsState = data.steps || {};
+      renderBuildSteps();
+    }
+  } catch (e) {}
+}
+
+function renderBuildSteps() {
+  const grid = document.getElementById('build-steps-grid');
+  if (!grid) return;
+  const isRunning = (state.processing && state.processing.status === 'running');
+
+  grid.innerHTML = Object.entries(BUILD_STEPS_META).map(([key, meta]) => {
+    const st = buildStepsState[key] || { status: 'idle', files: [] };
+    const fileCount = (st.files || []).length;
+    const isThisRunning = isRunning && (state.processing.stage === key || state.processing.stage === 'all');
+
+    let statusBadge, footerHtml;
+    if (isThisRunning) {
+      statusBadge = `<span class="badge" style="background:var(--blue-light,#dbeafe);color:var(--blue);">
+        <span class="spinner" style="display:inline-block;width:8px;height:8px;border:1.5px solid var(--blue);border-top-color:transparent;border-radius:50%;animation:spin 0.7s linear infinite;margin-right:4px;vertical-align:middle;"></span>Building</span>`;
+      footerHtml = `<span style="font-size:11px;color:var(--text-3);">Running...</span>`;
+    } else if (st.status === 'complete') {
+      statusBadge = `<span class="badge badge-success">Complete</span>`;
+      footerHtml = `<span style="font-size:11px;color:var(--text-3);">${fileCount} file${fileCount !== 1 ? 's' : ''} generated</span>
+        <button class="btn btn-secondary btn-sm" onclick="openBuildCodePanel('${key}')">View Code</button>`;
+    } else if (st.status === 'error') {
+      statusBadge = `<span class="badge badge-error" title="${escapeHtml(st.error || '')}">Error</span>`;
+      footerHtml = `<span style="font-size:11px;color:var(--red);max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHtml(st.error || '')}">${escapeHtml((st.error || 'Failed').substring(0, 40))}</span>`;
+    } else {
+      statusBadge = `<span class="badge" style="background:var(--bg-2);color:var(--text-3);">Not started</span>`;
+      footerHtml = `<span style="font-size:11px;color:var(--text-3);">Ready to build</span>`;
+    }
+
+    const canRun = !isRunning;
+    return `<div class="card" style="padding:12px;display:flex;flex-direction:column;gap:8px;${st.status==='error'?'border-color:var(--red);':st.status==='complete'?'border-color:var(--green);':''}">
+      <div style="display:flex;align-items:center;justify-content:space-between;">
+        <span style="font-size:12px;font-weight:600;color:var(--text-1);">${meta.label}</span>
+        ${statusBadge}
+      </div>
+      <div style="font-size:11px;color:var(--text-3);flex:1;">${meta.desc}</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;flex-wrap:wrap;">
+        ${footerHtml}
+        <button class="btn btn-primary btn-sm" onclick="runBuildStep('${key}')" ${canRun ? '' : 'disabled'} style="margin-left:auto;">
+          ${st.status === 'complete' ? 'Rebuild' : 'Build'}
+        </button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function runBuildStep(step) {
+  try {
+    optimisticRunning = { stage: step, startTime: Date.now() };
+    renderBuildSteps();
+    const res = await fetch('/api/build-system', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ step })
+    });
+    if (!res.ok) {
+      const data = await res.json();
+      showToast(data.error || 'Build failed to start', 'error');
+      optimisticRunning = null;
+    }
+  } catch (e) {
+    showToast('Build failed to start', 'error');
+    optimisticRunning = null;
+  }
+}
+
+async function openBuildCodePanel(step) {
+  buildCodePanelStep = step;
+  const panel = document.getElementById('build-code-panel');
+  const title = document.getElementById('build-code-panel-title');
+  panel.style.display = 'block';
+  title.textContent = BUILD_STEPS_META[step]?.label + ' — Generated Files';
+  document.getElementById('build-file-content').textContent = '';
+
+  const files = (buildStepsState[step] || {}).files || [];
+  const tree = document.getElementById('build-file-tree');
+  if (files.length === 0) {
+    tree.innerHTML = '<div style="font-size:11px;color:var(--text-3);padding:8px;">No files yet.</div>';
+    return;
+  }
+  tree.innerHTML = files.map(f => `
+    <div class="tree-file" onclick="loadBuildFile('${step}','${escapeHtml(f)}')"
+      style="padding:3px 6px;border-radius:4px;cursor:pointer;font-size:11px;color:var(--text-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"
+      onmouseover="this.style.background='var(--bg-2)'" onmouseout="this.style.background=''">
+      ${escapeHtml(f)}
+    </div>`).join('');
+
+  // Auto-load first file
+  if (files.length > 0) loadBuildFile(step, files[0]);
+}
+
+async function loadBuildFile(step, path) {
+  try {
+    const res = await fetch('/api/build-file?step=' + encodeURIComponent(step) + '&path=' + encodeURIComponent(path));
+    if (res.ok) {
+      const data = await res.json();
+      document.getElementById('build-file-content').textContent = data.content;
+    }
+  } catch (e) {}
+}
+
+function closeBuildCodePanel() {
+  document.getElementById('build-code-panel').style.display = 'none';
+  buildCodePanelStep = null;
+}
+
 function renderBuild() {
+  fetchBuildSteps();
   const git = state.git || {};
   const builds = state.builds || [];
 
@@ -3275,6 +3420,198 @@ document.addEventListener('keydown', e => {
 // Init
 // ============================================================
 startPolling();
+</script>
+
+<!-- Monaco Code Editor Modal -->
+<div id="code-editor-modal" style="display:none;position:fixed;inset:0;z-index:9000;flex-direction:column;background:#1e1e1e;">
+
+  <!-- Titlebar -->
+  <div style="display:flex;align-items:center;height:40px;min-height:40px;background:#2d2d2d;border-bottom:1px solid #404040;padding:0 12px;gap:8px;font-family:monospace;">
+    <span id="cem-step-label" style="font-size:11px;color:#858585;"></span>
+    <span style="color:#555;">/</span>
+    <span id="cem-file-label" style="font-size:12px;color:#cccccc;font-weight:500;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></span>
+    <span id="cem-lang-badge" style="font-size:10px;color:#858585;background:#3a3a3a;padding:2px 7px;border-radius:3px;"></span>
+    <button onclick="closeCodeEditor()" style="background:none;border:none;cursor:pointer;color:#858585;font-size:20px;line-height:1;padding:2px 6px;border-radius:4px;" title="Close" onmouseover="this.style.color='#fff'" onmouseout="this.style.color='#858585'">&#x2715;</button>
+  </div>
+
+  <!-- Body -->
+  <div style="display:flex;flex:1;min-height:0;overflow:hidden;">
+
+    <!-- Sidebar -->
+    <div style="width:240px;min-width:240px;background:#252526;border-right:1px solid #3a3a3a;display:flex;flex-direction:column;overflow:hidden;">
+      <div style="padding:6px 10px;font-size:10px;font-weight:600;color:#858585;text-transform:uppercase;letter-spacing:0.08em;border-bottom:1px solid #3a3a3a;">Explorer</div>
+      <div id="cem-step-tabs" style="display:flex;flex-wrap:wrap;gap:4px;padding:8px;border-bottom:1px solid #3a3a3a;"></div>
+      <div id="cem-file-tree" style="flex:1;overflow-y:auto;padding:4px 0;"></div>
+    </div>
+
+    <!-- Editor -->
+    <div style="flex:1;min-width:0;position:relative;">
+      <div id="cem-monaco-container" style="width:100%;height:100%;"></div>
+      <div id="cem-loading" style="display:none;position:absolute;inset:0;background:#1e1e1e;align-items:center;justify-content:center;flex-direction:column;gap:8px;color:#858585;font-size:13px;">
+        <div style="width:20px;height:20px;border:2px solid #444;border-top-color:#007acc;border-radius:50%;animation:spin 0.8s linear infinite;"></div>
+        Loading…
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Status bar -->
+  <div style="height:22px;min-height:22px;background:#007acc;display:flex;align-items:center;padding:0 12px;gap:16px;font-size:11px;color:rgba(255,255,255,0.9);font-family:monospace;">
+    <span id="cem-status-step"></span>
+    <span id="cem-status-file" style="opacity:0.8;"></span>
+    <span id="cem-status-lines" style="margin-left:auto;"></span>
+  </div>
+</div>
+
+<script>
+// Monaco Editor
+let monacoLoaded = false;
+let monacoEditor = null;
+let cemCurrentStep = null;
+let cemActiveFile = null;
+
+const LANG_MAP = {
+  py:'python', ts:'typescript', tsx:'typescript', js:'javascript', jsx:'javascript',
+  json:'json', yaml:'yaml', yml:'yaml', md:'markdown', sh:'shell', bash:'shell',
+  css:'css', html:'html', xml:'xml', sql:'sql', tf:'hcl', toml:'ini', ini:'ini',
+  env:'ini', txt:'plaintext', dockerfile:'dockerfile', makefile:'makefile',
+};
+const FILE_ICONS = {
+  py:'🐍', ts:'⬡', tsx:'⬡', js:'⬡', jsx:'⬡', json:'{}', md:'≡',
+  yml:'⚙', yaml:'⚙', sh:'$', css:'◑', html:'◈', tf:'◆', sql:'⊞',
+  dockerfile:'🐳', makefile:'⚒',
+};
+
+function detectLang(name) {
+  const base = name.split('/').pop().toLowerCase();
+  if (base === 'dockerfile') return 'dockerfile';
+  if (base === 'makefile') return 'makefile';
+  if (base.startsWith('.env')) return 'ini';
+  return LANG_MAP[base.split('.').pop()] || 'plaintext';
+}
+
+function fileIcon(name) {
+  const ext = name.split('.').pop().toLowerCase();
+  return FILE_ICONS[ext] || '·';
+}
+
+function ensureMonaco(cb) {
+  if (monacoLoaded) { cb(); return; }
+  require.config({ paths: { vs: 'https://cdn.jsdelivr.net/npm/monaco-editor@0.52.0/min/vs' } });
+  require(['vs/editor/editor.main'], function() { monacoLoaded = true; cb(); });
+}
+
+function openCodeEditor(step) {
+  cemCurrentStep = step;
+  cemActiveFile = null;
+  const modal = document.getElementById('code-editor-modal');
+  modal.style.display = 'flex';
+  document.getElementById('cem-step-label').textContent = BUILD_STEPS_META[step]?.label || step;
+  renderCemTabs(step);
+  renderCemTree(step);
+  ensureMonaco(() => {
+    if (!monacoEditor) {
+      monacoEditor = monaco.editor.create(document.getElementById('cem-monaco-container'), {
+        value: '', language: 'plaintext', theme: 'vs-dark', readOnly: true,
+        fontSize: 13, lineHeight: 20, minimap: { enabled: true },
+        scrollBeyondLastLine: false, wordWrap: 'off', automaticLayout: true,
+        folding: true, renderLineHighlight: 'line', smoothScrolling: true,
+      });
+    }
+    const files = (buildStepsState[step] || {}).files || [];
+    if (files.length > 0) loadCemFile(step, files[0]);
+  });
+}
+
+function closeCodeEditor() {
+  document.getElementById('code-editor-modal').style.display = 'none';
+}
+
+function renderCemTabs(active) {
+  document.getElementById('cem-step-tabs').innerHTML = Object.entries(BUILD_STEPS_META).map(([k, m]) => {
+    const st = buildStepsState[k] || {};
+    if (st.status !== 'complete') return '';
+    const on = k === active;
+    return `<button onclick="switchCemStep('${k}')" style="font-size:10px;padding:2px 8px;border-radius:3px;border:none;cursor:pointer;background:${on?'#007acc':'#3a3a3a'};color:${on?'#fff':'#ccc'};">${m.label}</button>`;
+  }).join('');
+}
+
+function switchCemStep(step) {
+  cemCurrentStep = step;
+  cemActiveFile = null;
+  document.getElementById('cem-step-label').textContent = BUILD_STEPS_META[step]?.label || step;
+  renderCemTabs(step);
+  renderCemTree(step);
+  const files = (buildStepsState[step] || {}).files || [];
+  if (files.length > 0) loadCemFile(step, files[0]);
+}
+
+function renderCemTree(step) {
+  const files = (buildStepsState[step] || {}).files || [];
+  const groups = {};
+  files.forEach(f => {
+    const parts = f.replace(/\\/g, '/').split('/');
+    const dir = parts.length > 1 ? parts.slice(0, -1).join('/') : '';
+    if (!groups[dir]) groups[dir] = [];
+    groups[dir].push({ full: f, name: parts[parts.length - 1] });
+  });
+  document.getElementById('cem-file-tree').innerHTML = Object.entries(groups).map(([dir, items]) => {
+    const hdr = dir ? `<div style="padding:5px 12px 2px;font-size:10px;color:#666;text-transform:uppercase;letter-spacing:.05em;">${dir}</div>` : '';
+    return hdr + items.map(({ full, name }) => {
+      const active = full === cemActiveFile;
+      const indent = dir ? '20px' : '12px';
+      return `<div onclick="loadCemFile('${step}','${full.replace(/\\/g,'\\\\').replace(/'/g,"\\'")}','${name.replace(/'/g,"\\'")}')"
+        title="${full}"
+        style="padding:4px 12px 4px ${indent};font-size:12px;cursor:pointer;display:flex;align-items:center;gap:6px;
+          white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+          background:${active?'rgba(0,122,204,0.25)':'transparent'};
+          color:${active?'#cce6ff':'#ccc'};
+          border-left:2px solid ${active?'#007acc':'transparent'};"
+        onmouseover="if(this.style.borderLeftColor!=='rgb(0, 122, 204)')this.style.background='rgba(255,255,255,0.05)'"
+        onmouseout="if(this.style.borderLeftColor!=='rgb(0, 122, 204)')this.style.background='transparent'">
+        <span style="font-size:10px;opacity:0.6;">${fileIcon(name)}</span>${name}
+      </div>`;
+    }).join('');
+  }).join('');
+}
+
+async function loadCemFile(step, path, displayName) {
+  cemActiveFile = path;
+  renderCemTree(step);
+  const name = displayName || path.split('/').pop();
+  const lang = detectLang(name);
+  document.getElementById('cem-file-label').textContent = name;
+  document.getElementById('cem-lang-badge').textContent = lang;
+  document.getElementById('cem-status-step').textContent = BUILD_STEPS_META[step]?.label || step;
+  document.getElementById('cem-status-file').textContent = path;
+  const loading = document.getElementById('cem-loading');
+  loading.style.display = 'flex';
+  try {
+    const res = await fetch('/api/build-file?step=' + encodeURIComponent(step) + '&path=' + encodeURIComponent(path));
+    const data = await res.json();
+    const content = data.content || '';
+    if (monacoEditor) {
+      const old = monacoEditor.getModel();
+      monacoEditor.setModel(monaco.editor.createModel(content, lang));
+      if (old) old.dispose();
+      monacoEditor.setScrollPosition({ scrollTop: 0, scrollLeft: 0 });
+      document.getElementById('cem-status-lines').textContent = content.split('\n').length + ' lines';
+    }
+  } catch(e) {
+    if (monacoEditor) {
+      const old = monacoEditor.getModel();
+      monacoEditor.setModel(monaco.editor.createModel('// Error loading file', 'plaintext'));
+      if (old) old.dispose();
+    }
+  } finally {
+    loading.style.display = 'none';
+  }
+}
+
+// Override stub from renderBuild JS
+function openBuildCodePanel(step) {
+  fetchBuildSteps().then(() => openCodeEditor(step));
+}
 </script>
 </body>
 </html>

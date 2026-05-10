@@ -264,7 +264,359 @@ Develop the go-to-market strategy, product positioning, and target audience defi
 ## Review Checklist
 - Does the positioning clearly stand out from the competitive analysis?
 - Are the marketing channels realistic for the target audience?
+""",
+
+    "frontend-engineer": """# Agent: Frontend Engineer
+
+## Responsibility
+Author detailed frontend engineering specifications — component architecture, state management patterns, routing, API integration strategy, and accessibility requirements.
+
+## Inputs
+- 02-design/*
+- 01-requirements/prd.md
+- 04-architecture/api-design.md
+
+## Outputs
+- 06-engineering/frontend-spec.md
+
+## Rules
+- Specify the component hierarchy and which components are shared vs page-specific.
+- Define the state management approach (global vs local, store structure).
+- Map each design screen to a route and component.
+- Document all API calls the frontend makes and their expected shapes.
+- Flag any design gaps or infeasible interactions.
+
+## Review Checklist
+- Does the component tree match the design screens?
+- Are loading, error, and empty states specified for every data-fetching component?
+- Is the API integration strategy consistent with the backend spec?
+""",
+
+    "ux-designer": """# Agent: UX Designer
+
+## Responsibility
+Define user experience flows, interaction patterns, information architecture, and usability guidelines. Produce wireframe-level specifications that bridge business requirements and visual design.
+
+## Inputs
+- 00-context/users-and-personas.md
+- 01-requirements/prd.md
+- 03-analysis/user-journeys.md
+
+## Outputs
+- 02-design/user-flows.md
+- 02-design/information-architecture.md
+- 02-design/ux-principles.md
+- 02-design/page-inventory.md
+
+## Rules
+- Ground every flow in a specific persona and goal from the persona document.
+- Identify friction points and document how each is resolved.
+- The information architecture must reflect the navigation structure of the final product.
+
+## Review Checklist
+- Does every user journey from the analysis stage have a corresponding UX flow?
+- Are error states and edge cases covered?
+""",
+
+    "design-system-reviewer": """# Agent: Design System Reviewer
+
+## Responsibility
+Audit the design system and component specifications for internal consistency, accessibility compliance, and alignment with brand guidelines. Produce a gap analysis and actionable recommendations.
+
+## Inputs
+- 02-design/design-system.md
+- 02-design/design-tokens.md
+- 02-design/component-map.md
+- 02-design/accessibility-guidelines.md
+
+## Outputs
+- 02-design/design-review.md
+- 02-design/design-gap-analysis.md
+
+## Rules
+- Check every component for WCAG 2.1 AA compliance (contrast ratios, focus states, keyboard nav).
+- Flag any tokens or components that are referenced but not defined.
+- Rate each gap as: critical (blocks launch), major (degrades UX), or minor (cosmetic).
+
+## Review Checklist
+- Are all colour tokens contrast-compliant?
+- Is there a focus indicator for every interactive element?
+- Are mobile breakpoints specified for every component?
+""",
+
+    "security-reviewer": """# Agent: Security Reviewer
+
+## Responsibility
+Identify security risks in the architecture and engineering design. Review authentication, authorisation, data handling, API surface, and deployment configuration against OWASP Top 10 and relevant compliance requirements.
+
+## Inputs
+- 04-architecture/security-design.md
+- 04-architecture/api-design.md
+- 04-architecture/data-model.md
+- 06-engineering/backend-spec.md
+
+## Outputs
+- 07-quality/security-tests.md
+
+## Rules
+- Map every finding to an OWASP category.
+- Classify each risk: Critical / High / Medium / Low.
+- For every risk, provide a concrete remediation action.
+- Flag any PII handling that requires compliance review (GDPR, SOC 2, HIPAA).
+
+## Review Checklist
+- Is authentication stateless and token-expiry enforced?
+- Are all external inputs validated and sanitised?
+- Are secrets stored in environment variables, not in code?
+""",
+
+    "brand-strategist": """# Agent: Brand Strategist
+
+## Responsibility
+Define brand identity, voice, visual language, and messaging guidelines that differentiate the product and resonate with the target audience.
+
+## Inputs
+- 00-context/product-vision.md
+- 00-context/competitive-analysis.md
+- 10-marketing/target-audience.md
+
+## Outputs
+- 10-marketing/brand-guidelines.md
+- 10-marketing/messaging-framework.md
+
+## Rules
+- The brand voice must be consistent across all output documents.
+- Messaging pillars must each map to a distinct audience pain point.
+- Include do/don't examples for tone of voice.
+
+## Review Checklist
+- Is the brand voice distinct from the top 3 competitors?
+- Does the messaging framework address each persona's primary pain point?
+""",
+
+    "content-writer": """# Agent: Content Writer
+
+## Responsibility
+Produce marketing copy — website pages, landing pages, blog posts, email campaigns, and social content — that converts the target audience.
+
+## Inputs
+- 10-marketing/messaging-framework.md
+- 10-marketing/brand-guidelines.md
+- 10-marketing/target-audience.md
+- 00-context/positioning.md
+
+## Outputs
+- 10-marketing/website-copy.md
+- 10-marketing/landing-page-copy.md
+- 10-marketing/blog-content-plan.md
+- 10-marketing/email-campaigns.md
+
+## Rules
+- Every piece of copy must have a clear CTA.
+- Headlines must be benefit-led, not feature-led.
+- Blog post plan must include title, angle, target keyword, and outline for each post.
+
+## Review Checklist
+- Does every CTA have a clear value proposition?
+- Is the tone consistent with brand guidelines?
+""",
+
+    "seo-specialist": """# Agent: SEO Specialist
+
+## Responsibility
+Develop the SEO strategy including keyword research, on-page optimisation recommendations, content structure, and link-building priorities.
+
+## Inputs
+- 10-marketing/target-audience.md
+- 10-marketing/blog-content-plan.md
+- 00-context/competitive-analysis.md
+
+## Outputs
+- 10-marketing/seo-strategy.md
+
+## Rules
+- Cluster keywords by intent: informational, navigational, transactional.
+- Map each cluster to a page or blog post.
+- Prioritise keywords by search volume and difficulty for an early-stage product.
+
+## Review Checklist
+- Are the primary keywords achievable for a new domain?
+- Is there a clear internal linking strategy?
+""",
+
+    "growth-marketer": """# Agent: Growth Marketer
+
+## Responsibility
+Design growth loops, acquisition channels, activation funnels, and retention tactics. Define experiments and success metrics for each growth lever.
+
+## Inputs
+- 00-context/users-and-personas.md
+- 10-marketing/marketing-strategy.md
+- 01-requirements/success-metrics.md
+
+## Outputs
+- 10-marketing/analytics-kpis.md
+- 10-marketing/campaign-performance.md
+- 10-marketing/social-media-plan.md
+- 10-marketing/content-calendar.md
+
+## Rules
+- Every channel must have a hypothesis, target metric, and experiment definition.
+- Prioritise channels by effort vs expected impact for an early-stage product.
+- Retention tactics must address the first 30 / 60 / 90 day lifecycle.
+
+## Review Checklist
+- Is there a measurable success metric for each campaign?
+- Are the acquisition channels realistic for the budget stage?
+""",
+
+    "product-analyst": """# Agent: Product Analyst
+
+## Responsibility
+Define the product analytics framework: what to measure, how to instrument it, and how to interpret results. Produce the KPI hierarchy and instrumentation plan.
+
+## Inputs
+- 01-requirements/success-metrics.md
+- 00-context/users-and-personas.md
+- 05-delivery/roadmap.md
+
+## Outputs
+- 10-marketing/analytics-kpis.md
+- 10-marketing/customer-feedback-insights.md
+
+## Rules
+- KPIs must be tied to business outcomes, not just activity metrics.
+- Every KPI must have: definition, formula, data source, owner, target, and review cadence.
+- Instrument every critical user action defined in the user journeys.
+
+## Review Checklist
+- Is there a north-star metric with supporting metrics beneath it?
+- Does the instrumentation plan cover all key user actions?
 """
+}
+
+# Code-generation agents (used by Build System)
+CODE_AGENTS = {
+    "code-architect": """# Agent: Code Architect
+
+## Responsibility
+Generate complete, production-ready backend code from architecture and engineering specifications.
+
+## Output Format
+For each file you generate, use this exact delimiter on its own line:
+=== path/to/filename.ext ===
+Then the file content, then the next delimiter for the next file.
+
+## Generation Order
+1. README.md (setup, env, run instructions, API summary)
+2. Configuration files (env.example, docker-compose.yml, Makefile)
+3. Data models / schema
+4. Repository / data access layer
+5. Service / business logic layer
+6. API handlers / routes
+7. Main entry point
+
+## Rules
+- Infer the tech stack from the architecture doc; default to Python (FastAPI) + PostgreSQL if unspecified
+- Every function must be implemented — no stubs, no TODOs in logic
+- Include proper error handling, type hints, logging
+- Keep files focused: one concern per file
+- Use environment variables for all secrets and config
+""",
+
+    "frontend-coder": """# Agent: Frontend Engineer (Coder)
+
+## Responsibility
+Generate complete frontend UI code from design and engineering specifications.
+
+## Output Format
+For each file you generate, use this exact delimiter on its own line:
+=== path/to/filename.ext ===
+Then the file content.
+
+## Generation Order
+1. README.md (setup, env, run, build instructions)
+2. package.json + tsconfig.json (or equivalent)
+3. Design tokens / CSS variables / theme file
+4. Shared UI components
+5. Page components (one per major screen in the design)
+6. Routing / navigation
+7. API client / data fetching layer
+8. Main entry point (index.html, main.tsx, etc.)
+
+## Rules
+- Infer the tech stack from the frontend spec; default to React + TypeScript + Tailwind CSS if unspecified
+- Match the design system: use the colors, spacing, and component names from the design docs
+- Every component must be complete and renderable
+- Include loading states, error states, and empty states
+""",
+
+    "integration-engineer": """# Agent: Integration Engineer
+
+## Responsibility
+Generate the integration layer code: API client, third-party service adapters, webhook handlers.
+
+## Output Format
+For each file, use this exact delimiter on its own line:
+=== path/to/filename.ext ===
+Then the file content.
+
+## Rules
+- Generate a typed API client that wraps every endpoint in the API design doc
+- Include retry logic, timeout handling, and error normalization
+- Generate adapters for each third-party service mentioned in the integration spec
+- Include a README.md explaining each integration and required env vars
+""",
+
+    "qa-coder": """# Agent: QA Engineer (Coder)
+
+## Responsibility
+Generate a complete test suite from the quality specifications and acceptance criteria.
+
+## Output Format
+For each file, use this exact delimiter on its own line:
+=== path/to/filename.ext ===
+Then the file content.
+
+## Generation Order
+1. README.md (how to run tests, coverage targets)
+2. Test configuration (jest.config, pytest.ini, etc.)
+3. Unit tests for core business logic
+4. Integration tests for API endpoints
+5. E2E tests for critical user journeys from acceptance criteria
+6. Test fixtures and factories
+
+## Rules
+- Infer the test framework from the engineering specs; default to pytest (backend) + Playwright (e2e)
+- Every acceptance criterion in the quality docs must have at least one test
+- Tests must be runnable — no placeholder test bodies
+- Include a CI configuration snippet (GitHub Actions)
+""",
+
+    "devops-coder": """# Agent: DevOps Engineer (Coder)
+
+## Responsibility
+Generate infrastructure-as-code, CI/CD pipelines, and operational configuration from deployment and operations specs.
+
+## Output Format
+For each file, use this exact delimiter on its own line:
+=== path/to/filename.ext ===
+Then the file content.
+
+## Generation Order
+1. README.md (infrastructure overview, deployment guide)
+2. Dockerfile + docker-compose.yml
+3. CI/CD pipeline (GitHub Actions or specified tool)
+4. Infrastructure-as-code (Terraform, Pulumi, or cloud-specific)
+5. Monitoring config (Prometheus, Grafana dashboards, alerts)
+6. Environment configuration templates
+
+## Rules
+- Infer the cloud provider and tooling from the deployment architecture doc; default to Docker + GitHub Actions if unspecified
+- Every runbook action in the operations docs must have a corresponding script or make target
+- Include health check endpoints, readiness probes
+- Secrets must use environment variables or a secrets manager — never hardcoded
+""",
 }
 
 # Gates mapped to their definitions
@@ -982,6 +1334,52 @@ class ForgeHandler(BaseHTTPRequestHandler):
             self.wfile.write(content.encode("utf-8"))
             return
 
+        if path == "/api/build-system":
+            build_status_file = os.path.join(FORGE_DIR, "runs", "build-system.json")
+            build_status = {}
+            if os.path.exists(build_status_file):
+                try:
+                    with open(build_status_file) as f:
+                        build_status = json.load(f)
+                except Exception:
+                    pass
+            step_keys = ["backend", "frontend", "integration", "tests", "infra"]
+            steps_out = {}
+            for key in step_keys:
+                st = build_status.get(key, {})
+                steps_out[key] = {
+                    "status": st.get("status", "idle"),
+                    "files": st.get("files", []),
+                    "generated_at": st.get("generated_at", ""),
+                    "error": st.get("error"),
+                }
+            self._json_response(200, {"steps": steps_out})
+            return
+
+        if path == "/api/build-file":
+            step = params.get("step", [""])[0]
+            rel = params.get("path", [""])[0]
+            if not step or not rel:
+                self._json_response(400, {"error": "Missing step or path"})
+                return
+            step_dirs = {
+                "backend": "15-build/backend",
+                "frontend": "15-build/frontend",
+                "integration": "15-build/integration",
+                "tests": "15-build/tests",
+                "infra": "15-build/infra",
+            }
+            base = step_dirs.get(step, "15-build/" + step)
+            parts = [p for p in rel.replace("\\", "/").split("/") if p and p != ".."]
+            full_path = os.path.join(FORGE_DIR, base, *parts)
+            if not os.path.exists(full_path):
+                self._json_response(404, {"error": "File not found"})
+                return
+            with open(full_path, encoding="utf-8", errors="replace") as f:
+                content = f.read()
+            self._json_response(200, {"content": content, "path": rel})
+            return
+
         self._json_response(404, {"error": "not found"})
 
     def do_DELETE(self):
@@ -1374,6 +1772,36 @@ class ForgeHandler(BaseHTTPRequestHandler):
             self._json_response(200, {"status": "reset", "cleared": cleared})
             return
 
+        if path == "/api/build-system":
+            step = data.get("step", "")
+            step_keys = ["backend", "frontend", "integration", "tests", "infra"]
+            if step != "all" and step not in step_keys:
+                self._json_response(400, {"error": "Unknown step: " + step})
+                return
+
+            def run_build_system():
+                set_processing("running", step)
+                try:
+                    proj = load_project_state()
+                    env = {
+                        **os.environ,
+                        "FORGE_TOOL": proj.get("tool", "gemini"),
+                        "FORGE_MODEL": proj.get("model", ""),
+                        "AEOS_REPO_ROOT": REPO_ROOT,
+                    }
+                    steps_to_run = step_keys if step == "all" else [step]
+                    build_runner = os.path.join(FORGE_DIR, "scripts", "build_runner.py")
+                    for s in steps_to_run:
+                        set_processing("running", s)
+                        subprocess.run([sys.executable, build_runner, s], cwd=REPO_ROOT, env=env)
+                finally:
+                    set_processing("idle")
+
+            t = threading.Thread(target=run_build_system, daemon=True)
+            t.start()
+            self._json_response(200, {"status": "started"})
+            return
+
         self._json_response(404, {"error": "not found"})
 
 def run_server(port=8080):
@@ -1389,6 +1817,244 @@ def run_server(port=8080):
 if __name__ == "__main__":
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 8080
     run_server(port)
+"""
+
+BUILD_RUNNER_PY_CONTENT = r"""#!/usr/bin/env python3
+'''Build system runner - generates code from reviewed spec documents.
+Usage: python3 scripts/build_runner.py <step>
+'''
+import os, sys, json, subprocess, tempfile
+from datetime import datetime
+
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+FORGE_DIR = os.path.dirname(SCRIPT_DIR)
+REPO_ROOT = os.environ.get("AEOS_REPO_ROOT", os.path.dirname(FORGE_DIR))
+BUILD_STATUS_FILE = os.path.join(FORGE_DIR, "runs", "build-system.json")
+
+STEPS = {
+    "backend": {
+        "label": "Backend & API",
+        "agent": "code-architect",
+        "source_dirs": ["01-requirements", "03-analysis", "04-architecture", "06-engineering"],
+        "source_files": [],
+        "output_dir": "15-build/backend",
+    },
+    "frontend": {
+        "label": "Frontend UI",
+        "agent": "frontend-coder",
+        "source_dirs": ["02-design"],
+        "source_files": ["01-requirements/prd.md", "06-engineering/frontend-spec.md"],
+        "output_dir": "15-build/frontend",
+    },
+    "integration": {
+        "label": "Integration Layer",
+        "agent": "integration-engineer",
+        "source_dirs": [],
+        "source_files": [
+            "04-architecture/api-design.md",
+            "06-engineering/integration-spec.md",
+            "06-engineering/backend-spec.md",
+        ],
+        "output_dir": "15-build/integration",
+    },
+    "tests": {
+        "label": "Test Suite",
+        "agent": "qa-coder",
+        "source_dirs": ["07-quality"],
+        "source_files": ["06-engineering/backend-spec.md", "06-engineering/frontend-spec.md"],
+        "output_dir": "15-build/tests",
+    },
+    "infra": {
+        "label": "Infrastructure",
+        "agent": "devops-coder",
+        "source_dirs": ["08-operations"],
+        "source_files": ["04-architecture/deployment-architecture.md"],
+        "output_dir": "15-build/infra",
+    },
+}
+
+def load_build_status():
+    if os.path.exists(BUILD_STATUS_FILE):
+        try:
+            with open(BUILD_STATUS_FILE) as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {}
+
+def save_step_status(step, status_val, files=None, error=None):
+    status = load_build_status()
+    existing = status.get(step, {})
+    status[step] = {
+        "status": status_val,
+        "files": files if files is not None else existing.get("files", []),
+        "generated_at": datetime.now().isoformat() if status_val == "complete" else existing.get("generated_at", ""),
+        "error": error,
+    }
+    with open(BUILD_STATUS_FILE, "w") as f:
+        json.dump(status, f, indent=2)
+
+def collect_docs(meta):
+    docs = []
+    for dir_name in meta.get("source_dirs", []):
+        dir_path = os.path.join(FORGE_DIR, dir_name)
+        if os.path.isdir(dir_path):
+            for fname in sorted(os.listdir(dir_path)):
+                if fname.endswith(".md"):
+                    fpath = os.path.join(dir_path, fname)
+                    if os.path.getsize(fpath) > 0:
+                        with open(fpath, encoding="utf-8") as f:
+                            content = f.read()
+                        docs.append("=== SOURCE: " + dir_name + "/" + fname + " ===\n" + content)
+    for rel_file in meta.get("source_files", []):
+        fpath = os.path.join(FORGE_DIR, rel_file)
+        if os.path.exists(fpath) and os.path.getsize(fpath) > 0:
+            with open(fpath, encoding="utf-8") as f:
+                content = f.read()
+            docs.append("=== SOURCE: " + rel_file + " ===\n" + content)
+    return "\n\n".join(docs)
+
+def load_agent(agent_name):
+    path = os.path.join(FORGE_DIR, "11-agents", agent_name + ".md")
+    if os.path.exists(path):
+        with open(path, encoding="utf-8") as f:
+            return f.read()
+    return "# Agent: " + agent_name + "\nGenerate code based on the provided specifications."
+
+def invoke_ai(prompt, tool, model_id):
+    with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".txt", encoding="utf-8") as tmp:
+        tmp_path = tmp.name
+    try:
+        if tool == "gemini":
+            cmd = ["gemini", "--skip-trust"]
+            if model_id:
+                cmd += ["-m", model_id]
+            cmd += ["-p", prompt]
+        elif tool == "claude":
+            cmd = ["claude", "-p", prompt, "--output-format", "text"]
+        else:
+            cmd = ["gemini", "--skip-trust", "-p", prompt]
+        with open(tmp_path, "w") as out_f:
+            result = subprocess.run(cmd, stdout=out_f, stderr=subprocess.PIPE, timeout=600)
+        if result.returncode != 0:
+            err = result.stderr.decode("utf-8", errors="replace") if result.stderr else "AI call failed"
+            return None, err
+        with open(tmp_path, encoding="utf-8") as f:
+            return f.read(), None
+    except subprocess.TimeoutExpired:
+        return None, "AI call timed out after 10 minutes"
+    except FileNotFoundError:
+        return None, "AI tool '" + tool + "' not found in PATH"
+    finally:
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
+
+def sanitize_path(candidate):
+    '''Strip known bad prefixes the AI sometimes emits and reject invalid paths.'''
+    p = candidate.strip()
+    # Reject paths with spaces after the name (e.g. "file.json (update)")
+    if " (" in p or p.endswith(")"):
+        return None
+    # Strip leading 15-build/<anything>/ prefix — AI sometimes outputs full project paths
+    parts = p.replace("\\", "/").split("/")
+    if parts and parts[0] == "15-build":
+        parts = parts[2:]  # drop "15-build" and the step name
+    # Strip leading .forge/ prefix
+    if parts and parts[0] == ".forge":
+        parts = parts[1:]
+    # Reject empty or path-traversal attempts
+    parts = [p2 for p2 in parts if p2 and p2 != ".."]
+    if not parts:
+        return None
+    return "/".join(parts)
+
+def parse_files(output_text):
+    files = {}
+    current_path = None
+    current_lines = []
+    for line in output_text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("=== ") and stripped.endswith(" ==="):
+            if current_path and not current_path.startswith("SOURCE:"):
+                files[current_path] = "\n".join(current_lines).strip()
+            candidate = stripped[4:-4].strip()
+            if candidate.startswith("SOURCE:"):
+                current_path = None
+                current_lines = []
+            else:
+                clean = sanitize_path(candidate)
+                current_path = clean  # None = skip this block
+                current_lines = []
+        elif current_path:
+            current_lines.append(line)
+    if current_path and not current_path.startswith("SOURCE:"):
+        files[current_path] = "\n".join(current_lines).strip()
+    return files
+
+def run_step(step):
+    meta = STEPS.get(step)
+    if not meta:
+        print("[BUILD] Unknown step: " + step)
+        sys.exit(1)
+
+    print("[BUILD] Running: " + meta["label"])
+    save_step_status(step, "running")
+
+    docs = collect_docs(meta)
+    if not docs.strip():
+        msg = "No source documents found. Generate and review the spec docs first."
+        save_step_status(step, "error", error=msg)
+        print("[BUILD] " + msg)
+        return False
+
+    persona = load_agent(meta["agent"])
+    prompt = (persona + "\n\n---\n\n## Your Task\n\n"
+              "Based on the specification documents below, generate a complete, working "
+              + meta["label"] + " implementation.\n\n"
+              "Use the output format described in your agent definition:\n"
+              "=== path/to/filename.ext ===\n"
+              "<file content>\n\n"
+              "Include every file needed. Start with README.md.\n\n"
+              "---\n\n## Specification Documents\n\n" + docs)
+
+    tool = os.environ.get("FORGE_TOOL", "gemini")
+    model_id = os.environ.get("FORGE_MODEL", "")
+    print("[BUILD] Invoking AI (" + tool + " " + (model_id or "default") + ")...")
+
+    output, error = invoke_ai(prompt, tool, model_id)
+    if error or not output:
+        msg = error or "AI returned empty output"
+        save_step_status(step, "error", error=msg)
+        print("[BUILD] Error: " + msg)
+        return False
+
+    parsed = parse_files(output)
+    if not parsed:
+        parsed = {"output.md": output}
+
+    out_dir = os.path.join(FORGE_DIR, meta["output_dir"])
+    os.makedirs(out_dir, exist_ok=True)
+
+    file_list = []
+    for rel_path, content in parsed.items():
+        parts = rel_path.replace("\\", "/").split("/")
+        full_path = os.path.join(out_dir, *parts)
+        os.makedirs(os.path.dirname(full_path), exist_ok=True)
+        with open(full_path, "w", encoding="utf-8") as f:
+            f.write(content)
+        file_list.append(rel_path)
+        print("[BUILD] Written: " + rel_path)
+
+    save_step_status(step, "complete", files=file_list)
+    print("[BUILD] Done. " + str(len(file_list)) + " files generated.")
+    return True
+
+if __name__ == "__main__":
+    if len(sys.argv) < 2:
+        print("Usage: build_runner.py <step>")
+        sys.exit(1)
+    success = run_step(sys.argv[1])
+    sys.exit(0 if success else 1)
 """
 
 TEMPLATE = '''#!/usr/bin/env python3
@@ -1893,6 +2559,8 @@ SERVER_PY = r\"\"\"{SERVER_PY_CONTENT}\"\"\"
 
 DASHBOARD_HTML = r\"\"\"{DASHBOARD_HTML_CONTENT}\"\"\"
 
+BUILD_RUNNER_PY = r\"\"\"{BUILD_RUNNER_PY_CONTENT}\"\"\"
+
 # -------------------------------------------------------------------------
 # Commands
 # -------------------------------------------------------------------------
@@ -1925,7 +2593,12 @@ def cmd_init():
         "14-assets/presentations",
         "14-assets/prototypes",
         "runs",
-        "scripts"
+        "scripts",
+        "15-build/backend",
+        "15-build/frontend",
+        "15-build/integration",
+        "15-build/tests",
+        "15-build/infra",
     ]
 
     for d in directories:
@@ -1957,7 +2630,12 @@ def cmd_init():
         "content-writer",
         "seo-specialist",
         "growth-marketer",
-        "product-analyst"
+        "product-analyst",
+        "code-architect",
+        "frontend-coder",
+        "integration-engineer",
+        "qa-coder",
+        "devops-coder",
     ]
 
     agent_template = """# Agent: {{agent}}
@@ -2043,6 +2721,8 @@ PENDING
         f.write(RUN_PY)
     with open(os.path.join(FORGE_DIR, "scripts/validate_gates.py"), "w") as f:
         f.write(VALIDATE_GATES_PY)
+    with open(os.path.join(FORGE_DIR, "scripts/build_runner.py"), "w") as f:
+        f.write(BUILD_RUNNER_PY)
     with open(os.path.join(FORGE_DIR, "scripts/server.py"), "w") as f:
         f.write(SERVER_PY)
     with open(os.path.join(FORGE_DIR, "scripts/dashboard.html"), "w") as f:
@@ -2235,15 +2915,24 @@ if __name__ == "__main__":
 '''
 
 def build_forge():
-    agent_code = '    for agent in agents:\n        agent_path = os.path.join(FORGE_DIR, f"11-agents/{agent}.md")\n        if not os.path.exists(agent_path):\n            with open(agent_path, "w") as f:\n'
+    all_agents = {**AGENTS, **CODE_AGENTS}
+    agent_code = ('    for agent in agents:\n'
+                  '        agent_path = os.path.join(FORGE_DIR, f"11-agents/{agent}.md")\n'
+                  '        needs_write = not os.path.exists(agent_path)\n'
+                  '        if not needs_write:\n'
+                  '            with open(agent_path, encoding="utf-8") as _af:\n'
+                  '                _content = _af.read()\n'
+                  '            needs_write = "Define this agent" in _content or "TBD" in _content\n'
+                  '        if needs_write:\n'
+                  '            with open(agent_path, "w") as f:\n')
     first = True
-    for agent, text in AGENTS.items():
+    for agent, text in all_agents.items():
         if first:
             agent_code += f'                if agent == "{agent}":\n                    f.write("""{text}""")\n'
             first = False
         else:
             agent_code += f'                elif agent == "{agent}":\n                    f.write("""{text}""")\n'
-    
+
     agent_code += '                else:\n                    f.write(agent_template.format(agent=agent))\n'
     
     gate_code = '    for gate in gates:\n        gate_path = os.path.join(FORGE_DIR, f"12-gates/{gate}.md")\n        if not os.path.exists(gate_path):\n            with open(gate_path, "w") as f:\n'
@@ -2264,6 +2953,7 @@ def build_forge():
         DASHBOARD_HTML_CONTENT=DASHBOARD_HTML_CONTENT,
         FORGE_VERSION=FORGE_VERSION,
         SERVER_PY_CONTENT=SERVER_PY_CONTENT,
+        BUILD_RUNNER_PY_CONTENT=BUILD_RUNNER_PY_CONTENT,
     )
 
     with open("forge", "w") as f:
