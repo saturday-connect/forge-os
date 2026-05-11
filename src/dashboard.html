@@ -320,6 +320,9 @@ body {
 .badge-needs-review { background: var(--amber-dim); color: var(--amber); }
 .badge-empty { background: var(--bg-3); color: var(--text-3); }
 .badge-in-progress { background: var(--blue-dim); color: var(--blue); }
+.badge-pr_created { background: var(--green-dim); color: var(--green); }
+.badge-merged { background: rgba(139,92,246,.15); color: #8b5cf6; }
+.badge-branched { background: var(--blue-dim); color: var(--blue); }
 
 .priority-critical { background: var(--red-dim); color: var(--red); }
 .priority-high { background: var(--amber-dim); color: var(--amber); }
@@ -1217,6 +1220,74 @@ body {
   overflow-x: auto;
   color: var(--green);
 }
+/* Secrets table */
+.secrets-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.secrets-table th {
+  text-align: left;
+  padding: 6px 10px;
+  color: var(--text-3);
+  font-weight: 500;
+  font-size: 11px;
+  border-bottom: 1px solid var(--border);
+}
+.secrets-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+.secrets-table tr:last-child td { border-bottom: none; }
+.secrets-table tr:hover td { background: var(--bg-2); }
+.secret-name {
+  font-family: monospace;
+  font-size: 11px;
+  color: var(--text-1);
+  font-weight: 600;
+}
+.secret-desc {
+  color: var(--text-3);
+  font-size: 11px;
+  line-height: 1.4;
+  max-width: 220px;
+}
+.secret-input-wrap {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.secret-input {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 5px 8px;
+  font-size: 11px;
+  color: var(--text-1);
+  font-family: monospace;
+  width: 180px;
+  outline: none;
+}
+.secret-input:focus { border-color: var(--blue); }
+.secret-type-toggle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--text-2);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.secret-type-toggle input { cursor: pointer; accent-color: var(--blue); }
+.badge-secret { background: var(--red-dim, rgba(239,68,68,.15)); color: var(--red, #ef4444); }
+.badge-variable { background: var(--blue-dim); color: var(--blue); }
+.badge-configured { background: var(--green-dim); color: var(--green); }
+.badge-missing { background: var(--bg-2); color: var(--text-3); }
+.secrets-push-btn {
+  white-space: nowrap;
+  min-width: 72px;
+}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.52.0/min/vs/loader.js"></script>
 </head>
@@ -1525,12 +1596,14 @@ body {
           <div class="card-title">Git Configuration</div>
           <div id="build-git-summary" style="font-size:12px;color:var(--text-2);">Configure git in Settings to enable push and PR creation.</div>
         </div>
-        <button class="btn btn-secondary" onclick="startBuild()" id="btn-start-build" style="margin-bottom:16px;">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M6 3v12"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 01-9 9"/>
-          </svg>
-          Create Git Branch &amp; PR
+        <button class="btn btn-secondary" onclick="startReviewAndPush()" id="btn-start-build" style="margin-bottom:16px;">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>
+          Review &amp; Push
         </button>
+
+        <!-- Pre-push review panel -->
+        <div id="review-panel" style="display:none;margin-bottom:16px;"></div>
+
         <div style="font-size:12px;font-weight:600;color:var(--text-2);margin-bottom:10px;text-transform:uppercase;letter-spacing:0.06em;">Build History</div>
         <div class="build-layout" id="build-history"></div>
       </div>
@@ -1541,32 +1614,24 @@ body {
       <div class="view-header">
         <div>
           <div class="view-title">Deploy</div>
-          <div class="view-subtitle">Environment management and CI/CD setup</div>
+          <div class="view-subtitle">Environments, GitHub Secrets &amp; Variables, CI/CD</div>
         </div>
       </div>
       <div class="view-body">
         <div class="deploy-grid" id="deploy-envs"></div>
-        <div class="card">
-          <div class="card-title">CI/CD Setup</div>
-          <div class="cicd-info">
-            Generate a GitHub Actions workflow to auto-commit Forge docs on every run.
-            <div class="cicd-code"># .github/workflows/forge-docs.yml
-name: Forge Docs
-on: [push]
-jobs:
-  forge:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Generate docs
-        run: ./forge generate all
-      - name: Commit
-        run: |
-          git config user.email "forge@ci"
-          git config user.name "Forge Bot"
-          git add .forge/
-          git diff --staged --quiet || git commit -m "forge: auto-generated docs"
-          git push</div>
+
+        <!-- GitHub Secrets & Variables -->
+        <div class="card" style="margin-top:16px">
+          <div class="card-title" style="display:flex;align-items:center;justify-content:space-between">
+            <span>GitHub Secrets &amp; Variables</span>
+            <button class="btn btn-ghost btn-sm" onclick="refreshSecrets()" id="secrets-refresh-btn">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M1 4v6h6"/><path d="M23 20v-6h-6"/><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4-4.64 4.36A9 9 0 0 1 3.51 15"/></svg>
+              Refresh
+            </button>
+          </div>
+          <div id="secrets-status-bar" style="display:none;padding:8px 12px;border-radius:6px;font-size:12px;margin-bottom:12px"></div>
+          <div id="secrets-container">
+            <div style="font-size:12px;color:var(--text-3);padding:12px 0">Loading secrets list…</div>
           </div>
         </div>
       </div>
@@ -3041,8 +3106,31 @@ function closeBuildCodePanel() {
   buildCodePanelStep = null;
 }
 
+const BUILD_STATUS_LABELS = {
+  merged:     'Merged',
+  pr_created: 'PR Open',
+  pushed:     'Pushed',
+  pushing:    'Pushing…',
+  committed:  'Committed',
+  branched:   'Branched',
+  pending:    'Pending',
+  error:      'Error',
+};
+
+const BUILD_STEP_ICONS = {
+  pr_created: 'checkCircle',
+  pushed:     'cloudUp',
+  pushing:    'cloudUp',
+  committed:  'gitBranch',
+  branched:   'gitBranch',
+  pending:    'clock',
+  error:      'xCircle',
+};
+
 function renderBuild() {
   fetchBuildSteps();
+  syncReviewStatus();
+  checkAllPrStatuses();
   const git = state.git || {};
   const builds = state.builds || [];
 
@@ -3050,9 +3138,9 @@ function renderBuild() {
   if (git.repo_url) {
     gitSummary.innerHTML = `
       <div style="display:flex;flex-direction:column;gap:4px;">
-        <div><span style="color:var(--text-3)">Repo:</span> <code style="font-size:11px">${git.repo_url}</code></div>
-        <div><span style="color:var(--text-3)">Branch prefix:</span> <code style="font-size:11px">${git.branch_prefix || 'forge'}</code></div>
-        <div><span style="color:var(--text-3)">Default branch:</span> <code style="font-size:11px">${git.default_branch || 'main'}</code></div>
+        <div><span style="color:var(--text-3)">Repo:</span> <code style="font-size:11px">${escapeHtml(git.repo_url)}</code></div>
+        <div><span style="color:var(--text-3)">Branch prefix:</span> <code style="font-size:11px">${escapeHtml(git.branch_prefix || 'forge')}</code></div>
+        <div><span style="color:var(--text-3)">Default branch:</span> <code style="font-size:11px">${escapeHtml(git.default_branch || 'main')}</code></div>
       </div>
     `;
   } else {
@@ -3061,42 +3149,387 @@ function renderBuild() {
 
   const historyEl = document.getElementById('build-history');
   if (builds.length === 0) {
-    historyEl.innerHTML = `<div style="font-size:12px;color:var(--text-3);padding:20px;text-align:center;">No builds yet. Click "Start Build" to create your first build.</div>`;
+    historyEl.innerHTML = `<div style="font-size:12px;color:var(--text-3);padding:20px;text-align:center;">No builds yet. Click "Review &amp; Push" to create your first build.</div>`;
     return;
   }
 
   historyEl.innerHTML = [...builds].reverse().map(b => {
     const logs = (b.log || []).join('\n');
-    const prHtml = b.pr_url
-      ? `<a href="${b.pr_url}" target="_blank" class="pr-link">${icon('externalLink',11)} Open PR</a>`
-      : '';
-    return `
-      <div class="build-history-item">
-        <div class="build-history-header">
-          <span class="badge badge-${b.status}">${b.status}</span>
-          <span class="build-branch">${b.branch}</span>
-          <span class="build-date">${new Date(b.created_at).toLocaleString()}</span>
+    const statusLabel = BUILD_STATUS_LABELS[b.status] || b.status;
+    const isLive = !b.log; // in-progress entries have no log yet
+
+    const isMerged = b.status === 'merged';
+    const prCard = b.pr_url ? (isMerged ? `
+      <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:rgba(139,92,246,.12);border-radius:6px;border:1px solid #8b5cf6;margin-top:8px;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8b5cf6" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3v12"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 01-9 9"/></svg>
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:12px;font-weight:700;color:#8b5cf6;">Shipped to ${escapeHtml((state.git||{}).default_branch||'main')} ✓</div>
+          <div style="font-size:11px;color:var(--text-3);">
+            ${b.merged_by ? `Merged by <b>${escapeHtml(b.merged_by)}</b>` : 'Merged'}
+            ${b.merged_at ? ' · ' + new Date(b.merged_at).toLocaleString() : ''}
+            ${b.branch_deleted ? ' · <span style="color:#8b5cf6">branch deleted</span>' : ''}
+          </div>
         </div>
-        ${prHtml}
-        ${logs ? `<div class="build-log">${escapeHtml(logs)}</div>` : ''}
+        <a href="${b.pr_url}" target="_blank" class="btn btn-ghost btn-sm" style="white-space:nowrap;flex-shrink:0;">
+          ${icon('externalLink',12)} View PR
+        </a>
+      </div>` : `
+      <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--green-dim);border-radius:6px;border:1px solid var(--green);margin-top:8px;">
+        ${icon('checkCircle',16)}
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:12px;font-weight:600;color:var(--green);">Pull Request Open — awaiting review</div>
+          <div style="font-size:11px;color:var(--text-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(b.pr_url)}</div>
+        </div>
+        <button class="btn btn-ghost btn-xs" onclick="checkPrStatus('${escapeHtml(b.pr_url)}')" style="flex-shrink:0;" title="Check if merged">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M1 4v6h6"/><path d="M23 20v-6h-6"/><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4-4.64 4.36A9 9 0 0 1 3.51 15"/></svg>
+        </button>
+        <a href="${b.pr_url}" target="_blank" class="btn btn-sm" style="background:var(--green);color:#fff;border-color:var(--green);white-space:nowrap;flex-shrink:0;">
+          ${icon('externalLink',12)} Open PR
+        </a>
+      </div>`) : '';
+
+    const liveProgress = isLive ? `
+      <div style="margin-top:8px;padding:8px 10px;background:var(--bg-2);border-radius:6px;font-size:11px;color:var(--text-2);display:flex;align-items:center;gap:8px;">
+        <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--blue);animation:pulse 1.2s ease-in-out infinite;"></span>
+        ${statusLabel} — branch <code>${escapeHtml(b.branch)}</code>
+      </div>` : '';
+
+    const copyBtn = `<button class="btn btn-ghost btn-sm" onclick="navigator.clipboard.writeText('${escapeHtml(b.branch)}')" style="margin-left:4px;padding:2px 6px;" title="Copy branch name">${icon('clipboardCopy',11)}</button>`;
+
+    return `
+      <div class="build-history-item" ${isLive ? 'style="border-color:var(--blue)"' : ''}>
+        <div class="build-history-header">
+          <span class="badge badge-${b.status}">${statusLabel}</span>
+          <span class="build-branch">${escapeHtml(b.branch)}</span>
+          ${copyBtn}
+          <span class="build-date" style="margin-left:auto;">${new Date(b.created_at).toLocaleString()}</span>
+        </div>
+        ${liveProgress}
+        ${prCard}
+        ${logs ? `<details style="margin-top:8px;"><summary style="font-size:11px;color:var(--text-3);cursor:pointer;">Build log (${(b.log||[]).length} lines)</summary><div class="build-log" style="margin-top:4px;">${escapeHtml(logs)}</div></details>` : ''}
       </div>
     `;
   }).join('');
 }
 
-async function startBuild() {
+// ============================================================
+// Pre-push review flow
+// ============================================================
+// ============================================================
+// PR merge status
+// ============================================================
+const _checkedPrUrls = new Set();   // avoid re-checking already-merged PRs this session
+
+async function checkAllPrStatuses() {
+  const builds = state.builds || [];
+  const git = state.git || {};
+  if (!git.token) return;           // no token = can't call GitHub API
+  for (const b of builds) {
+    if (!b.pr_url) continue;
+    if (b.status === 'merged') continue;          // already terminal
+    if (_checkedPrUrls.has(b.pr_url)) continue;  // already checked this session
+    _checkedPrUrls.add(b.pr_url);
+    checkPrStatus(b.pr_url);        // fire-and-forget; result comes on next state poll
+  }
+}
+
+async function checkPrStatus(prUrl) {
+  try {
+    const res = await fetch('/api/pr-status?pr_url=' + encodeURIComponent(prUrl));
+    const d = await res.json();
+    if (d.merged) {
+      // Remove from checked cache so the badge re-renders on next loadState()
+      _checkedPrUrls.delete(prUrl);
+      loadState();  // force immediate re-poll so merged badge appears without waiting
+    }
+  } catch (e) { /* silent */ }
+}
+
+let _reviewPollTimer = null;
+
+async function syncReviewStatus() {
+  // Called on every renderBuild() — re-attaches polling and panel after refresh/tab switch
+  try {
+    const res = await fetch('/api/build-review');
+    const d = await res.json();
+    if (!d || d.status === 'idle') return;
+    // Show panel regardless of how we got here
+    showReviewPanel(d);
+    // Re-enable or disable the push button based on review state
+    const btn = document.getElementById('btn-start-build');
+    if (btn) btn.disabled = (d.status === 'reviewing');
+    // If still running and no poll is active, restart polling
+    if (d.status === 'reviewing' && !_reviewPollTimer) {
+      pollReview();
+    }
+  } catch (e) { /* silent — network may not be ready */ }
+}
+
+async function startReviewAndPush() {
+  const btn = document.getElementById('btn-start-build');
+  btn.disabled = true;
+  btn.innerHTML = `<span style="opacity:.6">Starting review…</span>`;
+
+  try {
+    const res = await fetch('/api/build-review', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({})
+    });
+    const d = await res.json();
+    if (d.status === 'started' || d.status === 'already_reviewing') {
+      showReviewPanel({ status: 'reviewing' });
+      pollReview();
+    } else {
+      showToast('Could not start review', 'error');
+      btn.disabled = false;
+      btn.innerHTML = `${icon('eye',14)} Review &amp; Push`;
+    }
+  } catch (e) {
+    showToast('Review failed to start', 'error');
+    btn.disabled = false;
+    btn.innerHTML = `${icon('eye',14)} Review &amp; Push`;
+  }
+}
+
+function pollReview() {
+  if (_reviewPollTimer) clearInterval(_reviewPollTimer);
+  _reviewPollTimer = setInterval(async () => {
+    try {
+      const res = await fetch('/api/build-review');
+      const d = await res.json();
+      showReviewPanel(d);
+      if (d.status !== 'reviewing') {
+        clearInterval(_reviewPollTimer);
+        _reviewPollTimer = null;
+        // Re-enable the button
+        const btn = document.getElementById('btn-start-build');
+        if (btn) { btn.disabled = false; btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg> Review &amp; Push`; }
+      }
+    } catch (e) { /* silent */ }
+  }, 2500);
+}
+
+function showReviewPanel(data) {
+  const panel = document.getElementById('review-panel');
+  if (!panel) return;
+
+  if (!data || data.status === 'idle') {
+    panel.style.display = 'none';
+    return;
+  }
+
+  panel.style.display = 'block';
+
+  if (data.status === 'reviewing') {
+    const linesNote = data.total_changed_lines > 800
+      ? `<div style="font-size:11px;color:var(--text-3);margin-top:4px;">${data.total_changed_lines.toLocaleString()} lines changed — sending diff headers only to keep review fast.</div>`
+      : '';
+    panel.innerHTML = `
+      <div class="card" style="border-color:var(--blue)">
+        <div style="display:flex;align-items:center;gap:10px;padding:4px 0 8px">
+          <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--blue);animation:pulse 1.2s ease-in-out infinite;flex-shrink:0;"></span>
+          <span style="font-size:13px;font-weight:600;color:var(--text-1)">AI code review in progress…</span>
+        </div>
+        <div style="font-size:12px;color:var(--text-3)">Reviewing only staged changes against spec docs.</div>
+        ${linesNote}
+        <div style="margin-top:12px;display:flex;gap:8px;">
+          <button class="btn btn-ghost btn-sm" onclick="cancelReview()" style="color:var(--red);border-color:var(--red);">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+            Cancel Review
+          </button>
+          <button class="btn btn-secondary btn-sm" onclick="skipReviewAndPush()">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3v12"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 01-9 9"/></svg>
+            Skip &amp; Push Directly
+          </button>
+        </div>
+      </div>`;
+    return;
+  }
+
+  if (data.status === 'cancelled') {
+    panel.innerHTML = `
+      <div class="card" style="border-color:var(--border)">
+        <div style="font-size:13px;font-weight:600;color:var(--text-2);margin-bottom:8px;">Review cancelled</div>
+        <div style="font-size:12px;color:var(--text-3);margin-bottom:12px;">Changes unstaged. You can start a new review or push directly.</div>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-primary btn-sm" onclick="startReviewAndPush()">Start New Review</button>
+          <button class="btn btn-secondary btn-sm" onclick="skipReviewAndPush()">Push Directly</button>
+          <button class="btn btn-ghost btn-sm" onclick="cancelReview()">Dismiss</button>
+        </div>
+      </div>`;
+    return;
+  }
+
+  if (data.status === 'no_changes') {
+    panel.innerHTML = `
+      <div class="card" style="border-color:var(--border)">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--text-3)" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          <span style="font-size:13px;font-weight:600;color:var(--text-2)">Nothing to push</span>
+        </div>
+        <div style="font-size:12px;color:var(--text-3);line-height:1.6;">${escapeHtml(data.review || 'No changes since the last commit.')}</div>
+        <div style="margin-top:12px;">
+          <button class="btn btn-ghost btn-sm" onclick="cancelReview()">Dismiss</button>
+        </div>
+      </div>`;
+    return;
+  }
+
+  if (data.status === 'error') {
+    panel.innerHTML = `
+      <div class="card" style="border-color:var(--red)">
+        <div style="font-size:13px;font-weight:600;color:var(--red);margin-bottom:8px;">${icon('xCircle',14)} Review Failed</div>
+        <div style="font-size:12px;color:var(--text-2);white-space:pre-wrap;">${escapeHtml(data.review || 'Unknown error')}</div>
+        <div style="margin-top:12px;display:flex;gap:8px;">
+          <button class="btn btn-primary btn-sm" onclick="proceedWithPush()">Push Anyway</button>
+          <button class="btn btn-ghost btn-sm" onclick="cancelReview()">Cancel</button>
+        </div>
+      </div>`;
+    return;
+  }
+
+  // Review done
+  const verdictMap = {
+    approve:            { cls: 'var(--green)',  label: '✅ Approve',             hint: 'No blocking issues found.' },
+    approve_with_notes: { cls: 'var(--yellow,#f59e0b)', label: '⚠️ Approve with Notes', hint: 'Minor issues noted — can proceed.' },
+    request_changes:    { cls: 'var(--red)',    label: '❌ Request Changes',      hint: 'Issues must be fixed before merging.' },
+    unknown:            { cls: 'var(--text-2)', label: '? Unknown verdict',       hint: '' },
+    error:              { cls: 'var(--red)',    label: '! Error',                hint: '' },
+  };
+  const v = verdictMap[data.verdict] || verdictMap.unknown;
+
+  const reviewHtml = (data.review || '').replace(/\n/g, '<br>').replace(/`([^`]+)`/g, '<code>$1</code>');
+
+  panel.innerHTML = `
+    <div class="card" style="border-color:${v.cls}">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+        <div>
+          <div style="font-size:13px;font-weight:700;color:${v.cls}">${v.label}</div>
+          <div style="font-size:11px;color:var(--text-3);margin-top:2px;">${v.hint}</div>
+        </div>
+        <div style="font-size:11px;color:var(--text-3);text-align:right;">
+          ${data.diff_stat ? escapeHtml(data.diff_stat.split('\n').slice(-1)[0]) : ''}
+        </div>
+      </div>
+      <details open style="margin-bottom:12px;">
+        <summary style="font-size:12px;font-weight:600;color:var(--text-2);cursor:pointer;margin-bottom:8px;">Review details</summary>
+        <div style="font-size:12px;color:var(--text-2);line-height:1.7;padding:10px;background:var(--bg-2);border-radius:6px;max-height:320px;overflow-y:auto;">${reviewHtml}</div>
+      </details>
+      ${data.diff_stat ? `
+      <details style="margin-bottom:12px;">
+        <summary style="font-size:12px;font-weight:600;color:var(--text-2);cursor:pointer;margin-bottom:8px;">Diff stat</summary>
+        <pre style="font-size:10px;color:var(--green);background:var(--bg);padding:10px;border-radius:6px;overflow-x:auto;margin:0;">${escapeHtml(data.diff_stat)}</pre>
+      </details>` : ''}
+      <div style="display:flex;gap:8px;align-items:center;">
+        <button class="btn btn-primary btn-sm" onclick="proceedWithPush()" style="${data.verdict === 'request_changes' ? 'background:var(--red);border-color:var(--red);' : ''}">
+          ${icon('cloudUp',12)} ${data.verdict === 'request_changes' ? 'Push Anyway' : 'Approve &amp; Push'}
+        </button>
+        <button class="btn btn-ghost btn-sm" onclick="cancelReview()">
+          Cancel
+        </button>
+        <span style="font-size:11px;color:var(--text-3);margin-left:auto;">${new Date(data.timestamp).toLocaleTimeString()}</span>
+      </div>
+    </div>`;
+}
+
+async function proceedWithPush() {
+  const panel = document.getElementById('review-panel');
+  if (panel) panel.innerHTML = `<div class="card" style="border-color:var(--blue)"><div style="font-size:13px;color:var(--blue);">${icon('cloudUp',14)} Pushing to GitHub…</div></div>`;
+
+  try {
+    const res = await fetch('/api/build', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reviewed: true })
+    });
+    const d = await res.json();
+    showToast(`Build started: ${d.branch || ''}`, 'info');
+    // Clear review file
+    await fetch('/api/build-review', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'clear' }) });
+    if (panel) panel.style.display = 'none';
+    loadState();
+  } catch (e) {
+    showToast('Push failed', 'error');
+  }
+}
+
+async function cancelReview() {
+  // If reviewing → send cancel (kills AI process + unstages)
+  // If done/cancelled/idle → just clear the panel
+  let action = 'clear';
+  try {
+    const r = await fetch('/api/build-review');
+    const d = await r.json();
+    if (d.status === 'reviewing') action = 'cancel';
+  } catch (e) { /* use clear */ }
+
+  await fetch('/api/build-review', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action })
+  });
+
+  if (_reviewPollTimer) { clearInterval(_reviewPollTimer); _reviewPollTimer = null; }
+
+  // If we cancelled a running review, show the cancelled card briefly then hide
+  if (action === 'cancel') {
+    // syncReviewStatus will pick up the cancelled state on next renderBuild cycle
+    return;
+  }
+
+  // Otherwise just dismiss the panel
+  const panel = document.getElementById('review-panel');
+  if (panel) panel.style.display = 'none';
+  const btn = document.getElementById('btn-start-build');
+  if (btn) { btn.disabled = false; btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg> Review &amp; Push`; }
+}
+
+async function skipReviewAndPush() {
+  // Cancel any running review first, then push directly
+  try {
+    const r = await fetch('/api/build-review');
+    const d = await r.json();
+    if (d.status === 'reviewing') {
+      await fetch('/api/build-review', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'cancel' })
+      });
+      // Give the server a moment to kill the process and unstage
+      await new Promise(res => setTimeout(res, 800));
+    }
+  } catch (e) { /* proceed anyway */ }
+
+  if (_reviewPollTimer) { clearInterval(_reviewPollTimer); _reviewPollTimer = null; }
+
+  const panel = document.getElementById('review-panel');
+  if (panel) panel.innerHTML = `<div class="card" style="border-color:var(--blue)"><div style="font-size:13px;color:var(--blue);">Pushing to GitHub…</div></div>`;
+
   try {
     const res = await fetch('/api/build', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({})
     });
-    const data = await res.json();
-    showToast(`Build started: ${data.branch || ''}`, 'info');
+    const d = await res.json();
+    showToast(`Build started: ${d.branch || ''}`, 'info');
+    await fetch('/api/build-review', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'clear' })
+    });
+    if (panel) panel.style.display = 'none';
     loadState();
   } catch (e) {
-    showToast('Build failed to start', 'error');
+    showToast('Push failed', 'error');
   }
+}
+
+async function startBuild() {
+  // Legacy: called from Overview quick action — goes directly to review flow
+  switchView('build');
+  await startReviewAndPush();
 }
 
 // ============================================================
@@ -3132,6 +3565,186 @@ function renderDeploy() {
       </div>
     `;
   }).join('');
+
+  // Load secrets panel
+  refreshSecrets();
+}
+
+// ============================================================
+// Secrets & Variables
+// ============================================================
+let _secretsData = null;
+
+async function refreshSecrets() {
+  const container = document.getElementById('secrets-container');
+  if (!container) return;
+  try {
+    const res = await fetch('/api/secrets');
+    _secretsData = await res.json();
+    renderSecretsTable(_secretsData);
+  } catch (e) {
+    container.innerHTML = `<div style="font-size:12px;color:var(--red);padding:12px 0">Failed to load secrets: ${e.message}</div>`;
+  }
+}
+
+function renderSecretsTable(data) {
+  const container = document.getElementById('secrets-container');
+  if (!container) return;
+
+  const secrets = data.secrets || [];
+  const repo = data.repo || '';
+  const hasToken = data.has_token;
+  const ghCli = data.gh_cli;
+
+  if (!hasToken) {
+    container.innerHTML = `<div style="font-size:12px;color:var(--yellow,#f59e0b);padding:8px 0">${icon('warning',14)} GitHub token not configured. Add it in <button class="btn btn-ghost btn-xs" onclick="switchView('settings')">Settings</button> to push secrets.</div>`;
+    return;
+  }
+
+  if (secrets.length === 0) {
+    container.innerHTML = `<div style="font-size:12px;color:var(--text-3);padding:12px 0">No <code>secrets-required.md</code> found in build output. Run the <b>Infrastructure</b> build step first.</div>`;
+    return;
+  }
+
+  const configured = secrets.filter(s => s.configured).length;
+  const total = secrets.length;
+  const pct = Math.round((configured / total) * 100);
+
+  const statusBar = document.getElementById('secrets-status-bar');
+  if (statusBar) {
+    const allDone = configured === total;
+    statusBar.style.display = 'block';
+    statusBar.style.background = allDone ? 'var(--green-dim)' : 'var(--bg-2)';
+    statusBar.style.color = allDone ? 'var(--green)' : 'var(--text-2)';
+    statusBar.innerHTML = `${icon(allDone ? 'checkCircle' : 'informationCircle', 13)} &nbsp;${configured}/${total} secrets configured${repo ? ` &nbsp;·&nbsp; <span style="opacity:.7">github.com/${repo}</span>` : ''}${ghCli ? '' : ' &nbsp;·&nbsp; <span style="opacity:.6">Using GitHub API (install <code>gh</code> CLI for simpler auth)</span>'}`;
+  }
+
+  container.innerHTML = `
+    <table class="secrets-table">
+      <thead>
+        <tr>
+          <th style="width:200px">Name</th>
+          <th>Description</th>
+          <th style="width:80px">Workflow</th>
+          <th style="width:60px">Status</th>
+          <th style="width:240px">Value</th>
+          <th style="width:110px">Type</th>
+          <th style="width:80px"></th>
+        </tr>
+      </thead>
+      <tbody>
+        ${secrets.map(s => `
+          <tr id="secret-row-${s.name}">
+            <td><span class="secret-name">${escapeHtml(s.name)}</span></td>
+            <td><span class="secret-desc">${escapeHtml(s.description)}</span></td>
+            <td><span style="font-size:10px;color:var(--text-3)">${escapeHtml(s.workflow || '')}</span></td>
+            <td>
+              ${s.configured
+                ? `<span class="badge badge-configured" title="Set ${s.set_at ? new Date(s.set_at).toLocaleString() : ''}">${icon('checkCircle',11)} Set</span>`
+                : `<span class="badge badge-missing">Missing</span>`
+              }
+            </td>
+            <td>
+              <div class="secret-input-wrap">
+                <input type="password"
+                  class="secret-input"
+                  id="secret-val-${s.name}"
+                  placeholder="${s.configured ? '••••••• (leave blank to skip)' : 'Enter value…'}"
+                  autocomplete="new-password"
+                />
+              </div>
+            </td>
+            <td>
+              <label class="secret-type-toggle">
+                <input type="checkbox"
+                  id="secret-prot-${s.name}"
+                  ${s.protected !== false ? 'checked' : ''}
+                  onchange="updateSecretTypeBadge('${s.name}')"
+                />
+                <span id="secret-type-badge-${s.name}" class="badge ${s.protected !== false ? 'badge-secret' : 'badge-variable'}">
+                  ${s.protected !== false ? 'Secret' : 'Variable'}
+                </span>
+              </label>
+            </td>
+            <td>
+              <button class="btn btn-primary btn-xs secrets-push-btn"
+                onclick="pushSecret('${s.name}')"
+                id="secret-btn-${s.name}">
+                ${icon('cloudUp', 11)} Push
+              </button>
+            </td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+    <div style="margin-top:12px;display:flex;gap:8px;align-items:center">
+      <button class="btn btn-primary btn-sm" onclick="pushAllSecrets()">
+        ${icon('cloudUp', 12)} Push All Filled
+      </button>
+      <span style="font-size:11px;color:var(--text-3)">Only rows with a value entered will be pushed</span>
+    </div>
+  `;
+}
+
+function updateSecretTypeBadge(name) {
+  const chk = document.getElementById(`secret-prot-${name}`);
+  const badge = document.getElementById(`secret-type-badge-${name}`);
+  if (!chk || !badge) return;
+  if (chk.checked) {
+    badge.className = 'badge badge-secret';
+    badge.textContent = 'Secret';
+  } else {
+    badge.className = 'badge badge-variable';
+    badge.textContent = 'Variable';
+  }
+}
+
+async function pushSecret(name) {
+  const valEl = document.getElementById(`secret-val-${name}`);
+  const protEl = document.getElementById(`secret-prot-${name}`);
+  const btn = document.getElementById(`secret-btn-${name}`);
+  if (!valEl || !btn) return;
+
+  const value = valEl.value.trim();
+  if (!value) {
+    showToast(`Enter a value for ${name} first`, 'error');
+    return;
+  }
+
+  btn.disabled = true;
+  btn.innerHTML = `<span style="opacity:.6">Pushing…</span>`;
+
+  try {
+    const res = await fetch('/api/secrets', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, value, protected: protEl ? protEl.checked : true }),
+    });
+    const d = await res.json();
+    if (!res.ok) throw new Error(d.error || 'Failed');
+    valEl.value = '';
+    showToast(`${name} pushed to GitHub`, 'success');
+    await refreshSecrets();
+  } catch (e) {
+    showToast(`Failed: ${e.message}`, 'error');
+    btn.disabled = false;
+    btn.innerHTML = `${icon('cloudUp', 11)} Push`;
+  }
+}
+
+async function pushAllSecrets() {
+  const secrets = (_secretsData && _secretsData.secrets) || [];
+  const toPush = secrets.filter(s => {
+    const v = document.getElementById(`secret-val-${s.name}`);
+    return v && v.value.trim();
+  });
+  if (toPush.length === 0) {
+    showToast('No values filled in — enter values first', 'error');
+    return;
+  }
+  for (const s of toPush) {
+    await pushSecret(s.name);
+  }
 }
 
 // ============================================================
