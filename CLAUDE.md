@@ -77,6 +77,7 @@ For rapid iteration use the dev shortcut:
 | `./forge version` | Print version |
 
 **Multi-project support**: Every command accepts `--project <path>` to target a directory other than the current one. The CLI passes `AEOS_REPO_ROOT` as an env var to the server subprocess.
+**Note**: `./forge --help` is not currently supported as a command. Running `./forge` with no command prints usage.
 
 ---
 
@@ -101,8 +102,11 @@ For rapid iteration use the dev shortcut:
 ├── 12-gates/               ← Gate checkpoint files (PENDING / PASSED)
 ├── 13-decisions/           ← Decision log, change log, ADR index
 ├── 14-assets/              ← Logos, mockups, diagrams, screenshots
+├── 15-build/               ← Generated build artifacts (backend/frontend/integration/tests/infra)
 ├── runs/
 │   ├── status.json         ← Live generation status (polled by dashboard)
+│   ├── build-system.json   ← Build step status per subsystem
+│   ├── build-review.json   ← Pre-push review workflow state
 │   └── run-log.md
 ├── scripts/
 │   ├── server.py           ← HTTP server (generated from SERVER_PY_CONTENT)
@@ -162,15 +166,27 @@ All endpoints served at `http://localhost:<port>`.
 | `GET` | `/api/state` | Full project state (tree, gates, phase, builds, issues, envs) |
 | `GET` | `/api/file?path=<rel>` | Return raw file content |
 | `GET` | `/api/raw-input?name=<file>` | Return raw input file content |
+| `GET` | `/api/tools` | List supported AI tools and models |
+| `GET` | `/api/versions` | List stored file versions |
+| `GET` | `/api/version` | Get file version details |
+| `GET` | `/api/pr-status` | Get pull request status for a build |
+| `GET` | `/api/build-system` | Build subsystem status snapshot |
+| `GET` | `/api/build-file` | Return generated build artifact file content |
+| `GET` | `/api/build-review` | Get pre-push review state |
+| `GET` | `/api/secrets` | List required/known secret values |
 | `POST` | `/api/raw-input` | `{name, content}` — create/update raw input file |
 | `DELETE` | `/api/raw-input` | `{name}` — delete raw input file |
 | `POST` | `/api/generate` | `{stage: "all"\|"context"\|...}` — start generation thread |
 | `POST` | `/api/build` | Start git branch + commit + push + PR in background |
+| `POST` | `/api/build-system` | Generate/update one or more build subsystems into `.forge/15-build/*` |
+| `POST` | `/api/build-review` | Run/cancel/clear pre-push review workflow |
+| `POST` | `/api/secrets` | Save or update project secret values |
 | `POST` | `/api/review` | `{path, status: "reviewed"\|"needs_review"}` — update review + sync gates |
 | `POST` | `/api/fix` | `{path, critique}` — trigger targeted agent regeneration |
 | `POST` | `/api/gate` | `{gate}` — manually toggle gate to PASSED |
 | `POST` | `/api/issue` | `{id?, type, title, description, priority}` — create/update issue |
 | `POST` | `/api/settings` | `{project_name, tool, model, git, environments}` — save settings |
+| `POST` | `/api/version/restore` | Restore a file from stored version history |
 | `POST` | `/api/reset` | Clear all generated docs, reviews, and gate statuses (keep raw input + project-state) |
 
 ### `/api/state` Response Shape
@@ -338,6 +354,10 @@ Keyboard shortcuts: `1`–`8` switch views. Disabled when focused on inputs.
 - Product name field in Settings; reflected in topbar and Overview
 - Gate status computed from review coverage (not manual toggle)
 - Fixed false PASSED gates, false amber on empty files, AEOS branding remnants
+
+### Runtime Note (Doc Gap Closed)
+- Runtime server behavior includes build-system and pre-push review flows that write/read `.forge/15-build/*`, `runs/build-system.json`, and `runs/build-review.json`.
+- Runtime API surface is broader than the original v0.2.0 endpoint list; this reference now includes those active endpoints.
 
 ### v0.1.0
 - Initial agent framework and task orchestration templates
