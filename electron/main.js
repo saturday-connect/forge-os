@@ -567,6 +567,18 @@ function buildTrayMenu() {
     },
     { type: 'separator' },
     {
+      label: 'View Knowledge Base',
+      enabled: !!currentOrg,
+      click: () => {
+        const dir = org.cacheDir(currentOrg)
+        if (require('fs').existsSync(dir)) {
+          shell.openPath(dir)
+        } else {
+          dialog.showMessageBox({ type: 'info', title: 'Knowledge Base', message: `No local cache yet for ${currentOrg}.\n\nForge OS syncs the knowledge base on first launch. Try switching org or restarting.` })
+        }
+      }
+    },
+    {
       label: 'Open in Browser',
       enabled: !!serverPort,
       click: () => { if (serverPort) shell.openExternal(`http://127.0.0.1:${serverPort}`) }
