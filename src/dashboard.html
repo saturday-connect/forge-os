@@ -1373,6 +1373,14 @@ body {
       </span>
       <span class="nav-label">Deploy</span>
     </div>
+    <div class="nav-item" id="nav-knowledge" data-view="knowledge" onclick="switchView('knowledge')" style="display:none">
+      <span class="nav-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0018 18a8.967 8.967 0 00-6 2.292m0-14.25v14.25"/>
+        </svg>
+      </span>
+      <span class="nav-label">Knowledge</span>
+    </div>
     <div class="nav-section-label">Manage</div>
     <div class="nav-item" data-view="issues" onclick="switchView('issues')">
       <span class="nav-icon">
@@ -1488,6 +1496,7 @@ body {
             <span id="generate-error-text" style="flex:1;"></span>
             <button class="btn btn-ghost btn-sm" onclick="dismissGenerationError()" style="padding:2px 8px;font-size:10px;color:var(--red);border-color:var(--red-dim);">Dismiss</button>
           </div>
+          <div id="org-context-bar" style="display:none;align-items:center;gap:6px;font-size:12px;margin-top:4px;"></div>
         </div>
         <div class="stage-grid" id="stage-grid"></div>
       </div>
@@ -1557,6 +1566,14 @@ body {
           <div class="review-panel-section">
             <div class="review-panel-label">Gates</div>
             <div id="review-gates-summary"></div>
+          </div>
+          <div id="review-distill-section" style="display:none;">
+            <div class="divider"></div>
+            <div class="review-panel-section">
+              <div class="review-panel-label">Distil to Org KB</div>
+              <div style="font-size:11px;color:var(--text-3);margin-bottom:8px;">Extract reusable patterns from reviewed stages and save them to your org knowledge base.</div>
+              <div id="review-distill-buttons" style="display:flex;flex-direction:column;gap:6px;"></div>
+            </div>
           </div>
           <div class="divider"></div>
           <div class="review-panel-section">
@@ -1637,6 +1654,30 @@ body {
       </div>
     </div>
 
+    <!-- KNOWLEDGE -->
+    <div class="view" id="view-knowledge">
+      <div class="view-header">
+        <div>
+          <div class="view-title">Knowledge Base</div>
+          <div class="view-subtitle" id="knowledge-subtitle">Distilled patterns from reviewed projects</div>
+        </div>
+      </div>
+      <div class="view-body">
+        <div id="knowledge-pr-banner" style="display:none;margin-bottom:14px;padding:12px 16px;border-radius:8px;border:1px solid var(--border);background:var(--bg-1);font-size:12px;"></div>
+        <div id="knowledge-empty" style="display:none;text-align:center;padding:48px 0;color:var(--text-3);font-size:13px;">
+          No knowledge entries yet. Approve a stage in Review and click "Distill to Org KB".
+        </div>
+        <div id="knowledge-list" style="display:grid;gap:10px;"></div>
+        <div id="knowledge-viewer" style="display:none;margin-top:20px;">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
+            <button class="btn btn-ghost btn-sm" onclick="closeKnowledgeViewer()">← Back</button>
+            <span id="knowledge-viewer-title" style="font-size:12px;font-family:monospace;color:var(--text-2);"></span>
+          </div>
+          <div id="knowledge-viewer-content" class="md-body" style="border:1px solid var(--border);border-radius:8px;padding:20px;"></div>
+        </div>
+      </div>
+    </div>
+
     <!-- ISSUES -->
     <div class="view" id="view-issues">
       <div class="view-header">
@@ -1699,6 +1740,37 @@ body {
         <button class="btn btn-primary btn-sm" onclick="saveSettings()">Save Settings</button>
       </div>
       <div class="view-body">
+        <!-- Profile -->
+        <div style="background:var(--bg-1);border:1px solid var(--border);border-radius:8px;padding:18px;margin-bottom:16px;">
+          <div style="font-size:13px;font-weight:700;margin-bottom:16px;display:flex;align-items:center;gap:8px;color:var(--text);">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-2)" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z"/>
+            </svg>
+            Profile
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
+            <div class="form-group" style="margin-bottom:0;">
+              <label class="form-label">Role</label>
+              <select class="form-select" id="settings-role">
+                <option value="admin">Admin</option>
+                <option value="member">Member</option>
+              </select>
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+              <label class="form-label">Department</label>
+              <select class="form-select" id="settings-department">
+                <option value="all">All (no filter)</option>
+                <option value="product">Product</option>
+                <option value="design">Design</option>
+                <option value="engineering">Engineering</option>
+                <option value="operations">Operations</option>
+                <option value="marketing">Marketing</option>
+              </select>
+            </div>
+          </div>
+          <div style="font-size:11px;color:var(--text-3);margin-top:10px;">Members see only their department's stages in Generate and Review. Admins see everything.</div>
+        </div>
+
         <!-- Project -->
         <div style="background:var(--bg-1);border:1px solid var(--border);border-radius:8px;padding:18px;margin-bottom:16px;">
           <div style="font-size:13px;font-weight:700;margin-bottom:16px;display:flex;align-items:center;gap:8px;color:var(--text);">
@@ -1707,9 +1779,25 @@ body {
             </svg>
             Project
           </div>
-          <div class="form-group" style="margin-bottom:0;">
-            <label class="form-label">Product Name</label>
-            <input type="text" class="form-input" id="settings-product-name" placeholder="e.g. Acme SaaS, MyApp, Project Atlas">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px;">
+            <div class="form-group" style="margin-bottom:0;">
+              <label class="form-label">Product Name</label>
+              <input type="text" class="form-input" id="settings-product-name" placeholder="e.g. Acme SaaS, MyApp, Project Atlas">
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+              <label class="form-label">Project Type</label>
+              <select class="form-select" id="settings-project-type">
+                <option value="standard">Standard Project</option>
+                <option value="knowledge_base">Knowledge Base</option>
+              </select>
+            </div>
+          </div>
+          <div id="settings-org-context-row" style="display:none;margin-top:0;padding-top:14px;border-top:1px solid var(--border);align-items:center;gap:10px;">
+            <input type="checkbox" id="settings-skip-org-context" style="width:14px;height:14px;cursor:pointer;accent-color:var(--accent);">
+            <div>
+              <div style="font-size:12px;font-weight:600;color:var(--text);">Disable org context for this project</div>
+              <div style="font-size:11px;color:var(--text-3);margin-top:1px;">When checked, knowledge and patterns from the org knowledge base will not be injected into generation prompts.</div>
+            </div>
           </div>
         </div>
 
@@ -1768,6 +1856,14 @@ body {
             <div class="form-group">
               <label class="form-label">Branch Prefix</label>
               <input type="text" class="form-input" id="settings-branch-prefix" placeholder="forge">
+            </div>
+            <div class="form-group" style="margin-bottom:0;padding-top:14px;border-top:1px solid var(--border);">
+              <label class="form-label" style="display:flex;align-items:center;gap:6px;">
+                Knowledge Base Repo URL
+                <span style="font-size:10px;color:var(--text-3);font-weight:400;">optional — for distillation PRs</span>
+              </label>
+              <input type="text" class="form-input" id="settings-kb-repo-url" placeholder="https://github.com/org/knowledge-base">
+              <div style="font-size:10px;color:var(--text-3);margin-top:4px;">Distilled patterns will be pushed as PRs to this repo. Branch protection on the KB repo controls who can merge.</div>
             </div>
           </div>
 
@@ -2175,6 +2271,28 @@ const PIPELINE_STAGE_ORDER = ['context','requirements','design','analysis','arch
 const PHASES = ['input', 'generate', 'review', 'build', 'deploy'];
 const PHASE_LABELS = { input: 'Input', generate: 'Generate', review: 'Review', build: 'Build', deploy: 'Deploy' };
 
+// Department → stage index mapping (matches server DEPARTMENTS dict)
+const DEPT_STAGES = {
+  all:         [0,1,2,3,4,5,6,7,8,9,10],
+  product:     [0,1],
+  design:      [2,3],
+  engineering: [4,5,6,7],
+  operations:  [8,9],
+  marketing:   [10],
+};
+const STAGE_ORDER = [
+  '00-context','01-requirements','02-design','03-analysis',
+  '04-architecture','05-delivery','06-engineering','07-quality',
+  '08-operations','09-release','10-marketing'
+];
+// Stages where "Distill" is applicable (have an associated gate)
+const DISTILLABLE_STAGES = {
+  'context':'context','requirements':'requirements','design':'design',
+  'analysis':'analysis','architecture':'architecture','delivery':'delivery',
+  'engineering':'engineering','qa':'qa','operations':'operations',
+  'release':'release','marketing':'marketing'
+};
+
 const STAGES = [
   { key: 'context', label: 'Context', dir: '00-context', desc: 'Product vision & market' },
   { key: 'requirements', label: 'Requirements', dir: '01-requirements', desc: 'BRD, PRD, metrics' },
@@ -2205,16 +2323,37 @@ async function loadState() {
 
 function renderAll() {
   renderTopbar();
+  updateNavVisibility();
   renderOverview();
   renderInput();
   renderGenerate();
   renderReview();
   renderBuild();
   renderDeploy();
+  renderKnowledge();
   renderIssues();
   if (!runtimeInitialized) {
     renderSettings();
     runtimeInitialized = true;
+  }
+}
+
+function updateNavVisibility() {
+  const user = state.user || { role: 'admin', department: 'all' };
+  const projectType = state.project_type || 'standard';
+  const isKB = projectType === 'knowledge_base';
+
+  // Build/Deploy: hide for knowledge_base projects
+  document.querySelector('.nav-item[data-view="build"]').style.display = isKB ? 'none' : '';
+  document.querySelector('.nav-item[data-view="deploy"]').style.display = isKB ? 'none' : '';
+
+  // Knowledge: only show for knowledge_base projects
+  const navKnowledge = document.getElementById('nav-knowledge');
+  if (navKnowledge) navKnowledge.style.display = isKB ? '' : 'none';
+
+  // If we were on build/deploy and switched to KB, redirect to overview
+  if (isKB && (currentView === 'build' || currentView === 'deploy')) {
+    switchView('overview');
   }
 }
 
@@ -2591,6 +2730,16 @@ function renderGenerate() {
     errBar.style.display = 'none';
   }
 
+  // Org context indicator
+  const orgCtx = state.orgContext || {};
+  const orgBar = document.getElementById('org-context-bar');
+  if (orgCtx.active) {
+    orgBar.style.display = 'flex';
+    orgBar.innerHTML = `${icon('building-office', 12)} <span style="color:var(--green);font-weight:600;">Org context active</span><span style="color:var(--text-3);">&ensp;${orgCtx.fileCount} file${orgCtx.fileCount !== 1 ? 's' : ''} from <code style="font-size:11px;background:var(--surface-2);padding:1px 4px;border-radius:3px;">${orgCtx.org}</code> injected into prompts</span>`;
+  } else {
+    orgBar.style.display = 'none';
+  }
+
   // Determine which stages are "done" (have generated content)
   const runningIdx = PIPELINE_STAGE_ORDER.indexOf(processing.stage);
 
@@ -2613,7 +2762,12 @@ function renderGenerate() {
   const grid = document.getElementById('stage-grid');
   grid.innerHTML = '';
 
+  // Dept filtering: admin/all sees everything; members see only their dept stages
+  const _user = state.user || { role: 'admin', department: 'all' };
+  const _allowedIdxs = _user.role === 'admin' ? DEPT_STAGES['all'] : (DEPT_STAGES[_user.department] || DEPT_STAGES['all']);
+
   STAGES.forEach((s, idx) => {
+    if (!_allowedIdxs.includes(idx)) return;
     const stageSummary = summary[s.dir] || { generated: 0, reviewed: 0, total: 0 };
     const { generated, reviewed, total } = stageSummary;
     const pct = total > 0 ? Math.round((generated / total) * 100) : 0;
@@ -2717,11 +2871,19 @@ function renderReview() {
   const tree = state.tree || {};
   const gates = state.gates || {};
 
+  // Dept filtering for review tree
+  const _rUser = state.user || { role: 'admin', department: 'all' };
+  const _rAllowed = _rUser.role === 'admin' ? DEPT_STAGES['all'] : (DEPT_STAGES[_rUser.department] || DEPT_STAGES['all']);
+
   const treeEl = document.getElementById('review-tree-body');
   const searchVal = document.getElementById('review-search').value.toLowerCase();
   treeEl.innerHTML = '';
 
   Object.entries(tree).forEach(([dir, files]) => {
+    // Filter by department
+    const stageIdx = STAGE_ORDER.indexOf(dir);
+    if (stageIdx !== -1 && !_rAllowed.includes(stageIdx)) return;
+
     const filtered = searchVal
       ? files.filter(f => f.name.toLowerCase().includes(searchVal))
       : files;
@@ -2757,6 +2919,33 @@ function renderReview() {
       <span class="badge badge-${status.toLowerCase()}">${status}</span>
     </div>
   `).join('');
+
+  // Distill section: only for admins when FORGE_ORG is set
+  const _dUser = state.user || { role: 'admin', department: 'all' };
+  const _distillSection = document.getElementById('review-distill-section');
+  const _orgActive = (state.orgContext || {}).active;
+  if (_dUser.role === 'admin' && _orgActive) {
+    _distillSection.style.display = '';
+    const _distillBtns = document.getElementById('review-distill-buttons');
+    // Find stages that have reviewed files
+    const _reviewedStages = Object.entries(state.stageReviewSummary || {})
+      .filter(([,s]) => s.reviewed > 0)
+      .map(([dir]) => {
+        const idx = STAGE_ORDER.indexOf(dir);
+        const stageKey = ['context','requirements','design','analysis','architecture','delivery','engineering','qa','operations','release','marketing'][idx];
+        return { dir, stageKey, label: dir.replace(/^\d+-/,'') };
+      })
+      .filter(s => s.stageKey);
+    _distillBtns.innerHTML = _reviewedStages.length === 0
+      ? '<span style="font-size:11px;color:var(--text-3);">Mark files as reviewed first.</span>'
+      : _reviewedStages.map(s => `
+          <button class="btn btn-ghost btn-sm" style="justify-content:flex-start;font-size:11px;" onclick="distillStage('${s.stageKey}')">
+            ${icon('sparkles',11)} Distil ${s.label}
+          </button>
+        `).join('');
+  } else {
+    _distillSection.style.display = 'none';
+  }
 
   // Overlay: show when the currently-viewed file is being fixed
   const isViewerBeingFixed = !!(fixingFile && fixingFile === currentReviewFile);
@@ -3748,6 +3937,121 @@ async function pushAllSecrets() {
 }
 
 // ============================================================
+// Knowledge
+// ============================================================
+let knowledgeEntries = [];
+let selectedKnowledgePath = null;
+
+let _lastDistillSeen = null;
+
+function renderKnowledge() {
+  const orgCtx = state.orgContext || {};
+  const sub = document.getElementById('knowledge-subtitle');
+  if (sub) sub.textContent = orgCtx.org ? `Distilled patterns for org: ${orgCtx.org}` : 'Distilled patterns from reviewed projects';
+
+  // PR result banner
+  const distillResult = state.lastDistill;
+  const banner = document.getElementById('knowledge-pr-banner');
+  if (banner && distillResult && distillResult.timestamp !== _lastDistillSeen) {
+    if (distillResult.prUrl) {
+      banner.style.display = '';
+      banner.innerHTML = `${icon('check',13)} <span style="color:var(--green);font-weight:600;">PR created for <code style="font-size:11px">${distillResult.stage}</code></span> <a href="${distillResult.prUrl}" target="_blank" style="color:var(--blue);margin-left:8px;text-decoration:underline;">Review PR →</a>`;
+    } else if (distillResult.prError) {
+      banner.style.display = '';
+      banner.innerHTML = `${icon('exclamationCircle',13)} <span style="color:var(--amber);font-weight:600;">Distillation saved locally</span> <span style="color:var(--text-3);margin-left:6px;">PR push failed: ${distillResult.prError.slice(0,120)}</span>`;
+    } else if (distillResult.success) {
+      banner.style.display = '';
+      banner.innerHTML = `${icon('check',13)} <span style="color:var(--green);font-weight:600;">${distillResult.stage} patterns saved to org cache</span> <span style="color:var(--text-3);margin-left:6px;">(configure KB Repo URL in Settings to push a PR)</span>`;
+    }
+  } else if (banner && !distillResult) {
+    banner.style.display = 'none';
+  }
+
+  if (!orgCtx.active && !(knowledgeEntries.length > 0)) {
+    if (document.getElementById('knowledge-empty')) {
+      document.getElementById('knowledge-empty').style.display = '';
+      document.getElementById('knowledge-list').style.display = 'none';
+    }
+    return;
+  }
+
+  loadKnowledgeEntries();
+}
+
+async function loadKnowledgeEntries() {
+  try {
+    const res = await fetch('/api/knowledge');
+    const data = await res.json();
+    knowledgeEntries = data.entries || [];
+    renderKnowledgeList();
+  } catch (e) {}
+}
+
+function renderKnowledgeList() {
+  const listEl = document.getElementById('knowledge-list');
+  const emptyEl = document.getElementById('knowledge-empty');
+  const viewerEl = document.getElementById('knowledge-viewer');
+  if (!listEl) return;
+
+  if (knowledgeEntries.length === 0) {
+    emptyEl.style.display = '';
+    listEl.style.display = 'none';
+    return;
+  }
+  emptyEl.style.display = 'none';
+  listEl.style.display = '';
+  viewerEl.style.display = 'none';
+
+  listEl.innerHTML = knowledgeEntries.map(e => `
+    <div style="background:var(--bg-1);border:1px solid var(--border);border-radius:8px;padding:14px;display:flex;align-items:center;justify-content:space-between;gap:12px;cursor:pointer;" onclick="openKnowledgeEntry('${e.absPath.replace(/'/g,"\\'")}','${e.name}')">
+      <div style="display:flex;align-items:center;gap:10px;min-width:0;">
+        <span style="font-size:10px;padding:2px 7px;border-radius:4px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;flex-shrink:0;background:${e.type==='patterns'?'var(--purple-dim)':'var(--blue-dim)'};color:${e.type==='patterns'?'var(--purple)':'var(--blue)'};">${e.type}</span>
+        <span style="font-size:12px;font-family:monospace;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${e.name}</span>
+      </div>
+      <span style="font-size:11px;color:var(--text-3);flex-shrink:0;">${(e.size/1024).toFixed(1)} KB</span>
+    </div>
+  `).join('');
+}
+
+async function openKnowledgeEntry(absPath, name) {
+  try {
+    const res = await fetch(`/api/knowledge?path=${encodeURIComponent(absPath)}`);
+    const data = await res.json();
+    document.getElementById('knowledge-list').style.display = 'none';
+    document.getElementById('knowledge-empty').style.display = 'none';
+    const viewerEl = document.getElementById('knowledge-viewer');
+    viewerEl.style.display = '';
+    document.getElementById('knowledge-viewer-title').textContent = name;
+    document.getElementById('knowledge-viewer-content').innerHTML = renderMarkdown(data.content || '');
+  } catch (e) {
+    showToast('Failed to load entry', 'error');
+  }
+}
+
+function closeKnowledgeViewer() {
+  document.getElementById('knowledge-viewer').style.display = 'none';
+  renderKnowledgeList();
+}
+
+async function distillStage(stage) {
+  try {
+    const res = await fetch('/api/distill', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ stage })
+    });
+    const data = await res.json();
+    if (data.error) {
+      showToast(data.error, 'error');
+    } else {
+      showToast(`Distilling ${stage}… patterns will appear in Knowledge Base`, 'info');
+    }
+  } catch (e) {
+    showToast('Distillation request failed', 'error');
+  }
+}
+
+// ============================================================
 // Issues
 // ============================================================
 function renderIssues() {
@@ -3883,8 +4187,21 @@ function populateModelDropdown(tool, currentModel) {
 function renderSettings() {
   const git = state.git || {};
   const envs = state.environments || {};
+  const user = state.user || { role: 'admin', department: 'all' };
 
+  setValue('settings-role', user.role || 'admin');
+  setValue('settings-department', user.department || 'all');
   setValue('settings-product-name', state.project_name || '');
+  setValue('settings-project-type', state.project_type || 'standard');
+
+  // Org context toggle — only show when org context is active
+  const orgRow = document.getElementById('settings-org-context-row');
+  if ((state.orgContext || {}).active) {
+    orgRow.style.display = 'flex';
+    document.getElementById('settings-skip-org-context').checked = !!(state.skip_org_context);
+  } else {
+    orgRow.style.display = 'none';
+  }
   const vl = document.getElementById('settings-version-label');
   if (vl) vl.textContent = state.version ? `v${state.version}` : 'v—';
   setValue('settings-tool', state.tool || 'gemini');
@@ -3896,6 +4213,7 @@ function renderSettings() {
   setValue('settings-token', git.token || '');
   setValue('settings-default-branch', git.default_branch || 'main');
   setValue('settings-branch-prefix', git.branch_prefix || 'forge');
+  setValue('settings-kb-repo-url', git.kb_repo_url || '');
   setValue('settings-staging-url', (envs.staging || {}).url || '');
   setValue('settings-staging-branch', (envs.staging || {}).branch || 'staging');
   setValue('settings-production-url', (envs.production || {}).url || '');
@@ -3905,6 +4223,8 @@ function renderSettings() {
 async function saveSettings() {
   const data = {
     project_name: getValue('settings-product-name'),
+    project_type: getValue('settings-project-type'),
+    skip_org_context: document.getElementById('settings-skip-org-context')?.checked || false,
     tool: getValue('settings-tool'),
     model: getValue('settings-model'),
     git: {
@@ -3914,6 +4234,7 @@ async function saveSettings() {
       token: getValue('settings-token'),
       default_branch: getValue('settings-default-branch'),
       branch_prefix: getValue('settings-branch-prefix'),
+      kb_repo_url: getValue('settings-kb-repo-url'),
     },
     environments: {
       staging: {
@@ -3926,13 +4247,16 @@ async function saveSettings() {
       }
     }
   };
+  const userData = {
+    role: getValue('settings-role'),
+    department: getValue('settings-department'),
+  };
 
   try {
-    await fetch('/api/settings', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data)
-    });
+    await Promise.all([
+      fetch('/api/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) }),
+      fetch('/api/user', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(userData) }),
+    ]);
     showToast('Settings saved', 'success');
     runtimeInitialized = false;
     loadState();
@@ -4020,7 +4344,7 @@ async function resetPipeline() {
 // ============================================================
 // Keyboard shortcuts
 // ============================================================
-const viewKeys = ['overview','input','generate','review','build','deploy','issues','settings'];
+const viewKeys = ['overview','input','generate','review','build','deploy','knowledge','issues','settings'];
 document.addEventListener('keydown', e => {
   if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
   const n = parseInt(e.key);

@@ -1,0 +1,900 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Forge OS Setup</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0d1117;
+      --surface: #161b22;
+      --surface-2: #1c2128;
+      --border: #30363d;
+      --text: #e6edf3;
+      --text-muted: #8b949e;
+      --text-subtle: #484f58;
+      --accent: #238636;
+      --accent-hover: #2ea043;
+      --accent-subtle: rgba(35, 134, 54, 0.12);
+      --blue: #388bfd;
+      --blue-subtle: rgba(56, 139, 253, 0.1);
+      --error: #f85149;
+      --error-subtle: rgba(248, 81, 73, 0.1);
+      --success: #3fb950;
+      --warning: #d29922;
+      --radius: 8px;
+      --radius-sm: 6px;
+    }
+
+    @media (prefers-color-scheme: light) {
+      :root {
+        --bg: #f6f8fa;
+        --surface: #ffffff;
+        --surface-2: #f6f8fa;
+        --border: #d0d7de;
+        --text: #24292f;
+        --text-muted: #57606a;
+        --text-subtle: #8c959f;
+        --accent: #1a7f37;
+        --accent-hover: #116329;
+        --accent-subtle: rgba(26, 127, 55, 0.1);
+        --blue: #0969da;
+        --blue-subtle: rgba(9, 105, 218, 0.1);
+        --error: #cf222e;
+        --error-subtle: rgba(207, 34, 46, 0.1);
+        --success: #1a7f37;
+        --warning: #9a6700;
+      }
+    }
+
+    html, body {
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      font-size: 13px;
+      line-height: 1.5;
+      -webkit-app-region: drag;
+    }
+
+    .layout {
+      display: flex;
+      height: 100%;
+    }
+
+    /* ── Sidebar ── */
+    .sidebar {
+      width: 180px;
+      flex-shrink: 0;
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      padding: 28px 0 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      -webkit-app-region: drag;
+    }
+
+    .sidebar-logo {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      padding: 0 16px 16px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 8px;
+    }
+
+    .step-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 7px 16px;
+      cursor: default;
+      border-radius: 0;
+    }
+
+    .step-num {
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      border: 1.5px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 10px;
+      font-weight: 600;
+      color: var(--text-subtle);
+      flex-shrink: 0;
+      transition: all 0.2s;
+    }
+
+    .step-label {
+      font-size: 12px;
+      color: var(--text-muted);
+      transition: color 0.2s;
+      line-height: 1.3;
+    }
+
+    .step-item.active .step-num {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+    }
+    .step-item.active .step-label { color: var(--text); font-weight: 500; }
+
+    .step-item.done .step-num {
+      background: var(--accent-subtle);
+      border-color: var(--success);
+      color: var(--success);
+    }
+    .step-item.done .step-label { color: var(--text-muted); }
+    .step-item.done .step-num::before { content: '✓'; }
+
+    /* ── Main content ── */
+    .content {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      -webkit-app-region: no-drag;
+    }
+
+    .step-pane {
+      display: none;
+      flex-direction: column;
+      flex: 1;
+      padding: 28px 28px 0;
+      overflow-y: auto;
+      overflow-x: hidden;
+      gap: 18px;
+      min-width: 0;
+    }
+    .step-pane.active { display: flex; }
+
+    h2 {
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--text);
+      line-height: 1.3;
+    }
+
+    .step-desc {
+      font-size: 13px;
+      color: var(--text-muted);
+      line-height: 1.6;
+    }
+
+    /* ── Instructions box ── */
+    .guide-box {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+
+    .guide-box-header {
+      background: var(--surface-2);
+      padding: 9px 14px;
+      border-bottom: 1px solid var(--border);
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+    }
+
+    .guide-steps {
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      counter-reset: guide-step;
+    }
+
+    .guide-step {
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+      counter-increment: guide-step;
+    }
+
+    .guide-step-num {
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: var(--blue-subtle);
+      color: var(--blue);
+      font-size: 10px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      margin-top: 1px;
+    }
+
+    .guide-step-text {
+      font-size: 12.5px;
+      color: var(--text);
+      line-height: 1.5;
+      overflow-wrap: break-word;
+      word-break: break-word;
+      min-width: 0;
+    }
+
+    .guide-step-text code {
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      font-size: 11px;
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 1px 5px;
+      color: var(--blue);
+      word-break: break-all;
+    }
+
+    .guide-step-text strong { color: var(--text); font-weight: 600; }
+
+    /* ── Form fields ── */
+    .field { display: flex; flex-direction: column; gap: 6px; }
+
+    .field-label {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    .field-hint {
+      font-size: 11.5px;
+      color: var(--text-muted);
+    }
+
+    .field-input {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      color: var(--text);
+      font-size: 13px;
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      padding: 8px 12px;
+      outline: none;
+      width: 100%;
+      transition: border-color 0.15s;
+    }
+    .field-input::placeholder { color: var(--text-subtle); font-family: inherit; }
+    .field-input:focus { border-color: var(--blue); }
+    .field-input.error { border-color: var(--error); }
+    .field-input.valid { border-color: var(--success); }
+
+    .field-error {
+      font-size: 11.5px;
+      color: var(--error);
+      display: none;
+    }
+    .field-error.visible { display: block; }
+
+    .field-ok {
+      font-size: 11.5px;
+      color: var(--success);
+      display: none;
+    }
+    .field-ok.visible { display: block; }
+
+    /* ── Mode toggle ── */
+    .mode-toggle {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .mode-btn {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1.5px solid var(--border);
+      border-radius: var(--radius-sm);
+      background: transparent;
+      color: var(--text-muted);
+      cursor: pointer;
+      text-align: left;
+      transition: all 0.15s;
+    }
+    .mode-btn:hover { border-color: var(--text-muted); color: var(--text); }
+    .mode-btn.selected {
+      border-color: var(--accent);
+      background: var(--accent-subtle);
+      color: var(--text);
+    }
+
+    .mode-btn-title {
+      font-size: 12.5px;
+      font-weight: 600;
+      display: block;
+      margin-bottom: 2px;
+    }
+    .mode-btn-desc {
+      font-size: 11px;
+      color: var(--text-muted);
+      display: block;
+      line-height: 1.4;
+    }
+    .mode-btn.selected .mode-btn-desc { color: var(--text-muted); }
+
+    /* ── Link button ── */
+    .link-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 12px;
+      color: var(--blue);
+      background: var(--blue-subtle);
+      border: 1px solid transparent;
+      border-radius: var(--radius-sm);
+      padding: 6px 12px;
+      cursor: pointer;
+      text-decoration: none;
+      transition: background 0.15s;
+    }
+    .link-btn:hover { background: rgba(56, 139, 253, 0.18); }
+
+    /* ── Success card ── */
+    .success-card {
+      background: var(--accent-subtle);
+      border: 1px solid rgba(63, 185, 80, 0.3);
+      border-radius: var(--radius);
+      padding: 14px 16px;
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+    }
+    .success-card-icon { color: var(--success); font-size: 15px; margin-top: 1px; }
+    .success-card-text { font-size: 12.5px; color: var(--text); line-height: 1.5; }
+    .success-card-text strong { color: var(--success); }
+
+    /* ── Footer ── */
+    .footer {
+      padding: 16px 28px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: var(--bg);
+      flex-shrink: 0;
+    }
+
+    .btn-primary {
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: var(--radius-sm);
+      font-size: 13px;
+      font-weight: 500;
+      padding: 8px 20px;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .btn-primary:hover:not(:disabled) { background: var(--accent-hover); }
+    .btn-primary:disabled { opacity: 0.45; cursor: not-allowed; }
+
+    .btn-ghost {
+      background: transparent;
+      color: var(--text-muted);
+      border: none;
+      font-size: 12px;
+      cursor: pointer;
+      padding: 8px 4px;
+    }
+    .btn-ghost:hover { color: var(--text); }
+
+    .spinner-sm {
+      display: inline-block;
+      width: 13px;
+      height: 13px;
+      border: 2px solid rgba(255,255,255,0.3);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      vertical-align: middle;
+      margin-right: 6px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .spacer { flex: 1; }
+  </style>
+</head>
+<body>
+<div class="layout">
+
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="sidebar-logo">Forge OS</div>
+
+    <div class="step-item" id="nav-0">
+      <div class="step-num">1</div>
+      <span class="step-label">Welcome</span>
+    </div>
+    <div class="step-item" id="nav-1">
+      <div class="step-num">2</div>
+      <span class="step-label">Your role</span>
+    </div>
+    <div class="step-item" id="nav-2">
+      <div class="step-num">3</div>
+      <span class="step-label">GitHub OAuth App</span>
+    </div>
+    <div class="step-item" id="nav-3">
+      <div class="step-num">4</div>
+      <span class="step-label">Organization</span>
+    </div>
+    <div class="step-item" id="nav-4">
+      <div class="step-num">5</div>
+      <span class="step-label">Complete</span>
+    </div>
+  </aside>
+
+  <!-- Content -->
+  <div class="content">
+
+    <!-- Step 0: Welcome -->
+    <div class="step-pane active" id="pane-0">
+      <h2>Welcome to Forge OS</h2>
+      <p class="step-desc">
+        Forge OS is a documentation-first PDLC automation framework. AI agents guide your team through 11 stages — from raw idea to production-ready release and marketing.
+      </p>
+      <p class="step-desc">
+        This setup takes about <strong style="color:var(--text)">3 minutes</strong>. You'll configure GitHub authentication and connect your organization's shared knowledge repository.
+      </p>
+      <div class="guide-box">
+        <div class="guide-box-header">What you'll need</div>
+        <div class="guide-steps">
+          <div class="guide-step">
+            <div class="guide-step-num">1</div>
+            <div class="guide-step-text">A <strong>GitHub account</strong> (personal or organization member)</div>
+          </div>
+          <div class="guide-step">
+            <div class="guide-step-num">2</div>
+            <div class="guide-step-text">If you're the <strong>first person</strong> setting this up: admin access to your GitHub organization</div>
+          </div>
+          <div class="guide-step">
+            <div class="guide-step-num">3</div>
+            <div class="guide-step-text">If you're a <strong>team member</strong>: your organization's name on GitHub (e.g. <code>acme-corp</code>)</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Step 1: Role -->
+    <div class="step-pane" id="pane-1">
+      <h2>Are you setting this up for the first time?</h2>
+      <p class="step-desc">
+        This determines whether you register a new GitHub OAuth App or connect to an existing organization setup.
+      </p>
+      <div class="mode-toggle">
+        <button class="mode-btn selected" id="role-admin" onclick="selectRole('admin')">
+          <span class="mode-btn-title">I'm the admin</span>
+          <span class="mode-btn-desc">First person setting up Forge OS for the organization. I'll register the GitHub OAuth App.</span>
+        </button>
+        <button class="mode-btn" id="role-member" onclick="selectRole('member')">
+          <span class="mode-btn-title">I'm a team member</span>
+          <span class="mode-btn-desc">Someone already set this up. I just need to connect to the organization.</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Step 2: OAuth App (admin only) / Org name (member) -->
+    <div class="step-pane" id="pane-2">
+      <!-- Admin variant -->
+      <div id="pane-2-admin">
+        <h2>Register a GitHub OAuth App</h2>
+        <div class="step-desc" style="margin-top:0">
+          Forge OS uses GitHub for authentication. You register one OAuth App per organization — team members never need to do this.
+        </div>
+        <div class="guide-box" style="margin-top:0">
+          <div class="guide-box-header">Step-by-step</div>
+          <div class="guide-steps">
+            <div class="guide-step">
+              <div class="guide-step-num">1</div>
+              <div class="guide-step-text">Click <strong>Open GitHub</strong> below — it opens the registration page</div>
+            </div>
+            <div class="guide-step">
+              <div class="guide-step-num">2</div>
+              <div class="guide-step-text">
+                Fill in the form:
+                <br>· <strong>Application name</strong> → <code>Forge OS</code>
+                <br>· <strong>Homepage URL</strong> → any URL (e.g. <code>http://localhost</code>)
+                <br>· <strong>Callback URL</strong> → <code>http://localhost</code>
+                <br>· <strong>Enable Device Flow</strong> → ✅ checked
+              </div>
+            </div>
+            <div class="guide-step">
+              <div class="guide-step-num">3</div>
+              <div class="guide-step-text">Click <strong>Register application</strong></div>
+            </div>
+            <div class="guide-step">
+              <div class="guide-step-num">4</div>
+              <div class="guide-step-text">Copy the <strong>Client ID</strong> shown at the top of the next page (starts with <code>Ov23li</code>)</div>
+            </div>
+          </div>
+        </div>
+        <button class="link-btn" onclick="window.setupAPI.openUrl('https://github.com/settings/applications/new')">
+          ↗ Open GitHub OAuth App registration
+        </button>
+        <div class="field" style="margin-top:4px">
+          <label class="field-label" for="client-id-input">Paste Client ID</label>
+          <span class="field-hint">From the GitHub OAuth App page — looks like <code style="font-family:monospace;font-size:11px">Ov23liXXXXXXXXXXXXXX</code></span>
+          <input
+            class="field-input"
+            id="client-id-input"
+            type="text"
+            placeholder="Ov23li…"
+            autocomplete="off"
+            spellcheck="false"
+            oninput="validateClientId()"
+          >
+          <span class="field-error" id="client-id-error"></span>
+          <span class="field-ok" id="client-id-ok">✓ Client ID looks valid</span>
+        </div>
+      </div>
+
+      <!-- Member variant (hidden by default) -->
+      <div id="pane-2-member" style="display:none; flex-direction:column; gap:18px">
+        <h2>Connect to your organization</h2>
+        <p class="step-desc">
+          Enter your GitHub organization name. Forge OS will pull the configuration that your admin set up.
+        </p>
+        <div class="field">
+          <label class="field-label" for="member-org-input">Organization name</label>
+          <span class="field-hint">The part after <code style="font-family:monospace;font-size:11px">github.com/</code> — e.g. <code style="font-family:monospace;font-size:11px">acme-corp</code></span>
+          <input
+            class="field-input"
+            id="member-org-input"
+            type="text"
+            placeholder="acme-corp"
+            autocomplete="off"
+            spellcheck="false"
+            oninput="clearMemberOrgStatus()"
+          >
+          <span class="field-error" id="member-org-error"></span>
+          <span class="field-ok" id="member-org-ok"></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Step 3: Organization (admin) / Done (member — jumps to step 4) -->
+    <div class="step-pane" id="pane-3">
+      <h2>Connect your GitHub organization</h2>
+      <p class="step-desc">
+        Forge OS stores shared knowledge, agents, and project documentation in a private repository called <code style="font-family:monospace;font-size:12px">forge-knowledge</code> in your GitHub org.
+      </p>
+      <div class="guide-box">
+        <div class="guide-box-header">Create the knowledge repository</div>
+        <div class="guide-steps">
+          <div class="guide-step">
+            <div class="guide-step-num">1</div>
+            <div class="guide-step-text">Go to your organization on GitHub and create a new repository named exactly <code>forge-knowledge</code></div>
+          </div>
+          <div class="guide-step">
+            <div class="guide-step-num">2</div>
+            <div class="guide-step-text">Set visibility to <strong>Private</strong></div>
+          </div>
+          <div class="guide-step">
+            <div class="guide-step-num">3</div>
+            <div class="guide-step-text">Initialize with a README (so the repo has a default branch)</div>
+          </div>
+          <div class="guide-step">
+            <div class="guide-step-num">4</div>
+            <div class="guide-step-text">Invite team members to your GitHub org — they'll be auto-discovered by Forge OS</div>
+          </div>
+        </div>
+      </div>
+      <div class="field">
+        <label class="field-label" for="org-input">Organization name</label>
+        <span class="field-hint">The part after <code style="font-family:monospace;font-size:11px">github.com/</code> — e.g. <code style="font-family:monospace;font-size:11px">acme-corp</code></span>
+        <input
+          class="field-input"
+          id="org-input"
+          type="text"
+          placeholder="acme-corp"
+          autocomplete="off"
+          spellcheck="false"
+          oninput="clearOrgStatus()"
+        >
+        <span class="field-error" id="org-error"></span>
+        <span class="field-ok" id="org-ok"></span>
+      </div>
+    </div>
+
+    <!-- Step 4: Complete -->
+    <div class="step-pane" id="pane-4">
+      <h2>You're all set</h2>
+      <p class="step-desc">Forge OS is configured and ready to use.</p>
+
+      <div class="success-card">
+        <div class="success-card-icon">✓</div>
+        <div class="success-card-text" id="summary-text">
+          Configuration saved.
+        </div>
+      </div>
+
+      <div class="guide-box">
+        <div class="guide-box-header">What happens next</div>
+        <div class="guide-steps">
+          <div class="guide-step">
+            <div class="guide-step-num">1</div>
+            <div class="guide-step-text">You'll authenticate with GitHub using the Device Flow — a short code appears, you enter it at github.com/activate</div>
+          </div>
+          <div class="guide-step">
+            <div class="guide-step-num">2</div>
+            <div class="guide-step-text">Forge OS syncs your organization's knowledge base to this machine</div>
+          </div>
+          <div class="guide-step">
+            <div class="guide-step-num">3</div>
+            <div class="guide-step-text">Select or create a project folder to begin the 11-stage pipeline</div>
+          </div>
+        </div>
+      </div>
+
+      <p class="step-desc" style="font-size:12px">
+        Team members can connect by entering <strong id="summary-org" style="color:var(--text)">your org name</strong> when they first launch Forge OS.
+      </p>
+    </div>
+
+    <!-- Footer -->
+    <div class="footer">
+      <button class="btn-ghost" id="btn-back" onclick="goBack()" style="display:none">← Back</button>
+      <div class="spacer"></div>
+      <button class="btn-primary" id="btn-next" onclick="goNext()">Get Started →</button>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  // ── State ──────────────────────────────────────────────────────────────────
+  let currentStep = 0
+  let role = 'admin'   // 'admin' | 'member'
+  const TOTAL_STEPS = 5
+
+  // ── Navigation ─────────────────────────────────────────────────────────────
+  function updateUI() {
+    // Sidebar
+    for (let i = 0; i < TOTAL_STEPS; i++) {
+      const nav = document.getElementById(`nav-${i}`)
+      nav.classList.remove('active', 'done')
+      if (i === currentStep) nav.classList.add('active')
+      else if (i < currentStep) nav.classList.add('done')
+    }
+
+    // Panes
+    document.querySelectorAll('.step-pane').forEach(p => p.classList.remove('active'))
+    document.getElementById(`pane-${currentStep}`).classList.add('active')
+
+    // Back button
+    document.getElementById('btn-back').style.display = currentStep > 0 ? 'block' : 'none'
+
+    // Next button label
+    const btn = document.getElementById('btn-next')
+    if (currentStep === TOTAL_STEPS - 1) {
+      btn.textContent = 'Launch Forge OS'
+    } else if (currentStep === 2 && role === 'member') {
+      btn.textContent = 'Connect →'
+    } else if (currentStep === 2) {
+      btn.textContent = 'Continue →'
+    } else if (currentStep === 3) {
+      btn.textContent = 'Verify & Continue →'
+    } else {
+      btn.textContent = currentStep === 0 ? 'Get Started →' : 'Continue →'
+    }
+  }
+
+  function goBack() {
+    if (currentStep > 0) { currentStep--; updateUI() }
+  }
+
+  async function goNext() {
+    if (currentStep === 1) {
+      // Role selection — adjust visible pane-2 content
+      if (role === 'admin') {
+        document.getElementById('pane-2-admin').style.display = 'block'
+        document.getElementById('pane-2-member').style.display = 'none'
+      } else {
+        document.getElementById('pane-2-admin').style.display = 'none'
+        document.getElementById('pane-2-member').style.display = 'flex'
+      }
+      currentStep++; updateUI(); return
+    }
+
+    if (currentStep === 2) {
+      if (role === 'admin') {
+        if (!validateClientId()) return
+        currentStep++; updateUI(); return
+      } else {
+        // Member: verify org + pull config
+        const ok = await verifyMemberOrg()
+        if (!ok) return
+        // Skip step 3 (org setup) for members — jump straight to complete
+        currentStep = 4
+        buildSummary()
+        updateUI(); return
+      }
+    }
+
+    if (currentStep === 3) {
+      const ok = await verifyOrg()
+      if (!ok) return
+      buildSummary()
+      currentStep++; updateUI(); return
+    }
+
+    if (currentStep === TOTAL_STEPS - 1) {
+      // Save config and close
+      const config = buildConfig()
+      window.setupAPI.saveSetup(config)
+      return
+    }
+
+    currentStep++; updateUI()
+  }
+
+  // ── Role selection ─────────────────────────────────────────────────────────
+  function selectRole(r) {
+    role = r
+    document.getElementById('role-admin').classList.toggle('selected', r === 'admin')
+    document.getElementById('role-member').classList.toggle('selected', r === 'member')
+  }
+
+  // ── Client ID validation ───────────────────────────────────────────────────
+  function validateClientId() {
+    const val = document.getElementById('client-id-input').value.trim()
+    const input = document.getElementById('client-id-input')
+    const err = document.getElementById('client-id-error')
+    const ok = document.getElementById('client-id-ok')
+
+    if (!val) {
+      input.className = 'field-input'
+      err.className = 'field-error'; ok.className = 'field-ok'
+      return false
+    }
+    // GitHub OAuth App client IDs: "Ov23li" prefix + 20 alphanumeric chars
+    if (!/^Ov23li[A-Za-z0-9]{14,}$/.test(val)) {
+      input.className = 'field-input error'
+      err.textContent = 'Does not look like a valid GitHub OAuth App Client ID. It should start with Ov23li.'
+      err.className = 'field-error visible'; ok.className = 'field-ok'
+      return false
+    }
+    input.className = 'field-input valid'
+    err.className = 'field-error'; ok.className = 'field-ok visible'
+    return true
+  }
+
+  // ── Org verification (admin) ───────────────────────────────────────────────
+  function clearOrgStatus() {
+    const input = document.getElementById('org-input')
+    input.className = 'field-input'
+    document.getElementById('org-error').className = 'field-error'
+    document.getElementById('org-ok').className = 'field-ok'
+  }
+
+  async function verifyOrg() {
+    const val = document.getElementById('org-input').value.trim().toLowerCase()
+    const input = document.getElementById('org-input')
+    const err = document.getElementById('org-error')
+    const ok = document.getElementById('org-ok')
+
+    if (!val) {
+      err.textContent = 'Enter your GitHub organization name.'
+      err.className = 'field-error visible'
+      return false
+    }
+    if (!/^[a-z0-9][a-z0-9-]{0,38}$/.test(val)) {
+      input.className = 'field-input error'
+      err.textContent = 'Organization names can only contain letters, numbers, and hyphens.'
+      err.className = 'field-error visible'
+      return false
+    }
+
+    const btn = document.getElementById('btn-next')
+    btn.disabled = true
+    btn.innerHTML = '<span class="spinner-sm"></span>Verifying…'
+
+    const result = await window.setupAPI.verifyOrg(val)
+
+    btn.disabled = false
+    btn.textContent = 'Verify & Continue →'
+
+    if (result.error) {
+      input.className = 'field-input error'
+      err.textContent = result.error
+      err.className = 'field-error visible'
+      return false
+    }
+
+    input.className = 'field-input valid'
+    if (result.repoExists) {
+      ok.textContent = `✓ Found ${val}/forge-knowledge`
+    } else {
+      ok.textContent = `✓ Organization found — create the forge-knowledge repo then continue`
+    }
+    ok.className = 'field-ok visible'
+    return true
+  }
+
+  // ── Member org verification ────────────────────────────────────────────────
+  function clearMemberOrgStatus() {
+    document.getElementById('member-org-input').className = 'field-input'
+    document.getElementById('member-org-error').className = 'field-error'
+    document.getElementById('member-org-ok').className = 'field-ok'
+  }
+
+  async function verifyMemberOrg() {
+    const val = document.getElementById('member-org-input').value.trim().toLowerCase()
+    const input = document.getElementById('member-org-input')
+    const err = document.getElementById('member-org-error')
+    const ok = document.getElementById('member-org-ok')
+
+    if (!val) {
+      err.textContent = 'Enter your GitHub organization name.'
+      err.className = 'field-error visible'
+      return false
+    }
+
+    const btn = document.getElementById('btn-next')
+    btn.disabled = true
+    btn.innerHTML = '<span class="spinner-sm"></span>Connecting…'
+
+    const result = await window.setupAPI.fetchOrgConfig(val)
+
+    btn.disabled = false
+    btn.textContent = 'Connect →'
+
+    if (result.error) {
+      input.className = 'field-input error'
+      err.textContent = result.error
+      err.className = 'field-error visible'
+      return false
+    }
+
+    input.className = 'field-input valid'
+    ok.textContent = `✓ Connected to ${val}/forge-knowledge`
+    ok.className = 'field-ok visible'
+    return true
+  }
+
+  // ── Summary + config ───────────────────────────────────────────────────────
+  function buildSummary() {
+    const orgName = role === 'admin'
+      ? document.getElementById('org-input').value.trim()
+      : document.getElementById('member-org-input').value.trim()
+
+    const adminLine = role === 'admin'
+      ? `GitHub OAuth App registered and configured. `
+      : `Connected to organization config from <strong>${orgName}/forge-knowledge</strong>. `
+
+    document.getElementById('summary-text').innerHTML =
+      adminLine + `Organization: <strong>${orgName}</strong>.`
+    document.getElementById('summary-org').textContent = orgName
+  }
+
+  function buildConfig() {
+    if (role === 'admin') {
+      return {
+        role: 'admin',
+        githubClientId: document.getElementById('client-id-input').value.trim(),
+        org: document.getElementById('org-input').value.trim().toLowerCase()
+      }
+    } else {
+      return {
+        role: 'member',
+        org: document.getElementById('member-org-input').value.trim().toLowerCase()
+        // githubClientId is pulled from org config by main process
+      }
+    }
+  }
+
+  // ── Init ───────────────────────────────────────────────────────────────────
+  updateUI()
+</script>
+</body>
+</html>

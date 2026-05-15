@@ -857,14 +857,18 @@ import sys
 import json
 import subprocess
 import shutil
+import tempfile
 import time
 import threading
 import urllib.parse
+import urllib.request
+import urllib.error
 from datetime import datetime
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
-REPO_ROOT = os.environ.get("AEOS_REPO_ROOT", ".")
-FORGE_DIR = os.path.join(REPO_ROOT, ".forge")
+REPO_ROOT = os.environ.get("FORGE_REPO_ROOT", ".")
+_forge_data = os.environ.get("FORGE_DATA_DIR")
+FORGE_DIR = os.path.expanduser(_forge_data) if _forge_data else os.path.join(REPO_ROOT, ".forge")
 
 KNOWN_TOOLS = {
     "gemini": {
@@ -1136,6 +1140,156 @@ def set_processing(status, stage=""):
         except Exception:
             pass
 
+def _build_org_context_meta():
+    _org = os.environ.get("FORGE_ORG", "")
+    if not _org:
+        return {"active": False, "org": "", "fileCount": 0}
+    _cache = os.path.expanduser(f"~/.forge/org-cache/{_org}")
+    _count = 0
+    for _sub in ("knowledge", "patterns"):
+        _d = os.path.join(_cache, _sub)
+        if os.path.isdir(_d):
+            _count += sum(1 for _f in os.listdir(_d) if _f.endswith(".md"))
+    return {"active": _count > 0, "org": _org, "fileCount": _count}
+
+USER_FILE = os.path.expanduser("~/.forge/user.json")
+
+DEPARTMENTS = {
+    "all":         list(range(11)),
+    "product":     [0, 1],
+    "design":      [2, 3],
+    "engineering": [4, 5, 6, 7],
+    "operations":  [8, 9],
+    "marketing":   [10],
+}
+
+def load_user():
+    try:
+        with open(USER_FILE, "r") as _f:
+            return json.load(_f)
+    except Exception:
+        return {"role": "admin", "department": "all"}
+
+def save_user(data):
+    os.makedirs(os.path.dirname(USER_FILE), exist_ok=True)
+    with open(USER_FILE, "w") as _f:
+        json.dump(data, _f, indent=2)
+
+def _list_knowledge_entries():
+    _org = os.environ.get("FORGE_ORG", "")
+    if not _org:
+        return []
+    _cache = os.path.expanduser(f"~/.forge/org-cache/{_org}")
+    _entries = []
+    for _sub in ("knowledge", "patterns"):
+        _d = os.path.join(_cache, _sub)
+        if os.path.isdir(_d):
+            for _fname in sorted(os.listdir(_d)):
+                if _fname.endswith(".md"):
+                    _fpath = os.path.join(_d, _fname)
+                    _st = os.stat(_fpath)
+                    _entries.append({
+                        "name": _fname,
+                        "type": _sub,
+                        "absPath": _fpath,
+                        "size": _st.st_size,
+                        "modifiedAt": int(_st.st_mtime * 1000),
+                    })
+    return _entries
+
+def _push_distill_to_kb(kb_repo_url, token, file_path, stage, ts):
+    # Clone KB repo, commit distilled file on a new branch, push, open a PR.
+    _parsed = urllib.parse.urlparse(kb_repo_url)
+    _path_parts = _parsed.path.rstrip('/').lstrip('/').split('/')
+    if len(_path_parts) < 2:
+        return None, "Invalid KB repo URL"
+    _owner = _path_parts[-2]
+    _repo = _path_parts[-1].removesuffix('.git') if hasattr(str, 'removesuffix') else _path_parts[-1].replace('.git', '')
+    _auth_url = f"https://x-access-token:{token}@github.com/{_owner}/{_repo}.git"
+    _branch = f"forge/distill-{stage}-{ts}"
+    _work_dir = tempfile.mkdtemp(prefix="forge-kb-")
+    try:
+        # Shallow clone
+        _r = subprocess.run(
+            ["git", "clone", "--depth=1", _auth_url, _work_dir],
+            capture_output=True, text=True
+        )
+        if _r.returncode != 0:
+            return None, f"Clone failed: {_r.stderr.strip()[:200]}"
+        # Get default branch name
+        _def_branch_r = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            cwd=_work_dir, capture_output=True, text=True
+        )
+        _default_branch = _def_branch_r.stdout.strip() or "main"
+        # Create feature branch
+        subprocess.run(["git", "checkout", "-b", _branch], cwd=_work_dir, capture_output=True)
+        # Copy distilled file into patterns/
+        _dest_dir = os.path.join(_work_dir, "patterns")
+        os.makedirs(_dest_dir, exist_ok=True)
+        _fname = os.path.basename(file_path)
+        shutil.copy2(file_path, os.path.join(_dest_dir, _fname))
+        # Configure git identity
+        subprocess.run(["git", "config", "user.email", "forge-os@forge-os.local"], cwd=_work_dir, capture_output=True)
+        subprocess.run(["git", "config", "user.name", "Forge OS"], cwd=_work_dir, capture_output=True)
+        # Commit
+        subprocess.run(["git", "add", "."], cwd=_work_dir, capture_output=True)
+        _commit_r = subprocess.run(
+            ["git", "commit", "-m", f"distill({stage}): add distilled patterns from {ts}"],
+            cwd=_work_dir, capture_output=True, text=True
+        )
+        if _commit_r.returncode != 0:
+            return None, f"Commit failed: {_commit_r.stderr.strip()[:200]}"
+        # Push
+        _push_r = subprocess.run(
+            ["git", "push", "origin", _branch],
+            cwd=_work_dir, capture_output=True, text=True
+        )
+        if _push_r.returncode != 0:
+            return None, f"Push failed: {_push_r.stderr.strip()[:200]}"
+        # Create PR via GitHub API
+        _pr_body = json.dumps({
+            "title": f"Distilled patterns: {stage} ({ts[:8]})",
+            "head": _branch,
+            "base": _default_branch,
+            "body": (
+                f"Auto-generated by Forge OS distillation.\n\n"
+                f"**Stage:** `{stage}`  \n**File:** `patterns/{_fname}`  \n**Timestamp:** `{ts}`\n\n"
+                f"Review the distilled patterns below and merge to publish them to the org knowledge base."
+            ),
+        }).encode("utf-8")
+        _req = urllib.request.Request(
+            f"https://api.github.com/repos/{_owner}/{_repo}/pulls",
+            data=_pr_body,
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Accept": "application/vnd.github+json",
+                "Content-Type": "application/json",
+                "X-GitHub-Api-Version": "2022-11-28",
+                "User-Agent": "forge-os",
+            }
+        )
+        with urllib.request.urlopen(_req, timeout=15) as _resp:
+            _pr = json.loads(_resp.read().decode("utf-8"))
+            return _pr.get("html_url", ""), None
+    except urllib.error.HTTPError as _e:
+        _body = _e.read().decode("utf-8", errors="ignore")[:300]
+        return None, f"GitHub API error {_e.code}: {_body}"
+    except Exception as _e:
+        return None, str(_e)[:300]
+    finally:
+        shutil.rmtree(_work_dir, ignore_errors=True)
+
+def _load_distill_result():
+    _path = os.path.join(FORGE_DIR, "runs/distill-result.json")
+    if not os.path.exists(_path):
+        return None
+    try:
+        with open(_path) as _f:
+            return json.load(_f)
+    except Exception:
+        return None
+
 def compute_full_state():
     proj = load_project_state()
     reviews = load_reviews()
@@ -1251,6 +1405,11 @@ def compute_full_state():
         "tool": proj.get("tool", "gemini"),
         "model": proj.get("model", "gemini"),
         "project_name": proj.get("project_name", ""),
+        "skip_org_context": proj.get("skip_org_context", False),
+        "orgContext": _build_org_context_meta(),
+        "user": load_user(),
+        "project_type": proj.get("project_type", "standard"),
+        "lastDistill": _load_distill_result(),
     }
 
 class ForgeHandler(BaseHTTPRequestHandler):
@@ -1338,6 +1497,30 @@ class ForgeHandler(BaseHTTPRequestHandler):
                     self.wfile.write(f.read())
             else:
                 self._json_response(404, {"error": "not found"})
+            return
+
+        if path == "/api/user":
+            self._json_response(200, load_user())
+            return
+
+        if path == "/api/knowledge":
+            params = dict(urllib.parse.parse_qsl(parsed.query))
+            abs_path = params.get("path")
+            if abs_path:
+                # Read a specific knowledge file (must be inside org-cache)
+                _org = os.environ.get("FORGE_ORG", "")
+                _allowed = os.path.expanduser(f"~/.forge/org-cache/{_org}") if _org else ""
+                if not _allowed or not abs_path.startswith(_allowed):
+                    self._json_response(403, {"error": "forbidden"})
+                    return
+                if not os.path.isfile(abs_path):
+                    self._json_response(404, {"error": "not found"})
+                    return
+                with open(abs_path, "r", encoding="utf-8") as _f:
+                    content = _f.read()
+                self._json_response(200, {"content": content})
+            else:
+                self._json_response(200, {"entries": _list_knowledge_entries()})
             return
 
         if path == "/api/tools":
@@ -1635,6 +1818,7 @@ class ForgeHandler(BaseHTTPRequestHandler):
                         **os.environ,
                         "FORGE_TOOL": proj.get("tool", "gemini"),
                         "FORGE_MODEL": proj.get("model", ""),
+                        "FORGE_SKIP_ORG_CONTEXT": "1" if proj.get("skip_org_context", False) else "",
                     }
                     if stage == "all":
                         pipeline_stages = [
@@ -1747,7 +1931,7 @@ class ForgeHandler(BaseHTTPRequestHandler):
                         subprocess.run(["git", "init"], cwd=REPO_ROOT, capture_output=True)
 
                     # 3. Stage
-                    subprocess.run(["git", "add", ".forge/"], cwd=REPO_ROOT, capture_output=True)
+                    subprocess.run(["git", "add", ".forge"], cwd=REPO_ROOT, capture_output=True)
                     subprocess.run(["git", "add", "README.md"], cwd=REPO_ROOT, capture_output=True)
                     for d in copied_dirs:
                         subprocess.run(["git", "add", d + "/"], cwd=REPO_ROOT, capture_output=True)
@@ -2072,7 +2256,7 @@ class ForgeHandler(BaseHTTPRequestHandler):
                     logs.append("Generated README.md")
 
                     # Stage spec docs, code dirs, and root README first
-                    run_git(["add", ".forge/"])
+                    run_git(["add", ".forge"])
                     run_git(["add", "README.md"])
                     for d in copied_dirs:
                         run_git(["add", d + "/"])
@@ -2274,6 +2458,110 @@ class ForgeHandler(BaseHTTPRequestHandler):
             self._json_response(200, {"status": "ok", "issues": proj["issues"]})
             return
 
+        if path == "/api/user":
+            user = load_user()
+            if "role" in data:
+                user["role"] = data["role"]
+            if "department" in data:
+                user["department"] = data["department"]
+            save_user(user)
+            self._json_response(200, {"status": "saved"})
+            return
+
+        if path == "/api/distill":
+            stage = data.get("stage")
+            _org = os.environ.get("FORGE_ORG", "")
+            if not stage:
+                self._json_response(400, {"error": "missing stage"})
+                return
+            if not _org:
+                self._json_response(400, {"error": "FORGE_ORG not set — connect GitHub org first"})
+                return
+            _stage_dirs = {
+                "context": "00-context", "requirements": "01-requirements",
+                "design": "02-design", "analysis": "03-analysis",
+                "architecture": "04-architecture", "delivery": "05-delivery",
+                "engineering": "06-engineering", "qa": "07-quality",
+                "operations": "08-operations", "release": "09-release",
+                "marketing": "10-marketing",
+            }
+            _sdir = _stage_dirs.get(stage)
+            if not _sdir:
+                self._json_response(400, {"error": "invalid stage"})
+                return
+            _stage_path = os.path.join(FORGE_DIR, _sdir)
+            if not os.path.isdir(_stage_path):
+                self._json_response(404, {"error": "stage directory not found"})
+                return
+            _reviews = load_reviews()
+            _reviewed = [
+                os.path.join(FORGE_DIR, _sdir, _fn)
+                for _fn in sorted(os.listdir(_stage_path))
+                if _fn.endswith(".md") and _reviews.get(os.path.join(_sdir, _fn)) == "reviewed"
+            ]
+            if not _reviewed:
+                self._json_response(400, {"error": "no reviewed files in this stage"})
+                return
+            _proj = load_project_state()
+            _forge_script = FORGE_SCRIPT or os.path.abspath(os.path.join(FORGE_DIR, "..", "..", "forge"))
+
+            def _run_distill():
+                _status_file = os.path.join(FORGE_DIR, "runs/status.json")
+                _result_file = os.path.join(FORGE_DIR, "runs/distill-result.json")
+                _ts = datetime.now().strftime("%Y%m%d-%H%M%S")
+                _out_path = None
+                try:
+                    if os.path.exists(os.path.join(FORGE_DIR, "runs")):
+                        with open(_status_file, "w") as _sf:
+                            json.dump({"status": "distilling", "stage": stage, "updated_at": datetime.now().isoformat()}, _sf)
+                    _out_dir = os.path.expanduser(f"~/.forge/org-cache/{_org}/patterns")
+                    os.makedirs(_out_dir, exist_ok=True)
+                    _out_path = os.path.join(_out_dir, f"{stage}-{_ts}.md")
+                    _base_env = {
+                        **os.environ,
+                        "FORGE_TOOL": _proj.get("tool", "gemini"),
+                        "FORGE_MODEL": _proj.get("model", ""),
+                    }
+                    _cmd = [
+                        sys.executable,
+                        os.path.join(FORGE_DIR, "scripts/run.py"),
+                        "distill",
+                        "--distill-stage", stage,
+                        "--distill-output", _out_path,
+                        "--distill-sources", ",".join(_reviewed),
+                    ]
+                    _sub = subprocess.run(_cmd, cwd=REPO_ROOT, env=_base_env)
+
+                    # Git PR flow if KB repo is configured
+                    _kb_url = _proj.get("git", {}).get("kb_repo_url", "")
+                    _token = _proj.get("git", {}).get("token", "")
+                    _pr_url = None
+                    _pr_error = None
+                    if _sub.returncode == 0 and _kb_url and _token and _out_path and os.path.exists(_out_path):
+                        _pr_url, _pr_error = _push_distill_to_kb(_kb_url, _token, _out_path, stage, _ts)
+
+                    # Write result
+                    _result = {
+                        "stage": stage,
+                        "file": _out_path,
+                        "timestamp": _ts,
+                        "prUrl": _pr_url,
+                        "prError": _pr_error,
+                        "success": _sub.returncode == 0,
+                    }
+                    if os.path.exists(os.path.join(FORGE_DIR, "runs")):
+                        with open(_result_file, "w") as _rf:
+                            json.dump(_result, _rf, indent=2)
+                finally:
+                    if os.path.exists(os.path.join(FORGE_DIR, "runs")):
+                        with open(_status_file, "w") as _sf:
+                            json.dump({"status": "idle", "stage": stage, "updated_at": datetime.now().isoformat()}, _sf)
+
+            _t = threading.Thread(target=_run_distill, daemon=True)
+            _t.start()
+            self._json_response(200, {"status": "started", "stage": stage})
+            return
+
         if path == "/api/settings":
             proj = load_project_state()
             if "git" in data:
@@ -2288,6 +2576,12 @@ class ForgeHandler(BaseHTTPRequestHandler):
                 proj["model"] = data["model"]
             if "project_name" in data:
                 proj["project_name"] = data["project_name"]
+            if "project_type" in data:
+                proj["project_type"] = data["project_type"]
+            if "skip_org_context" in data:
+                proj["skip_org_context"] = data["skip_org_context"]
+            if "git" in data and "kb_repo_url" in data["git"]:
+                proj["git"]["kb_repo_url"] = data["git"]["kb_repo_url"]
             save_project_state(proj)
             self._json_response(200, {"status": "saved"})
             return
@@ -2457,7 +2751,7 @@ class ForgeHandler(BaseHTTPRequestHandler):
                         **os.environ,
                         "FORGE_TOOL": proj.get("tool", "gemini"),
                         "FORGE_MODEL": proj.get("model", ""),
-                        "AEOS_REPO_ROOT": REPO_ROOT,
+                        "FORGE_REPO_ROOT": REPO_ROOT,
                     }
                     steps_to_run = step_keys if step == "all" else [step]
                     build_runner = os.path.join(FORGE_DIR, "scripts", "build_runner.py")
@@ -2709,8 +3003,9 @@ import os, sys, json, subprocess, tempfile
 from datetime import datetime
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-FORGE_DIR = os.path.dirname(SCRIPT_DIR)
-REPO_ROOT = os.environ.get("AEOS_REPO_ROOT", os.path.dirname(FORGE_DIR))
+REPO_ROOT = os.environ.get("FORGE_REPO_ROOT", os.path.dirname(os.path.dirname(SCRIPT_DIR)))
+_forge_data = os.environ.get("FORGE_DATA_DIR")
+FORGE_DIR = os.path.expanduser(_forge_data) if _forge_data else os.path.dirname(SCRIPT_DIR)
 BUILD_STATUS_FILE = os.path.join(FORGE_DIR, "runs", "build-system.json")
 API_CONTRACT_FILE = os.path.join(FORGE_DIR, "15-build", "api-contract.md")
 
@@ -3248,8 +3543,31 @@ import subprocess
 import json
 from datetime import datetime
 
-FORGE_DIR = ".forge"
 FORGE_VERSION = "{FORGE_VERSION}"
+
+# -------------------------------------------------------------------------
+# Path Resolution
+# -------------------------------------------------------------------------
+
+def _resolve_data_dir(project_root=None):
+    """Return (forge_data_dir, project_root) by reading the .forge dotfile.
+
+    Falls back to <project_root>/.forge if no dotfile exists (pre-init or legacy dir).
+    """
+    if project_root is None:
+        project_root = os.path.abspath(os.environ.get("FORGE_REPO_ROOT", "."))
+    dotfile = os.path.join(project_root, ".forge")
+    if os.path.isfile(dotfile):
+        try:
+            meta = json.loads(open(dotfile, "r", encoding="utf-8").read())
+            return os.path.expanduser(meta["data_dir"]), project_root
+        except Exception:
+            pass
+    if os.path.isdir(dotfile):
+        # Legacy fallback: .forge/ directory still present
+        return dotfile, project_root
+    # Pre-init: no dotfile yet
+    return os.path.join(project_root, ".forge"), project_root
 
 # -------------------------------------------------------------------------
 # Embedded Scripts for Initialization
@@ -3387,13 +3705,28 @@ import shutil
 from datetime import datetime, timezone
 
 # Configuration
-REPO_ROOT = os.environ.get("AEOS_REPO_ROOT", ".")
-LOG_LEVEL = os.environ.get("AEOS_LOG_LEVEL", "info")
+REPO_ROOT = os.environ.get("FORGE_REPO_ROOT", ".")
+LOG_LEVEL = os.environ.get("FORGE_LOG_LEVEL", "info")
 os.environ["GEMINI_CLI_TRUST_WORKSPACE"] = "true"
-AGENTS_DIR = os.path.join(REPO_ROOT, "11-agents")
-VERSIONS_DIR = os.path.join(REPO_ROOT, "versions")
-GATES_DIR = os.path.join(REPO_ROOT, "12-gates")
-RUNS_LOG = os.path.join(REPO_ROOT, "runs/run-log.md")
+_forge_data = os.environ.get("FORGE_DATA_DIR")
+FORGE_DIR = os.path.expanduser(_forge_data) if _forge_data else os.path.join(REPO_ROOT, ".forge")
+AGENTS_DIR = os.path.join(FORGE_DIR, "11-agents")
+VERSIONS_DIR = os.path.join(FORGE_DIR, "versions")
+GATES_DIR = os.path.join(FORGE_DIR, "12-gates")
+RUNS_LOG = os.path.join(FORGE_DIR, "runs/run-log.md")
+
+FORGE_ORG = os.environ.get("FORGE_ORG", "")
+ORG_CACHE_DIR = os.path.expanduser(f"~/.forge/org-cache/{{FORGE_ORG}}") if FORGE_ORG else ""
+
+def _list_org_context_files():
+    if not ORG_CACHE_DIR or not os.path.isdir(ORG_CACHE_DIR):
+        return [], [], []
+    def _md_files(subdir):
+        d = os.path.join(ORG_CACHE_DIR, subdir)
+        if not os.path.isdir(d):
+            return []
+        return sorted(os.path.join(d, f) for f in os.listdir(d) if f.endswith(".md"))
+    return _md_files("knowledge"), _md_files("patterns"), _md_files("agents")
 
 STAGE_AGENT = {{
     "context": "product-strategist",
@@ -3461,6 +3794,9 @@ def parse_args():
     parser.add_argument("--output", help="Specific output file for multi-output stages")
     parser.add_argument("--raw-input", help="Raw input file for context stage")
     parser.add_argument("--critique", help="User critique or feedback to fix the file")
+    parser.add_argument("--distill-stage", dest="distill_stage", help="Source stage for distillation mode")
+    parser.add_argument("--distill-output", dest="distill_output", help="Output file path for distilled patterns")
+    parser.add_argument("--distill-sources", dest="distill_sources", help="Comma-separated source files for distillation")
     return parser.parse_args()
 
 def validate_environment(stage):
@@ -3526,10 +3862,31 @@ def build_prompt(agent_path, inputs, output_file, critique=None):
     prompt_parts.append("CRITICAL SYSTEM INSTRUCTION: DO NOT USE ANY TOOLS. DO NOT READ FILES. DO NOT RUN COMMANDS. DO NOT WRITE FILES USING TOOLS. DO NOT USE write_file OR read_file.\\n")
     prompt_parts.append("You must simply print the raw markdown text for the file directly to stdout.\\n\\n")
     prompt_parts.append("=== AGENT CONTRACT ===\\n")
-    
+
     with open(agent_path, 'r', encoding='utf-8') as f:
         prompt_parts.append(f.read())
-    
+
+    # Org context injection
+    if os.environ.get("FORGE_SKIP_ORG_CONTEXT", "") != "1":
+        _knowledge, _patterns, _agent_files = _list_org_context_files()
+        _stage_name = os.path.splitext(os.path.basename(agent_path))[0]
+        for _af in _agent_files:
+            if os.path.splitext(os.path.basename(_af))[0] == _stage_name:
+                prompt_parts.append("\\n\\n=== ORG AGENT SUPPLEMENT ===\\n")
+                prompt_parts.append("Additional org-specific rules for this agent:\\n")
+                with open(_af, 'r', encoding='utf-8') as f:
+                    prompt_parts.append(f.read())
+                break
+        if _knowledge or _patterns:
+            prompt_parts.append("\\n\\n=== ORG KNOWLEDGE BASE ===\\n")
+            prompt_parts.append("The following is your organization's accumulated knowledge. Apply it when generating this document.\\n")
+            for _fpath in _knowledge + _patterns:
+                _label = os.path.relpath(_fpath, ORG_CACHE_DIR)
+                prompt_parts.append(f"\\n--- {{_label}} ---\\n")
+                with open(_fpath, 'r', encoding='utf-8') as f:
+                    prompt_parts.append(f.read())
+                prompt_parts.append("\\n")
+
     prompt_parts.append("\\n\\n=== PROVIDED CONTEXT ===\\n")
     
     for f_path in inputs:
@@ -3548,6 +3905,61 @@ def build_prompt(agent_path, inputs, output_file, critique=None):
     prompt_parts.append("Ensure all sections are complete and production-grade.\\n")
     
     return "".join(prompt_parts)
+
+def build_distill_prompt(stage_label, source_files):
+    parts = []
+    parts.append("CRITICAL SYSTEM INSTRUCTION: DO NOT USE ANY TOOLS. DO NOT READ FILES. DO NOT RUN COMMANDS.\\n")
+    parts.append("Print the output markdown directly to stdout only.\\n\\n")
+    parts.append(f"You are a knowledge distillation agent for a software development team.\\n\\n")
+    parts.append(f"Stage: {{stage_label}}\\n\\n")
+    parts.append("Your task: read the following reviewed documents and extract reusable patterns.\\n")
+    parts.append("Output will be injected into future AI generation prompts — be specific, concise, and avoid generic advice.\\n\\n")
+    parts.append("=== SOURCE DOCUMENTS ===\\n")
+    for _fp in source_files:
+        if os.path.isfile(_fp):
+            parts.append(f"\\n--- {{os.path.basename(_fp)}} ---\\n")
+            with open(_fp, "r", encoding="utf-8") as _f:
+                parts.append(_f.read())
+    parts.append("\\n\\n=== DISTILLATION INSTRUCTIONS ===\\n")
+    parts.append("Produce a structured markdown document with exactly these sections:\\n\\n")
+    parts.append("## Key Decisions\\n")
+    parts.append("Important product, architectural, or process decisions from these documents.\\n")
+    parts.append("For each: what was decided, why, and any alternatives rejected.\\n\\n")
+    parts.append("## Reusable Patterns\\n")
+    parts.append("Patterns, templates, or approaches that should apply to future projects.\\n")
+    parts.append("Use the team's actual terminology. Be concrete, not generic.\\n\\n")
+    parts.append("## Constraints and Anti-Patterns\\n")
+    parts.append("Constraints, limitations, or things to avoid specific to this team or domain.\\n\\n")
+    parts.append("## Team Conventions\\n")
+    parts.append("Naming conventions, structural patterns, or process standards present in these documents.\\n\\n")
+    parts.append("Rules:\\n- Total output: under 600 words.\\n- Use the team's actual language.\\n- Omit sections with nothing specific to add.\\n- Return only markdown. No preamble.\\n")
+    return "".join(parts)
+
+def run_distill_mode(args):
+    if not args.distill_stage or not args.distill_output:
+        log_error("Distill mode requires --distill-stage and --distill-output")
+        sys.exit(1)
+    source_files = [s for s in (args.distill_sources or "").split(",") if s.strip()]
+    if not source_files:
+        log_error("No source files provided for distillation (--distill-sources)")
+        sys.exit(1)
+
+    state.tool = os.environ.get("FORGE_TOOL", state.model)
+    state.model_id = os.environ.get("FORGE_MODEL", "")
+
+    log_info(f"Distilling stage '{{args.distill_stage}}' from {{len(source_files)}} file(s)")
+    prompt = build_distill_prompt(args.distill_stage, source_files)
+
+    try:
+        invoke_model(prompt, args.distill_output)
+    except subprocess.CalledProcessError:
+        log_error("AI tool returned an error during distillation.")
+        sys.exit(1)
+    except Exception as _e:
+        log_error(f"Distillation failed: {{_e}}")
+        sys.exit(1)
+
+    log_info(f"Distilled patterns saved: {{args.distill_output}}")
 
 def invoke_model(prompt, output_path):
     with tempfile.NamedTemporaryFile(mode='w+', delete=False, encoding='utf-8') as tmp:
@@ -3642,9 +4054,13 @@ def log_run():
 def main():
     args = parse_args()
     state.model = args.model
-    
+
+    if args.stage == "distill":
+        run_distill_mode(args)
+        return
+
     log_info(f"Stage: {{args.stage}}")
-    
+
     validate_environment(args.stage)
     check_gate()
     
@@ -3750,10 +4166,42 @@ BUILD_RUNNER_PY = r\"\"\"{BUILD_RUNNER_PY_CONTENT}\"\"\"
 # -------------------------------------------------------------------------
 
 def cmd_init():
+    import uuid as _uuid
     print("Initializing Forge Environment...")
 
-    if not os.path.exists(FORGE_DIR):
-        os.makedirs(FORGE_DIR)
+    project_root = os.path.abspath(os.environ.get("FORGE_REPO_ROOT", "."))
+    dotfile_path = os.path.join(project_root, ".forge")
+
+    # Block migration path — .forge/ directory still present
+    if os.path.isdir(dotfile_path):
+        print("[Forge] Legacy .forge/ directory found.")
+        print("[Forge] Run: forge migrate    to move data to ~/.forge/ and create the dotfile.")
+        return
+
+    # Load existing dotfile or create new project identity
+    if os.path.isfile(dotfile_path):
+        try:
+            meta = json.loads(open(dotfile_path, "r", encoding="utf-8").read())
+            project_id = meta["project_id"]
+            data_dir = os.path.expanduser(meta["data_dir"])
+        except Exception as _e:
+            print(f"[Forge] Could not read .forge dotfile: {{_e}}")
+            return
+    else:
+        project_id = str(_uuid.uuid4())
+        data_dir = os.path.expanduser(f"~/.forge/projects/{{project_id}}")
+        meta = {{
+            "project_id": project_id,
+            "project_name": os.path.basename(project_root),
+            "org": "",
+            "data_dir": f"~/.forge/projects/{{project_id}}"
+        }}
+        with open(dotfile_path, "w", encoding="utf-8") as _f:
+            json.dump(meta, _f, indent=2)
+        print(f"[Forge] Created .forge dotfile (commit this file to your repo)")
+
+    FORGE_DIR = data_dir
+    os.makedirs(FORGE_DIR, exist_ok=True)
 
     directories = [
         "00-context",
@@ -3925,7 +4373,7 @@ PENDING
         with open(state_path, "w") as f:
             json.dump({{}}, f)
 
-    print("Forge OS environment initialized successfully in .forge/")
+    print(f"Forge OS environment initialized successfully in {{FORGE_DIR}}")
 
 PIPELINE_STAGES = [
     "context", "requirements", "design", "analysis", "architecture",
@@ -3933,7 +4381,8 @@ PIPELINE_STAGES = [
 ]
 
 def cmd_generate(stage, input_file=None):
-    if not os.path.exists(FORGE_DIR):
+    forge_data_dir, project_root = _resolve_data_dir()
+    if not os.path.exists(forge_data_dir):
         print("Forge not initialized. Please run 'forge init' first.")
         sys.exit(1)
 
@@ -3950,9 +4399,8 @@ def cmd_generate(stage, input_file=None):
     if abs_input:
         cmd.append(abs_input)
 
-    # run.py resolves paths relative to cwd (.forge/), so AEOS_REPO_ROOT must be "."
-    env = {{**os.environ, "AEOS_REPO_ROOT": "."}}
-    result = subprocess.run(cmd, cwd=FORGE_DIR, env=env)
+    env = {{**os.environ, "FORGE_REPO_ROOT": project_root, "FORGE_DATA_DIR": forge_data_dir}}
+    result = subprocess.run(cmd, cwd=forge_data_dir, env=env)
 
     if result.returncode == 0:
         print(f"Forge {{stage}} generation completed successfully.")
@@ -3961,7 +4409,8 @@ def cmd_generate(stage, input_file=None):
         sys.exit(1)
 
 def cmd_pipeline(input_file=None):
-    if not os.path.exists(FORGE_DIR):
+    forge_data_dir, project_root = _resolve_data_dir()
+    if not os.path.exists(forge_data_dir):
         print("Forge not initialized. Please run 'forge init' first.")
         sys.exit(1)
 
@@ -3977,11 +4426,11 @@ def cmd_pipeline(input_file=None):
     print("Review in the dashboard and mark reviewed — gates auto-pass.")
     print()
 
+    env = {{**os.environ, "FORGE_REPO_ROOT": project_root, "FORGE_DATA_DIR": forge_data_dir}}
     for stage in PIPELINE_STAGES:
         print(f"==> [{{stage}}]")
         cmd = [sys.executable, "scripts/stage_runner.py", stage, abs_raw]
-        env = {{**os.environ, "AEOS_REPO_ROOT": "."}}
-        result = subprocess.run(cmd, cwd=FORGE_DIR, env=env)
+        result = subprocess.run(cmd, cwd=forge_data_dir, env=env)
         if result.returncode != 0:
             print("")
             print(f"  Gate blocked at stage '{{stage}}'.")
@@ -3993,24 +4442,65 @@ def cmd_pipeline(input_file=None):
     print("    Open dashboard, review and approve documents to pass gates.")
 
 def cmd_dashboard(port=8080):
-    if not os.path.exists(FORGE_DIR):
+    forge_data_dir, project_root = _resolve_data_dir()
+    if not os.path.exists(forge_data_dir):
         print("Forge not initialized. Please run 'forge init' first.")
         sys.exit(1)
 
-    server_script = os.path.join(FORGE_DIR, "scripts/server.py")
+    server_script = os.path.join(forge_data_dir, "scripts/server.py")
     if not os.path.exists(server_script):
         print("Dashboard scripts not found. Run 'forge init' to regenerate.")
         sys.exit(1)
 
     print(f"Starting Forge Dashboard on port {{port}}...")
-    project_root = os.path.dirname(os.path.abspath(FORGE_DIR))
     forge_abs = os.path.abspath(sys.argv[0])
-    result = subprocess.run([sys.executable, server_script, str(port)], env={{**os.environ, "AEOS_REPO_ROOT": project_root, "FORGE_VERSION": FORGE_VERSION, "FORGE_SCRIPT": forge_abs}})
+    result = subprocess.run(
+        [sys.executable, server_script, str(port)],
+        env={{
+            **os.environ,
+            "FORGE_REPO_ROOT": project_root,
+            "FORGE_DATA_DIR": forge_data_dir,
+            "FORGE_VERSION": FORGE_VERSION,
+            "FORGE_SCRIPT": forge_abs,
+        }}
+    )
     sys.exit(result.returncode)
+
+def cmd_migrate():
+    import uuid as _uuid, shutil as _shutil
+    project_root = os.path.abspath(os.environ.get("FORGE_REPO_ROOT", "."))
+    legacy_dir = os.path.join(project_root, ".forge")
+
+    if not os.path.isdir(legacy_dir):
+        print("[Forge] No legacy .forge/ directory found — nothing to migrate.")
+        return
+
+    project_id = str(_uuid.uuid4())
+    data_dir = os.path.expanduser(f"~/.forge/projects/{{project_id}}")
+
+    print(f"[Forge] Migrating {{legacy_dir}}")
+    print(f"[Forge]       → {{data_dir}}")
+    os.makedirs(os.path.dirname(data_dir), exist_ok=True)
+    _shutil.copytree(legacy_dir, data_dir)
+    _shutil.rmtree(legacy_dir)
+
+    meta = {{
+        "project_id": project_id,
+        "project_name": os.path.basename(project_root),
+        "org": "",
+        "data_dir": f"~/.forge/projects/{{project_id}}"
+    }}
+    with open(legacy_dir, "w", encoding="utf-8") as _f:
+        json.dump(meta, _f, indent=2)
+
+    print("[Forge] Migration complete.")
+    print(f"[Forge] Data directory: {{data_dir}}")
+    print("[Forge] Next: git add .forge && git commit -m 'chore: add Forge OS project pointer'")
 
 def cmd_upgrade():
     print(f"Forge OS v{{FORGE_VERSION}} — upgrading runtime scripts...")
-    if not os.path.exists(FORGE_DIR):
+    forge_data_dir, _ = _resolve_data_dir()
+    if not os.path.exists(forge_data_dir):
         print("Forge not initialized. Run './forge init' first.")
         sys.exit(1)
     cmd_init()
@@ -4033,8 +4523,9 @@ def cmd_dev(port=8080):
         sys.exit(result.returncode)
 
     # Symlink src/dashboard.html so edits are live without rebuilding
+    forge_data_dir, _ = _resolve_data_dir()
     src_dash = os.path.join(os.path.dirname(forge_script), "src/dashboard.html")
-    dst_dash = os.path.join(FORGE_DIR, "scripts/dashboard.html")
+    dst_dash = os.path.join(forge_data_dir, "scripts/dashboard.html")
     if os.path.exists(src_dash):
         if os.path.exists(dst_dash) or os.path.islink(dst_dash):
             os.remove(dst_dash)
@@ -4055,13 +4546,12 @@ if __name__ == "__main__":
             print("Usage: ./forge --project <path> <command>")
             sys.exit(1)
         project_path = os.path.abspath(args[1])
-        os.environ["AEOS_REPO_ROOT"] = project_path
-        FORGE_DIR = os.path.join(project_path, ".forge")
+        os.environ["FORGE_REPO_ROOT"] = project_path
         args = args[2:]
 
     if not args:
         print(f"Forge OS v{{FORGE_VERSION}}")
-        print("Usage: ./forge [--project <path>] <version|init|upgrade|generate [stage]|pipeline|dashboard [port]|dev [port]>")
+        print("Usage: ./forge [--project <path>] <version|init|migrate|upgrade|generate [stage]|pipeline|dashboard [port]|dev [port]>")
         sys.exit(1)
 
     command = args[0]
@@ -4092,9 +4582,11 @@ if __name__ == "__main__":
     elif command == "dev":
         port = int(args[1]) if len(args) > 1 else 8080
         cmd_dev(port)
+    elif command == "migrate":
+        cmd_migrate()
     else:
         print(f"Unknown command: {{command}}")
-        print("Available commands: version, init, upgrade, generate [stage], pipeline, dashboard [port], dev [port]")
+        print("Available commands: version, init, migrate, upgrade, generate [stage], pipeline, dashboard [port], dev [port]")
         sys.exit(1)
 '''
 
