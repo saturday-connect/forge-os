@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Connect GitHub Account</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0d1117;
+      --surface: #161b22;
+      --border: #30363d;
+      --text: #e6edf3;
+      --text-muted: #8b949e;
+      --accent: #238636;
+      --accent-hover: #2ea043;
+      --code-bg: #1f2937;
+      --code-text: #79c0ff;
+      --error: #f85149;
+      --success: #3fb950;
+      --radius: 8px;
+    }
+
+    @media (prefers-color-scheme: light) {
+      :root {
+        --bg: #f6f8fa;
+        --surface: #ffffff;
+        --border: #d0d7de;
+        --text: #24292f;
+        --text-muted: #57606a;
+        --accent: #1a7f37;
+        --accent-hover: #116329;
+        --code-bg: #eef1f5;
+        --code-text: #0550ae;
+        --error: #cf222e;
+        --success: #1a7f37;
+      }
+    }
+
+    html, body {
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      font-size: 14px;
+      line-height: 1.5;
+      user-select: none;
+      -webkit-app-region: drag;
+    }
+
+    .container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      padding: 28px 32px;
+      gap: 20px;
+    }
+
+    .screen { display: none; width: 100%; }
+    .screen.active { display: contents; }
+
+    .logo {
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+    }
+
+    h1 {
+      font-size: 17px;
+      font-weight: 600;
+      color: var(--text);
+      text-align: center;
+    }
+
+    .instruction {
+      font-size: 13px;
+      color: var(--text-muted);
+      text-align: center;
+    }
+
+    .code-block {
+      background: var(--code-bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 14px 28px;
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      -webkit-app-region: no-drag;
+    }
+
+    .code-value {
+      font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+      font-size: 22px;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      color: var(--code-text);
+    }
+
+    .btn-copy {
+      background: transparent;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text-muted);
+      font-size: 12px;
+      padding: 4px 10px;
+      cursor: pointer;
+      transition: border-color 0.15s, color 0.15s;
+      -webkit-app-region: no-drag;
+    }
+    .btn-copy:hover { border-color: var(--text-muted); color: var(--text); }
+    .btn-copy.copied { color: var(--success); border-color: var(--success); }
+
+    .url-line {
+      font-size: 12px;
+      color: var(--text-muted);
+      text-align: center;
+    }
+    .url-line strong {
+      color: var(--text);
+      font-family: monospace;
+    }
+
+    .spinner {
+      width: 18px;
+      height: 18px;
+      border: 2px solid var(--border);
+      border-top-color: var(--text-muted);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .status-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--text-muted);
+      font-size: 13px;
+    }
+
+    .timer {
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+    .timer.urgent { color: var(--error); }
+
+    .success-icon {
+      font-size: 36px;
+      line-height: 1;
+    }
+
+    .error-msg {
+      font-size: 13px;
+      color: var(--error);
+      text-align: center;
+      background: rgba(248, 81, 73, 0.08);
+      border: 1px solid rgba(248, 81, 73, 0.25);
+      border-radius: var(--radius);
+      padding: 10px 16px;
+      width: 100%;
+    }
+
+    .btn-primary {
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 500;
+      padding: 8px 20px;
+      cursor: pointer;
+      width: 100%;
+      transition: background 0.15s;
+      -webkit-app-region: no-drag;
+    }
+    .btn-primary:hover { background: var(--accent-hover); }
+
+    .btn-ghost {
+      background: transparent;
+      color: var(--text-muted);
+      border: none;
+      font-size: 12px;
+      cursor: pointer;
+      padding: 4px 0;
+      -webkit-app-region: no-drag;
+    }
+    .btn-ghost:hover { color: var(--text); }
+
+    .divider { width: 100%; height: 1px; background: var(--border); }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="logo">Forge OS</div>
+
+    <!-- Waiting screen -->
+    <div class="screen active" id="screen-waiting">
+      <div style="display:contents" id="waiting-content">
+        <h1>Connect GitHub Account</h1>
+        <p class="instruction">Enter the code below at GitHub to authorize:</p>
+
+        <div class="code-block">
+          <span class="code-value" id="user-code">····-····</span>
+          <button class="btn-copy" id="btn-copy">Copy</button>
+        </div>
+
+        <p class="url-line">
+          Go to <strong>github.com/activate</strong> in your browser
+        </p>
+
+        <div class="status-row">
+          <div class="spinner" id="spinner"></div>
+          <span id="status-text">Waiting for authorization…</span>
+        </div>
+
+        <div class="timer" id="timer"></div>
+
+        <div class="divider"></div>
+        <button class="btn-ghost" id="btn-cancel">Cancel</button>
+      </div>
+    </div>
+
+    <!-- Success screen -->
+    <div class="screen" id="screen-success">
+      <div style="display:flex;flex-direction:column;align-items:center;gap:16px;width:100%">
+        <div class="success-icon">✓</div>
+        <h1>Connected!</h1>
+        <p class="instruction">Your GitHub account is linked. Forge OS is starting…</p>
+      </div>
+    </div>
+
+    <!-- Error screen -->
+    <div class="screen" id="screen-error">
+      <div style="display:flex;flex-direction:column;align-items:center;gap:16px;width:100%">
+        <h1>Authorization Failed</h1>
+        <div class="error-msg" id="error-msg"></div>
+        <button class="btn-primary" id="btn-retry">Try Again</button>
+        <button class="btn-ghost" id="btn-cancel-error">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const screens = {
+      waiting: document.getElementById('screen-waiting'),
+      success: document.getElementById('screen-success'),
+      error: document.getElementById('screen-error')
+    }
+
+    function showScreen(name) {
+      Object.values(screens).forEach(s => s.classList.remove('active'))
+      screens[name].classList.add('active')
+    }
+
+    // Countdown timer
+    let timerInterval = null
+    function startTimer(expiresInSec) {
+      const el = document.getElementById('timer')
+      const end = Date.now() + expiresInSec * 1000
+      clearInterval(timerInterval)
+      timerInterval = setInterval(() => {
+        const remaining = Math.max(0, Math.round((end - Date.now()) / 1000))
+        const m = Math.floor(remaining / 60)
+        const s = remaining % 60
+        el.textContent = `Code expires in ${m}:${s.toString().padStart(2, '0')}`
+        el.classList.toggle('urgent', remaining < 60)
+        if (remaining === 0) clearInterval(timerInterval)
+      }, 500)
+    }
+
+    // Button listeners registered unconditionally — callbacks reference electronAPI
+    // lazily (only invoked on click, always in Electron context at that point).
+    document.getElementById('btn-copy').addEventListener('click', () => {
+      window.electronAPI?.copyCode()
+      const btn = document.getElementById('btn-copy')
+      btn.textContent = 'Copied!'
+      btn.classList.add('copied')
+      setTimeout(() => { btn.textContent = 'Copy'; btn.classList.remove('copied') }, 2000)
+    })
+    document.getElementById('btn-cancel').addEventListener('click', () => window.electronAPI?.cancel())
+    document.getElementById('btn-cancel-error').addEventListener('click', () => window.electronAPI?.cancel())
+    document.getElementById('btn-retry').addEventListener('click', () => window.electronAPI?.retry())
+
+    // IPC status handler — only available in Electron context.
+    if (window.electronAPI) {
+      window.electronAPI.onAuthStatus(({ state, code, url, expiresIn, message }) => {
+        if (state === 'waiting') {
+          document.getElementById('user-code').textContent = code
+          if (expiresIn) startTimer(expiresIn)
+          showScreen('waiting')
+        } else if (state === 'success') {
+          clearInterval(timerInterval)
+          showScreen('success')
+        } else if (state === 'error') {
+          clearInterval(timerInterval)
+          document.getElementById('error-msg').textContent = message
+          showScreen('error')
+        }
+      })
+    }
+  </script>
+</body>
+</html>
