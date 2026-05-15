@@ -11,6 +11,13 @@ const http = require('http')
 const auth = require('./auth')
 const github = require('./github')
 const org = require('./org')
+const os = require('os')
+
+function writeTempHtml(name, html) {
+  const p = path.join(os.tmpdir(), `forge-os-${name}.html`)
+  fs.writeFileSync(p, html, 'utf8')
+  return p
+}
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -583,7 +590,7 @@ async function showProjectPicker() {
       <div class="empty-desc">Open a folder to initialize it as a Forge project. Your projects will appear here for quick switching.</div>
     </div>`
 
-  pickerWin.loadURL(`data:text/html,<!DOCTYPE html><html><head><style>${PICKER_STYLES}</style></head><body>
+  const projectHtml = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>${PICKER_STYLES}</style></head><body>
     <div class="header">Recent Projects</div>
     ${isEmpty ? emptyState : `<div class="list">${items}</div>`}
     <div class="footer">
@@ -595,7 +602,8 @@ async function showProjectPicker() {
       function pick(i){ipcRenderer.send('project-pick',paths[i])}
       function browseNew(){ipcRenderer.send('project-browse')}
     </script>
-  </body></html>`)
+  </body></html>`
+  pickerWin.loadFile(writeTempHtml('project-picker', projectHtml))
 
   pickerWin.once('ready-to-show', () => pickerWin.show())
 
@@ -695,7 +703,7 @@ function buildTrayMenu() {
             <div class="empty-desc">Enter your GitHub organization name below. It will appear here for quick switching next time.</div>
           </div>`
 
-        orgWin.loadURL(`data:text/html,<!DOCTYPE html><html><head><style>${PICKER_STYLES}</style></head><body>
+        const orgHtml = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>${PICKER_STYLES}</style></head><body>
           <div class="header">Organizations</div>
           ${isEmpty ? emptyState : `<div class="list">${items}</div>`}
           <div class="footer">
@@ -720,7 +728,8 @@ function buildTrayMenu() {
             }
             document.addEventListener('keydown',e=>{if(e.key==='Enter')save()})
           </script>
-        </body></html>`)
+        </body></html>`
+        orgWin.loadFile(writeTempHtml('org-picker', orgHtml))
 
         orgWin.once('ready-to-show', () => orgWin.show())
 
