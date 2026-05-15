@@ -48,6 +48,14 @@ function writeConfig(data) {
   fs.writeFileSync(CONFIG_FILE, JSON.stringify(data, null, 2), { mode: 0o600 })
 }
 
+function addProjectToHistory(projectPath) {
+  const config = readConfig()
+  const history = (config.projectHistory || []).filter(p => p !== projectPath)
+  history.unshift(projectPath)
+  writeConfig({ ...config, projectHistory: history.slice(0, 10) })
+}
+}
+
 // ─── Utilities ────────────────────────────────────────────────────────────────
 
 function getFreePort() {
@@ -477,6 +485,122 @@ function createWindow(port) {
   })
 }
 
+// ─── Project opener ───────────────────────────────────────────────────────────
+
+async function openProject(newPath) {
+  const newDataDir = await ensureProjectReady(newPath)
+  if (!newDataDir) return
+
+  addProjectToHistory(newPath)
+  writeConfig({ ...readConfig(), projectPath: newPath })
+  killServer()
+
+  try { await runForgeCommand(newPath, 'upgrade') } catch (_) {}
+
+  serverPort = await getFreePort()
+  startServer(newPath, newDataDir, serverPort)
+
+  try {
+    await waitForServer(serverPort)
+  } catch (err) {
+    dialog.showErrorBox('Server Error', `Failed to start server:\n${err.message}`)
+    return
+  }
+
+  if (win) {
+    win.loadURL(`http://127.0.0.1:${serverPort}`)
+    win.show()
+    win.focus()
+  }
+  buildTrayMenu()
+}
+
+async function showProjectPicker() {
+  const config = readConfig()
+  const history = (config.projectHistory || []).filter(p => fs.existsSync(p))
+  const current = config.projectPath || ''
+
+  const pickerWin = new BrowserWindow({
+    width: 480,
+    height: Math.min(120 + history.length * 56 + 56, 520),
+    resizable: false,
+    minimizable: false,
+    maximizable: false,
+    title: 'Switch Project',
+    parent: win || undefined,
+    modal: !!win,
+    webPreferences: { nodeIntegration: true, contextIsolation: false }
+  })
+
+  const items = history.map((p, i) => `
+    <div class="item ${p === current ? 'active' : ''}" onclick="pick(${i})">
+      <div class="name">${require('path').basename(p)}</div>
+      <div class="path">${p}</div>
+    </div>`).join('')
+
+  pickerWin.loadURL(`data:text/html,<!DOCTYPE html><html><head>
+    <style>
+      *{box-sizing:border-box;margin:0;padding:0;font-family:-apple-system,sans-serif}
+      body{background:#0d0d0d;color:#fff;display:flex;flex-direction:column;height:100vh;overflow:hidden}
+      .header{padding:14px 16px 10px;font-size:12px;color:#666;text-transform:uppercase;letter-spacing:.8px;border-bottom:1px solid #1f1f1f;flex-shrink:0}
+      .list{flex:1;overflow-y:auto}
+      .item{padding:12px 16px;cursor:pointer;border-bottom:1px solid #1a1a1a;transition:background .1s}
+      .item:hover{background:#1a1a1a}
+      .item.active{background:#0e0e2e}
+      .name{font-size:14px;font-weight:600;margin-bottom:2px}
+      .path{font-size:11px;color:#555;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+      .item.active .path{color:#494fdf88}
+      .item.active::after{content:'active';float:right;font-size:10px;color:#494fdf;font-weight:600;margin-top:-18px}
+      .footer{padding:10px 16px;border-top:1px solid #1f1f1f;flex-shrink:0}
+      .btn-new{width:100%;background:transparent;border:1px solid #2a2a2a;color:#888;padding:9px;border-radius:6px;font-size:13px;cursor:pointer;transition:all .15s}
+      .btn-new:hover{border-color:#494fdf;color:#fff}
+      .empty{padding:24px 16px;color:#555;font-size:13px;text-align:center}
+    </style>
+  </head><body>
+    <div class="header">Recent Projects</div>
+    <div class="list">${items || '<div class="empty">No recent projects</div>'}</div>
+    <div class="footer">
+      <button class="btn-new" onclick="browseNew()">+ Open Different Folder</button>
+    </div>
+    <script>
+      const {ipcRenderer} = require('electron')
+      const paths = ${JSON.stringify(history)}
+      function pick(i){ ipcRenderer.send('project-pick', paths[i]) }
+      function browseNew(){ ipcRenderer.send('project-browse') }
+    </script>
+  </body></html>`)
+
+  pickerWin.once('ready-to-show', () => pickerWin.show())
+
+  return new Promise(resolve => {
+    const { ipcMain: ipc } = require('electron')
+
+    ipc.once('project-pick', (_e, pickedPath) => {
+      pickerWin.close()
+      resolve(pickedPath)
+    })
+
+    ipc.once('project-browse', async () => {
+      pickerWin.close()
+      const result = await dialog.showOpenDialog(win || null, {
+        title: 'Open Forge Project',
+        defaultPath: current || app.getPath('home'),
+        properties: ['openDirectory', 'createDirectory'],
+        buttonLabel: 'Open Project'
+      })
+      resolve(result.canceled || !result.filePaths.length ? null : result.filePaths[0])
+    })
+
+    pickerWin.on('closed', () => {
+      ipc.removeAllListeners('project-pick')
+      ipc.removeAllListeners('project-browse')
+      resolve(null)
+    })
+  }).then(async chosenPath => {
+    if (chosenPath) await openProject(chosenPath)
+  })
+}
+
 // ─── Tray ─────────────────────────────────────────────────────────────────────
 
 function createTray() {
@@ -513,42 +637,7 @@ function buildTrayMenu() {
     { type: 'separator' },
     {
       label: 'Switch Project',
-      click: async () => {
-        const config = readConfig()
-        const result = await dialog.showOpenDialog(win, {
-          title: 'Select Project Folder',
-          defaultPath: config.projectPath || app.getPath('home'),
-          properties: ['openDirectory', 'createDirectory'],
-          buttonLabel: 'Open Project'
-        })
-        if (result.canceled || !result.filePaths.length) return
-
-        const newPath = result.filePaths[0]
-        const newDataDir = await ensureProjectReady(newPath)
-        if (!newDataDir) return
-
-        writeConfig({ ...config, projectPath: newPath })
-        killServer()
-
-        try { await runForgeCommand(newPath, 'upgrade') } catch (_) {}
-
-        serverPort = await getFreePort()
-        startServer(newPath, newDataDir, serverPort)
-
-        try {
-          await waitForServer(serverPort)
-        } catch (err) {
-          dialog.showErrorBox('Server Error', `Failed to start server for new project:\n${err.message}`)
-          return
-        }
-
-        if (win) {
-          win.loadURL(`http://127.0.0.1:${serverPort}`)
-          win.show()
-          win.focus()
-        }
-        buildTrayMenu()
-      }
+      click: async () => { await showProjectPicker() }
     },
     {
       label: 'Switch Organization',
@@ -851,6 +940,7 @@ if (!app.requestSingleInstanceLock()) {
     const forgeDataDir = await ensureProjectReady(projectRoot)
     if (!forgeDataDir) { app.exit(0); return }
 
+    addProjectToHistory(projectRoot)
     writeConfig({ ...readConfig(), projectPath: projectRoot })
 
     // Upgrade project scripts to match the current forge binary before serving
