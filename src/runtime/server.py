@@ -16,9 +16,10 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 FORGE_TOKEN = os.environ.get("FORGE_TOKEN", "")
 GIT_PAT = os.environ.get("FORGE_GIT_PAT", "")
 
-REPO_ROOT = os.path.abspath(os.environ.get("AEOS_REPO_ROOT", "."))
+REPO_ROOT = os.path.abspath(os.environ.get("FORGE_REPO_ROOT", os.environ.get("AEOS_REPO_ROOT", ".")))
 ORCHESTRATOR_ROOT = os.path.abspath(os.environ.get("FORGE_ORCHESTRATOR_ROOT", REPO_ROOT))
-FORGE_DIR = os.path.join(REPO_ROOT, ".forge")
+_data_dir = os.environ.get("FORGE_DATA_DIR", "")
+FORGE_DIR = os.path.abspath(_data_dir) if _data_dir else os.path.join(REPO_ROOT, ".forge")
 PROJECTS_ROOT = os.path.join(ORCHESTRATOR_ROOT, ".projects")
 PROJECTS_INDEX_FILE = os.path.join(PROJECTS_ROOT, "index.json")
 PROJECT_STATUS_ACTIVE = "active"
@@ -85,14 +86,16 @@ DEPARTMENTS = {
 # Project root management
 # ---------------------------------------------------------------------------
 
-def set_project_root(project_root):
+def set_project_root(project_root, data_dir=None):
     global REPO_ROOT, FORGE_DIR, REVIEWS_FILE, STATE_FILE, RAW_INPUT_DIR
     REPO_ROOT = os.path.abspath(project_root)
-    FORGE_DIR = os.path.join(REPO_ROOT, ".forge")
+    _dd = data_dir or os.environ.get("FORGE_DATA_DIR", "")
+    FORGE_DIR = os.path.abspath(_dd) if _dd else os.path.join(REPO_ROOT, ".forge")
     REVIEWS_FILE = os.path.join(FORGE_DIR, "reviews.json")
     STATE_FILE = os.path.join(FORGE_DIR, "project-state.json")
     RAW_INPUT_DIR = os.path.join(FORGE_DIR, "00-raw-input")
     os.environ["AEOS_REPO_ROOT"] = REPO_ROOT
+    os.environ["FORGE_REPO_ROOT"] = REPO_ROOT
 
 
 def ensure_projects_root():
