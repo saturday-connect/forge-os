@@ -6,3 +6,5 @@ forge
 .claude/
 __pycache__/
 *.pyc
+node_modules/
+electron/package-lock.json

@@ -17,6 +17,7 @@ const fs = require('fs')
 
 const CONFIG_FILE = path.join(app.getPath('userData'), 'config.json')
 const TOKEN_FILE = path.join(app.getPath('userData'), 'gh_token.enc')
+const GIT_PAT_FILE = path.join(app.getPath('userData'), 'git_pat.enc')
 const OAUTH_SCOPES = 'read:org,repo'
 
 function getClientId() {
@@ -64,6 +65,33 @@ function loadToken() {
 function clearToken() {
   try {
     if (fs.existsSync(TOKEN_FILE)) fs.unlinkSync(TOKEN_FILE)
+  } catch (_) {}
+}
+
+// ─── Git PAT storage (same safeStorage mechanism as OAuth token) ──────────────
+
+function storeGitPat(pat) {
+  if (!isEncryptionAvailable()) return
+  const encrypted = safeStorage.encryptString(pat)
+  fs.mkdirSync(path.dirname(GIT_PAT_FILE), { recursive: true })
+  fs.writeFileSync(GIT_PAT_FILE, encrypted, { mode: 0o600 })
+}
+
+function loadGitPat() {
+  if (!fs.existsSync(GIT_PAT_FILE)) return null
+  if (!isEncryptionAvailable()) return null
+  try {
+    const encrypted = fs.readFileSync(GIT_PAT_FILE)
+    return safeStorage.decryptString(encrypted)
+  } catch (_) {
+    fs.unlinkSync(GIT_PAT_FILE)
+    return null
+  }
+}
+
+function clearGitPat() {
+  try {
+    if (fs.existsSync(GIT_PAT_FILE)) fs.unlinkSync(GIT_PAT_FILE)
   } catch (_) {}
 }
 
@@ -268,4 +296,4 @@ async function ensureAuthenticated() {
   }
 }
 
-module.exports = { ensureAuthenticated, loadToken, storeToken, clearToken, runAuthFlow }
+module.exports = { ensureAuthenticated, loadToken, storeToken, clearToken, runAuthFlow, storeGitPat, loadGitPat, clearGitPat }

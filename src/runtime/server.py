@@ -3,11 +3,18 @@ import sys
 import json
 import subprocess
 import shutil
+import tempfile
 import time
 import threading
 import urllib.parse
+import urllib.request
+import urllib.error
 from datetime import datetime
 from http.server import HTTPServer, BaseHTTPRequestHandler
+
+# Module-level security constants — read from env at startup
+FORGE_TOKEN = os.environ.get("FORGE_TOKEN", "")
+GIT_PAT = os.environ.get("FORGE_GIT_PAT", "")
 
 REPO_ROOT = os.path.abspath(os.environ.get("AEOS_REPO_ROOT", "."))
 ORCHESTRATOR_ROOT = os.path.abspath(os.environ.get("FORGE_ORCHESTRATOR_ROOT", REPO_ROOT))
@@ -54,11 +61,29 @@ KNOWN_TOOLS = {
         ]
     },
 }
+
 REVIEWS_FILE = os.path.join(FORGE_DIR, "reviews.json")
 STATE_FILE = os.path.join(FORGE_DIR, "project-state.json")
 RAW_INPUT_DIR = os.path.join(FORGE_DIR, "00-raw-input")
 FORGE_VERSION = os.environ.get("FORGE_VERSION", "unknown")
 FORGE_SCRIPT = os.environ.get("FORGE_SCRIPT", "")
+
+# Phase 4+5: user profile
+USER_FILE = os.path.expanduser("~/.forge/user.json")
+
+DEPARTMENTS = {
+    "all":         list(range(11)),
+    "product":     [0, 1],
+    "design":      [2, 3],
+    "engineering": [4, 5, 6, 7],
+    "operations":  [8, 9],
+    "marketing":   [10],
+}
+
+
+# ---------------------------------------------------------------------------
+# Project root management
+# ---------------------------------------------------------------------------
 
 def set_project_root(project_root):
     global REPO_ROOT, FORGE_DIR, REVIEWS_FILE, STATE_FILE, RAW_INPUT_DIR
@@ -69,8 +94,10 @@ def set_project_root(project_root):
     RAW_INPUT_DIR = os.path.join(FORGE_DIR, "00-raw-input")
     os.environ["AEOS_REPO_ROOT"] = REPO_ROOT
 
+
 def ensure_projects_root():
     os.makedirs(PROJECTS_ROOT, exist_ok=True)
+
 
 def slugify_project_name(name):
     raw = (name or "").strip().lower()
@@ -87,8 +114,10 @@ def slugify_project_name(name):
     slug = "".join(out).strip("-")
     return slug or "project"
 
+
 def default_projects_index():
     return {"active_project_id": "", "projects": []}
+
 
 def load_projects_index():
     ensure_projects_root()
@@ -103,10 +132,16 @@ def load_projects_index():
             pass
     return default_projects_index()
 
+
 def save_projects_index(index_data):
     ensure_projects_root()
     with open(PROJECTS_INDEX_FILE, "w", encoding="utf-8") as f:
         json.dump(index_data, f, indent=2)
+    try:
+        os.chmod(PROJECTS_INDEX_FILE, 0o600)
+    except Exception:
+        pass
+
 
 def ensure_unique_slug(index_data, base_slug):
     existing = {p.get("slug", "") for p in index_data.get("projects", [])}
@@ -119,6 +154,7 @@ def ensure_unique_slug(index_data, base_slug):
             return candidate
         i += 1
 
+
 def get_active_project(index_data):
     active_id = index_data.get("active_project_id", "")
     for p in index_data.get("projects", []):
@@ -126,11 +162,13 @@ def get_active_project(index_data):
             return p
     return None
 
+
 def get_project_by_id(index_data, project_id):
     for p in index_data.get("projects", []):
         if p.get("id") == project_id:
             return p
     return None
+
 
 def choose_next_active_project(index_data):
     for p in index_data.get("projects", []):
@@ -140,10 +178,12 @@ def choose_next_active_project(index_data):
     index_data["active_project_id"] = ""
     return None
 
+
 def safe_project_path(project_path):
     root = os.path.abspath(PROJECTS_ROOT)
     target = os.path.abspath(project_path or "")
     return target.startswith(root + os.sep) and target != root
+
 
 def sync_registry_from_disk(index_data):
     changed = False
@@ -164,9 +204,13 @@ def sync_registry_from_disk(index_data):
         save_projects_index(index_data)
     return index_data
 
+
+# ---------------------------------------------------------------------------
+# AI invocation
+# ---------------------------------------------------------------------------
+
 def invoke_ai(prompt, tool, model_id):
-    import tempfile as _tmp
-    with _tmp.NamedTemporaryFile(mode="w", delete=False, suffix=".txt", encoding="utf-8") as t:
+    with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".txt", encoding="utf-8") as t:
         tmp_path = t.name
     try:
         if tool == "gemini":
@@ -193,6 +237,7 @@ def invoke_ai(prompt, tool, model_id):
         if os.path.exists(tmp_path):
             os.remove(tmp_path)
 
+
 def normalize_ai_error(raw_error):
     text = (raw_error or "").strip()
     lowered = text.lower()
@@ -211,6 +256,7 @@ def normalize_ai_error(raw_error):
         return "The AI model returned an error. Retry the request."
     return text.splitlines()[0][:220]
 
+
 GATE_STAGE_MAP = {
     "context-gate": "00-context",
     "prd-gate": "01-requirements",
@@ -222,6 +268,11 @@ GATE_STAGE_MAP = {
     "marketing-gate": "10-marketing",
 }
 
+
+# ---------------------------------------------------------------------------
+# Reviews + state
+# ---------------------------------------------------------------------------
+
 def load_reviews():
     if os.path.exists(REVIEWS_FILE):
         try:
@@ -231,12 +282,15 @@ def load_reviews():
             pass
     return {}
 
+
 def save_reviews(reviews):
     with open(REVIEWS_FILE, "w") as f:
         json.dump(reviews, f, indent=2)
 
+
 def _default_state():
     return {
+        "schema_version": 1,
         "project_name": "",
         "builds": [],
         "issues": [],
@@ -244,7 +298,6 @@ def _default_state():
             "repo_url": "",
             "username": "",
             "email": "",
-            "token": "",
             "default_branch": "main",
             "branch_prefix": "forge"
         },
@@ -256,12 +309,12 @@ def _default_state():
         "model": "gemini"
     }
 
+
 def load_project_state():
     if os.path.exists(STATE_FILE):
         try:
             with open(STATE_FILE, "r") as f:
                 data = json.load(f)
-            # Merge with defaults for missing keys
             defaults = _default_state()
             for k, v in defaults.items():
                 if k not in data:
@@ -275,9 +328,165 @@ def load_project_state():
             pass
     return _default_state()
 
+
 def save_project_state(state):
+    # Strip git PAT before persisting — use env var GIT_PAT instead
+    to_save = json.loads(json.dumps(state))
+    to_save.get("git", {}).pop("token", None)
     with open(STATE_FILE, "w") as f:
-        json.dump(state, f, indent=2)
+        json.dump(to_save, f, indent=2)
+    try:
+        os.chmod(STATE_FILE, 0o600)
+    except Exception:
+        pass
+
+
+# ---------------------------------------------------------------------------
+# Phase 4+5 helpers
+# ---------------------------------------------------------------------------
+
+def _build_org_context_meta():
+    _org = os.environ.get("FORGE_ORG", "")
+    if not _org:
+        return {"active": False, "org": "", "fileCount": 0}
+    _cache = os.path.expanduser(f"~/.forge/org-cache/{_org}")
+    _count = 0
+    for _sub in ("knowledge", "patterns"):
+        _d = os.path.join(_cache, _sub)
+        if os.path.isdir(_d):
+            _count += sum(1 for _f in os.listdir(_d) if _f.endswith(".md"))
+    return {"active": _count > 0, "org": _org, "fileCount": _count}
+
+
+def load_user():
+    try:
+        with open(USER_FILE, "r") as _f:
+            return json.load(_f)
+    except Exception:
+        return {"role": "admin", "department": "all"}
+
+
+def save_user(data):
+    os.makedirs(os.path.dirname(USER_FILE), exist_ok=True)
+    with open(USER_FILE, "w") as _f:
+        json.dump(data, _f, indent=2)
+
+
+def _list_knowledge_entries():
+    _org = os.environ.get("FORGE_ORG", "")
+    if not _org:
+        return []
+    _cache = os.path.expanduser(f"~/.forge/org-cache/{_org}")
+    _entries = []
+    for _sub in ("knowledge", "patterns"):
+        _d = os.path.join(_cache, _sub)
+        if os.path.isdir(_d):
+            for _fname in sorted(os.listdir(_d)):
+                if _fname.endswith(".md"):
+                    _fpath = os.path.join(_d, _fname)
+                    _st = os.stat(_fpath)
+                    _entries.append({
+                        "name": _fname,
+                        "type": _sub,
+                        "absPath": _fpath,
+                        "size": _st.st_size,
+                        "modifiedAt": int(_st.st_mtime * 1000),
+                    })
+    return _entries
+
+
+def _push_distill_to_kb(kb_repo_url, token, file_path, stage, ts):
+    # Clone KB repo, commit distilled file on a new branch, push, open a PR.
+    _parsed = urllib.parse.urlparse(kb_repo_url)
+    _path_parts = _parsed.path.rstrip('/').lstrip('/').split('/')
+    if len(_path_parts) < 2:
+        return None, "Invalid KB repo URL"
+    _owner = _path_parts[-2]
+    _repo_name = _path_parts[-1]
+    if _repo_name.endswith('.git'):
+        _repo_name = _repo_name[:-4]
+    _auth_url = f"https://x-access-token:{token}@github.com/{_owner}/{_repo_name}.git"
+    _branch = f"forge/distill-{stage}-{ts}"
+    _work_dir = tempfile.mkdtemp(prefix="forge-kb-")
+    try:
+        _r = subprocess.run(
+            ["git", "clone", "--depth=1", _auth_url, _work_dir],
+            capture_output=True, text=True
+        )
+        if _r.returncode != 0:
+            return None, f"Clone failed: {_r.stderr.strip()[:200]}"
+        _def_branch_r = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            cwd=_work_dir, capture_output=True, text=True
+        )
+        _default_branch = _def_branch_r.stdout.strip() or "main"
+        subprocess.run(["git", "checkout", "-b", _branch], cwd=_work_dir, capture_output=True)
+        _dest_dir = os.path.join(_work_dir, "patterns")
+        os.makedirs(_dest_dir, exist_ok=True)
+        _fname = os.path.basename(file_path)
+        shutil.copy2(file_path, os.path.join(_dest_dir, _fname))
+        subprocess.run(["git", "config", "user.email", "forge-os@forge-os.local"], cwd=_work_dir, capture_output=True)
+        subprocess.run(["git", "config", "user.name", "Forge OS"], cwd=_work_dir, capture_output=True)
+        subprocess.run(["git", "add", "."], cwd=_work_dir, capture_output=True)
+        _commit_r = subprocess.run(
+            ["git", "commit", "-m", f"distill({stage}): add distilled patterns from {ts}"],
+            cwd=_work_dir, capture_output=True, text=True
+        )
+        if _commit_r.returncode != 0:
+            return None, f"Commit failed: {_commit_r.stderr.strip()[:200]}"
+        _push_r = subprocess.run(
+            ["git", "push", "origin", _branch],
+            cwd=_work_dir, capture_output=True, text=True
+        )
+        if _push_r.returncode != 0:
+            return None, f"Push failed: {_push_r.stderr.strip()[:200]}"
+        _pr_body = json.dumps({
+            "title": f"Distilled patterns: {stage} ({ts[:8]})",
+            "head": _branch,
+            "base": _default_branch,
+            "body": (
+                f"Auto-generated by Forge OS distillation.\n\n"
+                f"**Stage:** `{stage}`  \n**File:** `patterns/{_fname}`  \n**Timestamp:** `{ts}`\n\n"
+                f"Review the distilled patterns below and merge to publish them to the org knowledge base."
+            ),
+        }).encode("utf-8")
+        _req = urllib.request.Request(
+            f"https://api.github.com/repos/{_owner}/{_repo_name}/pulls",
+            data=_pr_body,
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Accept": "application/vnd.github+json",
+                "Content-Type": "application/json",
+                "X-GitHub-Api-Version": "2022-11-28",
+                "User-Agent": "forge-os",
+            }
+        )
+        with urllib.request.urlopen(_req, timeout=15) as _resp:
+            _pr = json.loads(_resp.read().decode("utf-8"))
+            return _pr.get("html_url", ""), None
+    except urllib.error.HTTPError as _e:
+        _body = _e.read().decode("utf-8", errors="ignore")[:300]
+        return None, f"GitHub API error {_e.code}: {_body}"
+    except Exception as _e:
+        return None, str(_e)[:300]
+    finally:
+        shutil.rmtree(_work_dir, ignore_errors=True)
+
+
+def _load_distill_result():
+    _path = os.path.join(FORGE_DIR, "runs/distill-result.json")
+    if not os.path.exists(_path):
+        return None
+    try:
+        with open(_path) as _f:
+            return json.load(_f)
+    except Exception:
+        return None
+
+
+# ---------------------------------------------------------------------------
+# File tree + state helpers
+# ---------------------------------------------------------------------------
 
 def list_raw_inputs():
     # Walk 00-raw-input/ recursively and return all .md files with relative paths.
@@ -285,7 +494,7 @@ def list_raw_inputs():
         return []
     files = []
     for dirpath, dirnames, filenames in os.walk(RAW_INPUT_DIR):
-        dirnames.sort()  # stable order
+        dirnames.sort()
         for fname in sorted(filenames):
             if fname.endswith(".md"):
                 fpath = os.path.join(dirpath, fname)
@@ -298,9 +507,9 @@ def list_raw_inputs():
                 })
     return files
 
+
 def get_combined_raw_input_path():
     # Combine all raw input files into a single temp file and return its path (or None).
-    import tempfile
     files = list_raw_inputs()
     if not files:
         return None
@@ -322,6 +531,7 @@ def get_combined_raw_input_path():
     tmp.write(combined)
     tmp.close()
     return tmp.name
+
 
 def build_file_entry(stage_dir, filename, reviews):
     file_path = os.path.join(stage_dir, filename)
@@ -345,6 +555,7 @@ def build_file_entry(stage_dir, filename, reviews):
         "modifiedAt": modified_at,
     }
 
+
 def parse_gate_status(content):
     in_status = False
     for line in content.splitlines():
@@ -355,6 +566,7 @@ def parse_gate_status(content):
         if in_status and stripped:
             return "PASSED" if stripped.upper() in ("PASSED", "APPROVED") else "PENDING"
     return "PENDING"
+
 
 def evaluate_gate(gate_name):
     stage_dir_name = GATE_STAGE_MAP.get(gate_name)
@@ -372,6 +584,7 @@ def evaluate_gate(gate_name):
             return "PENDING"
     return "PASSED"
 
+
 def save_build_progress(entry):
     # Write build_entry live so /api/state can stream intermediate states
     progress_file = os.path.join(FORGE_DIR, "runs", "build-in-progress.json")
@@ -381,6 +594,7 @@ def save_build_progress(entry):
     except Exception:
         pass
 
+
 def clear_build_progress():
     progress_file = os.path.join(FORGE_DIR, "runs", "build-in-progress.json")
     try:
@@ -388,6 +602,7 @@ def clear_build_progress():
             os.remove(progress_file)
     except Exception:
         pass
+
 
 def set_processing(status, stage=""):
     status_file = os.path.join(FORGE_DIR, "runs/status.json")
@@ -409,6 +624,7 @@ def set_processing(status, stage=""):
         except Exception:
             pass
 
+
 def compute_full_state():
     if not os.path.isdir(FORGE_DIR):
         return {
@@ -427,6 +643,11 @@ def compute_full_state():
             "tool": "gemini",
             "model": "gemini",
             "project_name": "",
+            "skip_org_context": False,
+            "orgContext": _build_org_context_meta(),
+            "user": load_user(),
+            "project_type": "standard",
+            "lastDistill": None,
         }
     proj = load_project_state()
     reviews = load_reviews()
@@ -488,10 +709,8 @@ def compute_full_state():
 
     all_gates_passed = all(v == "PASSED" for v in gates.values()) if gates else False
 
-    # Raw inputs
     raw_inputs = list_raw_inputs()
 
-    # Compute phase
     total_generated = sum(s["generated"] for s in stage_review_summary.values())
     total_docs = sum(s["total"] for s in stage_review_summary.values())
 
@@ -503,7 +722,6 @@ def compute_full_state():
         try:
             with open(progress_file) as _pf:
                 in_progress = json.load(_pf)
-            # Only inject if not already in builds list (avoid duplicates after finalize)
             if not any(b.get("id") == in_progress.get("id") for b in builds):
                 builds = builds + [in_progress]
         except Exception:
@@ -542,7 +760,14 @@ def compute_full_state():
         "tool": proj.get("tool", "gemini"),
         "model": proj.get("model", "gemini"),
         "project_name": proj.get("project_name", ""),
+        "skip_org_context": proj.get("skip_org_context", False),
+        "orgContext": _build_org_context_meta(),
+        "user": load_user(),
+        "project_type": proj.get("project_type", "standard"),
+        "lastDistill": _load_distill_result(),
+        "schema_version": proj.get("schema_version", 1),
     }
+
 
 def initialize_active_project():
     index_data = sync_registry_from_disk(load_projects_index())
@@ -561,7 +786,13 @@ def initialize_active_project():
         save_projects_index(index_data)
         set_project_root(projects[0].get("path", REPO_ROOT))
 
+
 initialize_active_project()
+
+
+# ---------------------------------------------------------------------------
+# HTTP handler
+# ---------------------------------------------------------------------------
 
 class ForgeHandler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
@@ -570,7 +801,7 @@ class ForgeHandler(BaseHTTPRequestHandler):
     def _send_cors_headers(self):
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, X-Forge-Token")
 
     def _json_response(self, code, data):
         body = json.dumps(data).encode()
@@ -579,6 +810,13 @@ class ForgeHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "application/json")
         self.end_headers()
         self.wfile.write(body)
+
+    def _check_token(self):
+        # Returns True if the request is authorised.
+        # In dev mode (no FORGE_TOKEN configured) every request is allowed.
+        if not FORGE_TOKEN:
+            return True
+        return self.headers.get("X-Forge-Token", "") == FORGE_TOKEN
 
     def do_OPTIONS(self):
         self.send_response(200)
@@ -642,7 +880,11 @@ class ForgeHandler(BaseHTTPRequestHandler):
             if not file_path:
                 self._json_response(400, {"error": "missing path"})
                 return
-            abs_path = os.path.join(FORGE_DIR, file_path)
+            # H1: path traversal guard
+            abs_path = os.path.normpath(os.path.join(FORGE_DIR, file_path))
+            if not abs_path.startswith(FORGE_DIR + os.sep) and abs_path != FORGE_DIR:
+                self._json_response(403, {"error": "forbidden"})
+                return
             if os.path.exists(abs_path):
                 self.send_response(200)
                 self._send_cors_headers()
@@ -672,6 +914,29 @@ class ForgeHandler(BaseHTTPRequestHandler):
                     self.wfile.write(f.read())
             else:
                 self._json_response(404, {"error": "not found"})
+            return
+
+        if path == "/api/user":
+            self._json_response(200, load_user())
+            return
+
+        if path == "/api/knowledge":
+            kparams = dict(urllib.parse.parse_qsl(parsed.query))
+            abs_path = kparams.get("path")
+            if abs_path:
+                _org = os.environ.get("FORGE_ORG", "")
+                _allowed = os.path.expanduser(f"~/.forge/org-cache/{_org}") if _org else ""
+                if not _allowed or not abs_path.startswith(_allowed):
+                    self._json_response(403, {"error": "forbidden"})
+                    return
+                if not os.path.isfile(abs_path):
+                    self._json_response(404, {"error": "not found"})
+                    return
+                with open(abs_path, "r", encoding="utf-8") as _f:
+                    content = _f.read()
+                self._json_response(200, {"content": content})
+            else:
+                self._json_response(200, {"entries": _list_knowledge_entries()})
             return
 
         if path == "/api/tools":
@@ -784,7 +1049,7 @@ class ForgeHandler(BaseHTTPRequestHandler):
                 return
             gh_owner, gh_repo, pr_num = m.group(1), m.group(2), m.group(3)
             proj = load_project_state()
-            token = proj.get("git", {}).get("token", "")
+            token = proj.get("git", {}).get("token", "") or GIT_PAT
             auth_header = ["-H", f"Authorization: token {token}"] if token else []
             try:
                 curl_r = subprocess.run([
@@ -797,7 +1062,6 @@ class ForgeHandler(BaseHTTPRequestHandler):
                 merged     = pr_data.get("merged", False)
                 merged_at  = pr_data.get("merged_at") or ""
                 merged_by  = (pr_data.get("merged_by") or {}).get("login", "")
-                # Persist merged status and delete remote branch
                 if merged:
                     updated = False
                     for b in proj.get("builds", []):
@@ -805,7 +1069,6 @@ class ForgeHandler(BaseHTTPRequestHandler):
                             b["status"] = "merged"
                             b["merged_at"] = merged_at
                             b["merged_by"] = merged_by
-                            # Delete remote feature branch (fallback if repo setting didn't fire)
                             branch_ref = b.get("branch", "")
                             if branch_ref and token and gh_owner and gh_repo:
                                 del_r = subprocess.run([
@@ -844,7 +1107,7 @@ class ForgeHandler(BaseHTTPRequestHandler):
             proj = load_project_state()
             git_cfg = proj.get("git", {})
             repo_url = git_cfg.get("repo_url", "")
-            token = git_cfg.get("token", "")
+            token = git_cfg.get("token", "") or GIT_PAT
             gh_owner, gh_repo = "", ""
             if repo_url:
                 m = _re2.search(r"github\.com[/:]([^/]+)/([^/\.]+)", repo_url)
@@ -893,6 +1156,11 @@ class ForgeHandler(BaseHTTPRequestHandler):
         self._json_response(404, {"error": "not found"})
 
     def do_DELETE(self):
+        # C2: token guard on all write methods
+        if not self._check_token():
+            self._json_response(403, {"error": "forbidden"})
+            return
+
         parsed = urllib.parse.urlparse(self.path)
         path = parsed.path
         content_length = int(self.headers.get("Content-Length", 0))
@@ -920,7 +1188,11 @@ class ForgeHandler(BaseHTTPRequestHandler):
                 self._json_response(400, {"error": "invalid project path"})
                 return
             if os.path.isdir(project_path):
-                shutil.rmtree(project_path)
+                # Soft-delete: move to .trash instead of immediate rmtree
+                trash_dir = os.path.join(PROJECTS_ROOT, ".trash")
+                os.makedirs(trash_dir, exist_ok=True)
+                trash_path = os.path.join(trash_dir, f"{project_id}-{int(time.time())}")
+                shutil.move(project_path, trash_path)
             index_data["projects"] = [
                 p for p in index_data.get("projects", [])
                 if p.get("id") != project_id
@@ -942,7 +1214,6 @@ class ForgeHandler(BaseHTTPRequestHandler):
                 return
             if os.path.exists(fpath):
                 os.remove(fpath)
-                # Clean up empty parent directories (up to RAW_INPUT_DIR)
                 parent = os.path.dirname(fpath)
                 while parent != RAW_INPUT_DIR and os.path.isdir(parent) and not os.listdir(parent):
                     os.rmdir(parent)
@@ -955,6 +1226,11 @@ class ForgeHandler(BaseHTTPRequestHandler):
         self._json_response(404, {"error": "not found"})
 
     def do_POST(self):
+        # C2: token guard on all write methods
+        if not self._check_token():
+            self._json_response(403, {"error": "forbidden"})
+            return
+
         content_length = int(self.headers.get("Content-Length", 0))
         post_data = self.rfile.read(content_length)
         try:
@@ -1077,7 +1353,6 @@ class ForgeHandler(BaseHTTPRequestHandler):
             if not name:
                 self._json_response(400, {"error": "missing name"})
                 return
-            # Sanitize: prevent escaping RAW_INPUT_DIR
             fpath = os.path.normpath(os.path.join(RAW_INPUT_DIR, name))
             if not fpath.startswith(RAW_INPUT_DIR):
                 self._json_response(400, {"error": "invalid path"})
@@ -1092,13 +1367,23 @@ class ForgeHandler(BaseHTTPRequestHandler):
             stage = data.get("stage", "all")
             forge_script = FORGE_SCRIPT or os.path.abspath(os.path.join(FORGE_DIR, "..", "..", "forge"))
 
+            # Concurrent operation guard
+            status_file_check = os.path.join(FORGE_DIR, "runs/status.json")
+            if os.path.exists(status_file_check):
+                try:
+                    with open(status_file_check) as _scf:
+                        processing_status = json.load(_scf)
+                    if processing_status.get("status") == "running":
+                        self._json_response(409, {"error": "A generation is already in progress"})
+                        return
+                except Exception:
+                    pass
+
             def run_generate():
                 set_processing("running", stage)
                 tmp_combined = None
                 try:
-                    # Combine ALL raw input files into a single temp file for context generation
                     tmp_combined = get_combined_raw_input_path()
-                    # Pass tool + model from project-state so run.py uses the right model
                     proj = load_project_state()
                     base_env = {
                         **os.environ,
@@ -1156,7 +1441,6 @@ class ForgeHandler(BaseHTTPRequestHandler):
 
             action = data.get("action", "")
 
-            # --- Cancel running review ---
             if action == "cancel":
                 entry = _load_review()
                 pid = entry.get("pid")
@@ -1173,7 +1457,6 @@ class ForgeHandler(BaseHTTPRequestHandler):
                 self._json_response(200, {"status": "cancelled"})
                 return
 
-            # --- Clear completed/cancelled review ---
             if action == "clear":
                 subprocess.run(["git", "reset", "HEAD"], cwd=REPO_ROOT, capture_output=True)
                 if os.path.exists(review_file):
@@ -1181,13 +1464,11 @@ class ForgeHandler(BaseHTTPRequestHandler):
                 self._json_response(200, {"status": "cleared"})
                 return
 
-            # --- Guard: don't double-start ---
             existing = _load_review()
             if existing.get("status") == "reviewing":
                 self._json_response(200, {"status": "already_reviewing"})
                 return
 
-            # --- Start review ---
             def do_review():
                 import shutil as _shutil, signal as _sig, tempfile as _tmp
                 review_entry = {
@@ -1201,7 +1482,6 @@ class ForgeHandler(BaseHTTPRequestHandler):
                 ai_proc = None
                 tmp_path = None
                 try:
-                    # 1. Copy build output
                     code_step_map = {"backend":"backend","frontend":"frontend",
                                      "integration":"integration","tests":"tests","infra":"infra"}
                     copied_dirs = []
@@ -1211,17 +1491,14 @@ class ForgeHandler(BaseHTTPRequestHandler):
                             _shutil.copytree(src, os.path.join(REPO_ROOT, dest_name), dirs_exist_ok=True)
                             copied_dirs.append(dest_name)
 
-                    # 2. Init git if needed
                     if not os.path.exists(os.path.join(REPO_ROOT, ".git")):
                         subprocess.run(["git", "init"], cwd=REPO_ROOT, capture_output=True)
 
-                    # 3. Stage
                     subprocess.run(["git", "add", ".forge/"], cwd=REPO_ROOT, capture_output=True)
                     subprocess.run(["git", "add", "README.md"], cwd=REPO_ROOT, capture_output=True)
                     for d in copied_dirs:
                         subprocess.run(["git", "add", d + "/"], cwd=REPO_ROOT, capture_output=True)
 
-                    # 4. Diff — only staged changes vs HEAD (or vs empty tree on first commit)
                     has_commits = subprocess.run(
                         ["git", "rev-parse", "HEAD"], cwd=REPO_ROOT, capture_output=True
                     ).returncode == 0
@@ -1230,7 +1507,6 @@ class ForgeHandler(BaseHTTPRequestHandler):
                                             cwd=REPO_ROOT, capture_output=True, text=True)
                     diff_stat = stat_r.stdout.strip()
 
-                    # Count changed lines to decide how much to send to AI
                     numstat_r = subprocess.run(["git", "diff", "--cached", "--numstat"],
                                                cwd=REPO_ROOT, capture_output=True, text=True)
                     total_changed = 0
@@ -1242,7 +1518,6 @@ class ForgeHandler(BaseHTTPRequestHandler):
                             except ValueError:
                                 pass
 
-                    # No changes guard
                     if not diff_stat:
                         subprocess.run(["git", "reset", "HEAD"], cwd=REPO_ROOT, capture_output=True)
                         review_entry["status"] = "no_changes"
@@ -1258,18 +1533,14 @@ class ForgeHandler(BaseHTTPRequestHandler):
                     review_entry["total_changed_lines"] = total_changed
                     _save_review(review_entry)
 
-                    # Build focused diff for AI — only the changed/modified files, not new additions
-                    # On large first pushes, send stat only + headers; on incremental, send full hunks
                     DIFF_CHAR_LIMIT = 4000
                     is_large = total_changed > 800 or not has_commits
 
                     if is_large:
-                        # Send only the stat + file-level diff headers (no hunk content)
                         header_r = subprocess.run(
                             ["git", "diff", "--cached", "--unified=0", "--diff-filter=M"],
                             cwd=REPO_ROOT, capture_output=True, text=True
                         )
-                        # Extract only --- / +++ / @@ lines (no actual content lines)
                         header_lines = [l for l in header_r.stdout.splitlines()
                                         if l.startswith(("---", "+++", "@@", "diff --git"))]
                         diff_for_ai = "\n".join(header_lines[:200])
@@ -1280,7 +1551,6 @@ class ForgeHandler(BaseHTTPRequestHandler):
                             "not line-by-line hunks.\n\n"
                         )
                     else:
-                        # Incremental push — send full diff but cap chars
                         full_diff_r = subprocess.run(["git", "diff", "--cached"],
                                                      cwd=REPO_ROOT, capture_output=True, text=True)
                         diff_for_ai = full_diff_r.stdout[:DIFF_CHAR_LIMIT]
@@ -1288,7 +1558,6 @@ class ForgeHandler(BaseHTTPRequestHandler):
                             diff_for_ai += f"\n... (+{len(full_diff_r.stdout)-DIFF_CHAR_LIMIT} chars truncated)"
                         scope_note = ""
 
-                    # 5. Spec context (key docs only, tightly capped)
                     spec_snippets = []
                     for label, rel in [
                         ("Engineering spec", "06-engineering/backend-spec.md"),
@@ -1301,7 +1570,6 @@ class ForgeHandler(BaseHTTPRequestHandler):
                                 spec_snippets.append(f"### {label}\n{f.read()[:1000]}")
                     spec_context = "\n\n".join(spec_snippets) or "(no spec docs)"
 
-                    # 6. Prompt
                     prompt = (
                         "You are a principal engineer doing a pre-merge code review.\n\n"
                         + scope_note +
@@ -1317,7 +1585,6 @@ class ForgeHandler(BaseHTTPRequestHandler):
                         "`VERDICT: APPROVE` | `VERDICT: APPROVE WITH NOTES` | `VERDICT: REQUEST CHANGES`"
                     )
 
-                    # 7. Run AI — inline so we can store PID for cancellation
                     with _tmp.NamedTemporaryFile(mode="w", delete=False, suffix=".txt", encoding="utf-8") as t:
                         tmp_path = t.name
 
@@ -1331,14 +1598,12 @@ class ForgeHandler(BaseHTTPRequestHandler):
                     with open(tmp_path, "w") as out_f:
                         ai_proc = subprocess.Popen(cmd, stdout=out_f, stderr=subprocess.PIPE)
 
-                    # Store PID so cancel endpoint can kill the process
                     review_entry["pid"] = ai_proc.pid
                     _save_review(review_entry)
 
                     ai_proc.wait(timeout=300)
                     ai_proc = None
 
-                    # Check if cancelled while waiting
                     current = _load_review()
                     if current.get("status") == "cancelled":
                         return
@@ -1393,7 +1658,7 @@ class ForgeHandler(BaseHTTPRequestHandler):
             proj = load_project_state()
             git_cfg = proj.get("git", {})
             repo_url = git_cfg.get("repo_url", "")
-            token = git_cfg.get("token", "")
+            token = git_cfg.get("token", "") or GIT_PAT
             branch_prefix = git_cfg.get("branch_prefix", "forge")
             username = git_cfg.get("username", "")
             email = git_cfg.get("email", "")
@@ -1411,8 +1676,15 @@ class ForgeHandler(BaseHTTPRequestHandler):
 
             def do_build():
                 import shutil as _shutil
+                import re as _re
                 logs = []
                 try:
+                    def _redact(s):
+                        if token:
+                            s = s.replace(token, "***")
+                            s = _re.sub(r'https://[^@]+@', 'https://***@', s)
+                        return s
+
                     def run_git(args, cwd=REPO_ROOT):
                         result = subprocess.run(
                             ["git"] + args, cwd=cwd,
@@ -1421,12 +1693,11 @@ class ForgeHandler(BaseHTTPRequestHandler):
                         safe_args = [a.replace(token, "***") if token and token in a else a for a in args]
                         logs.append(f"$ git {' '.join(safe_args)}: {result.returncode}")
                         if result.stdout.strip():
-                            logs.append(result.stdout.strip().replace(token, "***") if token else result.stdout.strip())
+                            logs.append(_redact(result.stdout.strip()))
                         if result.stderr.strip():
-                            logs.append(result.stderr.strip().replace(token, "***") if token else result.stderr.strip())
+                            logs.append(_redact(result.stderr.strip()))
                         return result
 
-                    # Init git repo if needed
                     if not os.path.exists(os.path.join(REPO_ROOT, ".git")):
                         run_git(["init"])
                         if email:
@@ -1439,7 +1710,6 @@ class ForgeHandler(BaseHTTPRequestHandler):
                         if username:
                             run_git(["config", "user.name", username])
 
-                    # Copy generated code from .forge/15-build/* to project root
                     code_step_map = {
                         "backend": "backend",
                         "frontend": "frontend",
@@ -1458,7 +1728,6 @@ class ForgeHandler(BaseHTTPRequestHandler):
                                 copied_dirs.append(dest_name)
                                 logs.append(f"Copied .forge/15-build/{step_key}/ -> {dest_name}/")
 
-                    # Generate root README.md
                     project_name = proj.get("project_name", "") or os.path.basename(REPO_ROOT)
                     dir_descriptions = {
                         "backend": "FastAPI backend — models, services, REST API endpoints",
@@ -1540,21 +1809,15 @@ class ForgeHandler(BaseHTTPRequestHandler):
                         rf.write("\n".join(readme_lines) + "\n")
                     logs.append("Generated README.md")
 
-                    # Stage spec docs, code dirs, and root README first
                     run_git(["add", ".forge/"])
                     run_git(["add", "README.md"])
                     for d in copied_dirs:
                         run_git(["add", d + "/"])
 
-                    # If a pre-push review was approved, skip restaging (already staged)
-                    review_id = data.get("review_id", "")
-
-                    # Create feature branch from current HEAD
                     run_git(["checkout", "-b", branch_name])
                     build_entry["status"] = "branched"
                     save_build_progress(build_entry)
 
-                    # Commit with structured message
                     components_line = ", ".join(copied_dirs) if copied_dirs else "docs only"
                     commit_msg = (
                         f"forge: generated code [{timestamp}]\n\n"
@@ -1565,7 +1828,6 @@ class ForgeHandler(BaseHTTPRequestHandler):
                     build_entry["status"] = "committed"
                     save_build_progress(build_entry)
 
-                    # Build PR description
                     pr_body_lines = [
                         "## Generated by Forge OS",
                         "",
@@ -1599,27 +1861,22 @@ class ForgeHandler(BaseHTTPRequestHandler):
                     ]
                     pr_body = "\n".join(pr_body_lines)
 
-                    # Push and create PR
                     if repo_url:
                         default_branch = git_cfg.get("default_branch", "main")
                         push_url = repo_url
                         if token and "github.com" in repo_url:
                             push_url = repo_url.replace("https://", f"https://{username}:{token}@")
 
-                        # Check if remote is empty (no default branch yet)
                         ls = run_git(["ls-remote", "--heads", push_url])
                         remote_is_empty = ls.returncode == 0 and default_branch not in ls.stdout
 
                         if remote_is_empty:
-                            # Bootstrap: push the current commit as the default branch first,
-                            # then branch off it so GitHub has a base for the PR.
                             logs.append(f"Remote is empty — bootstrapping {default_branch} branch")
                             run_git(["branch", "-M", default_branch])
                             boot = run_git(["push", "-u", push_url, default_branch])
                             if boot.returncode != 0:
                                 build_entry["status"] = "error"
                                 raise RuntimeError(f"Failed to bootstrap {default_branch}")
-                            # Create feature branch from the same commit
                             run_git(["checkout", "-b", branch_name])
 
                         build_entry["status"] = "pushing"
@@ -1630,7 +1887,6 @@ class ForgeHandler(BaseHTTPRequestHandler):
                             save_build_progress(build_entry)
                             if "github.com" in repo_url and token:
                                 clean_url = repo_url.rstrip("/").replace(".git", "")
-                                # Parse owner/repo from URL
                                 gh_path = clean_url.replace("https://github.com/", "")
                                 gh_parts = gh_path.split("/")
                                 if len(gh_parts) >= 2:
@@ -1645,7 +1901,6 @@ class ForgeHandler(BaseHTTPRequestHandler):
                                         "base": default_branch,
                                     }).encode()
                                     try:
-                                        # Use curl — avoids macOS SSL cert store issues with urllib
                                         curl_res = subprocess.run([
                                             "curl", "-s", "-X", "POST",
                                             "-H", f"Authorization: token {token}",
@@ -1662,7 +1917,6 @@ class ForgeHandler(BaseHTTPRequestHandler):
                                             build_entry["status"] = "pr_created"
                                             logs.append(f"PR created: {pr_url}")
                                             save_build_progress(build_entry)
-                                            # Enable auto-delete branch on merge at repo level
                                             subprocess.run([
                                                 "curl", "-s", "-X", "PATCH",
                                                 "-H", f"Authorization: token {token}",
@@ -1678,9 +1932,7 @@ class ForgeHandler(BaseHTTPRequestHandler):
                                             raise RuntimeError(err_msg)
                                     except Exception as api_err:
                                         logs.append(f"GitHub API error: {api_err}")
-                                        # Fallback: extract PR URL from git push output
                                         push_out = result.stderr + result.stdout
-                                        import re as _re
                                         m = _re.search(r'https://github\.com/\S+/pull/new/\S+', push_out)
                                         if m:
                                             pr_url = m.group(0).strip()
@@ -1695,7 +1947,6 @@ class ForgeHandler(BaseHTTPRequestHandler):
                         else:
                             build_entry["status"] = "error"
                     else:
-                        # Local-only build — no push
                         build_entry["status"] = "committed"
                 except Exception as e:
                     logs.append(f"Error: {e}")
@@ -1717,7 +1968,6 @@ class ForgeHandler(BaseHTTPRequestHandler):
             issues = proj.setdefault("issues", [])
             issue_id = data.get("id")
             if issue_id:
-                # Update existing
                 for issue in issues:
                     if issue["id"] == issue_id:
                         for k in ("type", "title", "description", "priority", "status"):
@@ -1726,7 +1976,6 @@ class ForgeHandler(BaseHTTPRequestHandler):
                         issue["updated_at"] = datetime.now().isoformat()
                         break
             else:
-                # Create new
                 new_id = f"ISSUE-{len(issues) + 1:03d}"
                 new_issue = {
                     "id": new_id,
@@ -1743,9 +1992,113 @@ class ForgeHandler(BaseHTTPRequestHandler):
             self._json_response(200, {"status": "ok", "issues": proj["issues"]})
             return
 
+        if path == "/api/user":
+            user = load_user()
+            if "role" in data:
+                user["role"] = data["role"]
+            if "department" in data:
+                user["department"] = data["department"]
+            save_user(user)
+            self._json_response(200, {"status": "saved"})
+            return
+
+        if path == "/api/distill":
+            stage = data.get("stage")
+            _org = os.environ.get("FORGE_ORG", "")
+            if not stage:
+                self._json_response(400, {"error": "missing stage"})
+                return
+            if not _org:
+                self._json_response(400, {"error": "FORGE_ORG not set — connect GitHub org first"})
+                return
+            _stage_dirs = {
+                "context": "00-context", "requirements": "01-requirements",
+                "design": "02-design", "analysis": "03-analysis",
+                "architecture": "04-architecture", "delivery": "05-delivery",
+                "engineering": "06-engineering", "qa": "07-quality",
+                "operations": "08-operations", "release": "09-release",
+                "marketing": "10-marketing",
+            }
+            _sdir = _stage_dirs.get(stage)
+            if not _sdir:
+                self._json_response(400, {"error": "invalid stage"})
+                return
+            _stage_path = os.path.join(FORGE_DIR, _sdir)
+            if not os.path.isdir(_stage_path):
+                self._json_response(404, {"error": "stage directory not found"})
+                return
+            _reviews = load_reviews()
+            _reviewed = [
+                os.path.join(FORGE_DIR, _sdir, _fn)
+                for _fn in sorted(os.listdir(_stage_path))
+                if _fn.endswith(".md") and _reviews.get(os.path.join(_sdir, _fn)) == "reviewed"
+            ]
+            if not _reviewed:
+                self._json_response(400, {"error": "no reviewed files in this stage"})
+                return
+            _proj = load_project_state()
+            _forge_script = FORGE_SCRIPT or os.path.abspath(os.path.join(FORGE_DIR, "..", "..", "forge"))
+
+            def _run_distill():
+                _status_file = os.path.join(FORGE_DIR, "runs/status.json")
+                _result_file = os.path.join(FORGE_DIR, "runs/distill-result.json")
+                _ts = datetime.now().strftime("%Y%m%d-%H%M%S")
+                _out_path = None
+                try:
+                    if os.path.exists(os.path.join(FORGE_DIR, "runs")):
+                        with open(_status_file, "w") as _sf:
+                            json.dump({"status": "distilling", "stage": stage, "updated_at": datetime.now().isoformat()}, _sf)
+                    _out_dir = os.path.expanduser(f"~/.forge/org-cache/{_org}/patterns")
+                    os.makedirs(_out_dir, exist_ok=True)
+                    _out_path = os.path.join(_out_dir, f"{stage}-{_ts}.md")
+                    _base_env = {
+                        **os.environ,
+                        "FORGE_TOOL": _proj.get("tool", "gemini"),
+                        "FORGE_MODEL": _proj.get("model", ""),
+                    }
+                    _cmd = [
+                        sys.executable,
+                        os.path.join(FORGE_DIR, "scripts/run.py"),
+                        "distill",
+                        "--distill-stage", stage,
+                        "--distill-output", _out_path,
+                        "--distill-sources", ",".join(_reviewed),
+                    ]
+                    _sub = subprocess.run(_cmd, cwd=REPO_ROOT, env=_base_env)
+
+                    _kb_url = _proj.get("git", {}).get("kb_repo_url", "")
+                    _token = _proj.get("git", {}).get("token", "") or GIT_PAT
+                    _pr_url = None
+                    _pr_error = None
+                    if _sub.returncode == 0 and _kb_url and _token and _out_path and os.path.exists(_out_path):
+                        _pr_url, _pr_error = _push_distill_to_kb(_kb_url, _token, _out_path, stage, _ts)
+
+                    _result = {
+                        "stage": stage,
+                        "file": _out_path,
+                        "timestamp": _ts,
+                        "prUrl": _pr_url,
+                        "prError": _pr_error,
+                        "success": _sub.returncode == 0,
+                    }
+                    if os.path.exists(os.path.join(FORGE_DIR, "runs")):
+                        with open(_result_file, "w") as _rf:
+                            json.dump(_result, _rf, indent=2)
+                finally:
+                    if os.path.exists(os.path.join(FORGE_DIR, "runs")):
+                        with open(_status_file, "w") as _sf:
+                            json.dump({"status": "idle", "stage": stage, "updated_at": datetime.now().isoformat()}, _sf)
+
+            _t = threading.Thread(target=_run_distill, daemon=True)
+            _t.start()
+            self._json_response(200, {"status": "started", "stage": stage})
+            return
+
         if path == "/api/settings":
             proj = load_project_state()
+            new_pat = None
             if "git" in data:
+                new_pat = data["git"].pop("token", None)  # extract before merge
                 proj["git"].update(data["git"])
             if "environments" in data:
                 for env_key in ("staging", "production"):
@@ -1757,12 +2110,31 @@ class ForgeHandler(BaseHTTPRequestHandler):
                 proj["model"] = data["model"]
             if "project_name" in data:
                 proj["project_name"] = data["project_name"]
+            if "project_type" in data:
+                proj["project_type"] = data["project_type"]
+            if "skip_org_context" in data:
+                proj["skip_org_context"] = data["skip_org_context"]
+            if "git" in data and "kb_repo_url" in data["git"]:
+                proj["git"]["kb_repo_url"] = data["git"]["kb_repo_url"]
             save_project_state(proj)
+            # Signal Electron to persist new PAT in safeStorage (never write to disk)
+            if new_pat:
+                _signal = os.path.expanduser("~/.forge/_pat_signal")
+                try:
+                    with open(_signal, "w") as _sf:
+                        _sf.write(new_pat)
+                    os.chmod(_signal, 0o600)
+                except Exception:
+                    pass
             self._json_response(200, {"status": "saved"})
             return
 
         if path == "/api/gate":
             gate_name = data.get("gate")
+            # H4+M1: validate gate_name
+            if gate_name not in GATE_STAGE_MAP:
+                self._json_response(400, {"error": "invalid gate"})
+                return
             gate_path = os.path.join(FORGE_DIR, f"12-gates/{gate_name}.md")
             if os.path.exists(gate_path):
                 with open(gate_path, "r") as f:
@@ -1820,8 +2192,27 @@ class ForgeHandler(BaseHTTPRequestHandler):
             if not file_path or not critique:
                 self._json_response(400, {"error": "missing fields"})
                 return
+            # M2: validate file_path stays within FORGE_DIR
+            _fp_abs = os.path.normpath(os.path.join(FORGE_DIR, file_path))
+            if not _fp_abs.startswith(FORGE_DIR + os.sep):
+                self._json_response(400, {"error": "invalid path"})
+                return
+
+            # Concurrent operation guard
+            status_file_fix = os.path.join(FORGE_DIR, "runs/status.json")
+            if os.path.exists(status_file_fix):
+                try:
+                    with open(status_file_fix) as _scf:
+                        _cur_status = json.load(_scf)
+                    if _cur_status.get("status") == "running":
+                        self._json_response(409, {"error": "A generation is already in progress"})
+                        return
+                except Exception:
+                    pass
+
             stage = file_path.split("/")[0].split("-", 1)[1] if "-" in file_path.split("/")[0] else "context"
             status_file = os.path.join(FORGE_DIR, "runs/status.json")
+
             def run_fix():
                 try:
                     if os.path.exists(os.path.join(FORGE_DIR, "runs")):
@@ -1833,6 +2224,7 @@ class ForgeHandler(BaseHTTPRequestHandler):
                     if os.path.exists(os.path.join(FORGE_DIR, "runs")):
                         with open(status_file, "w") as sf:
                             json.dump({"status": "idle", "stage": stage, "file": file_path, "updated_at": datetime.now().isoformat()}, sf)
+
             t = threading.Thread(target=run_fix, daemon=True)
             t.start()
             self._json_response(200, {"status": "started"})
@@ -1844,13 +2236,13 @@ class ForgeHandler(BaseHTTPRequestHandler):
             if not file_path or not ver_id:
                 self._json_response(400, {"error": "missing path or id"})
                 return
-            stem = file_path.rstrip(".md").rstrip(".")
+            # rstrip bug fix: correct .md stripping
+            stem = file_path[:-3] if file_path.endswith(".md") else file_path
             ver_path  = os.path.join(FORGE_DIR, "versions", stem, f"{ver_id}.md")
             dest_path = os.path.join(FORGE_DIR, file_path)
             if not os.path.exists(ver_path):
                 self._json_response(404, {"error": "version not found"})
                 return
-            # Snapshot current file before restoring
             if os.path.exists(dest_path) and os.path.getsize(dest_path) > 0:
                 ver_dir = os.path.join(FORGE_DIR, "versions", stem)
                 os.makedirs(ver_dir, exist_ok=True)
@@ -1878,9 +2270,7 @@ class ForgeHandler(BaseHTTPRequestHandler):
                             with open(os.path.join(dir_path, fname), "w") as f:
                                 f.write("")
                             cleared += 1
-            # Reset reviews
             save_reviews({})
-            # Reset gates to PENDING
             gates = [
                 "context-gate", "prd-gate", "design-gate", "architecture-gate",
                 "engineering-gate", "qa-gate", "release-gate", "marketing-gate"
@@ -1904,7 +2294,6 @@ class ForgeHandler(BaseHTTPRequestHandler):
                         new_lines.append(line)
                     with open(gate_path, "w") as gf:
                         gf.writelines(new_lines)
-            # Reset run status
             status_file = os.path.join(FORGE_DIR, "runs/status.json")
             with open(status_file, "w") as sf:
                 json.dump({"status": "idle", "stage": "", "updated_at": datetime.now().isoformat()}, sf)
@@ -1945,9 +2334,8 @@ class ForgeHandler(BaseHTTPRequestHandler):
             proj = load_project_state()
             git_cfg = proj.get("git", {})
             repo_url = git_cfg.get("repo_url", "")
-            token = git_cfg.get("token", "")
+            token = git_cfg.get("token", "") or GIT_PAT
 
-            # Derive owner/repo from repo_url
             gh_owner, gh_repo = "", ""
             if repo_url:
                 import re as _re2
@@ -1955,214 +2343,89 @@ class ForgeHandler(BaseHTTPRequestHandler):
                 if m:
                     gh_owner, gh_repo = m.group(1), m.group(2)
 
-            # POST: push a secret or variable to GitHub
-            if self.command == "POST":
-                name = data.get("name", "").strip().upper()
-                value = data.get("value", "")
-                protected = data.get("protected", True)
+            name = data.get("name", "").strip().upper()
+            value = data.get("value", "")
+            protected = data.get("protected", True)
 
-                if not name or not value:
-                    self._json_response(400, {"error": "name and value required"})
-                    return
-
-                if not gh_owner or not gh_repo:
-                    self._json_response(400, {"error": "Git repo URL not configured in Settings"})
-                    return
-
-                if not token:
-                    self._json_response(400, {"error": "GitHub token not configured in Settings"})
-                    return
-
-                # Try gh CLI first (handles libsodium encryption for secrets)
-                gh_check = subprocess.run(["which", "gh"], capture_output=True, text=True)
-                if gh_check.returncode == 0:
-                    if protected:
-                        cmd = ["gh", "secret", "set", name, "--body", value,
-                               "--repo", f"{gh_owner}/{gh_repo}"]
-                    else:
-                        cmd = ["gh", "variable", "set", name, "--body", value,
-                               "--repo", f"{gh_owner}/{gh_repo}"]
-                    env = {**os.environ, "GH_TOKEN": token, "GITHUB_TOKEN": token}
-                    r = subprocess.run(cmd, capture_output=True, text=True, env=env)
-                    if r.returncode != 0:
-                        self._json_response(500, {"error": r.stderr.strip() or r.stdout.strip()})
-                        return
-                else:
-                    # Fallback: GitHub API directly
-                    if protected:
-                        # Need to encrypt with repo public key via libsodium sealed box
-                        # Fetch public key
-                        pk_res = subprocess.run([
-                            "curl", "-s",
-                            "-H", f"Authorization: token {token}",
-                            "-H", "Accept: application/vnd.github.v3+json",
-                            f"https://api.github.com/repos/{gh_owner}/{gh_repo}/actions/secrets/public-key"
-                        ], capture_output=True, text=True, timeout=15)
-                        try:
-                            pk_data = json.loads(pk_res.stdout)
-                            key_id = pk_data["key_id"]
-                            pub_key_b64 = pk_data["key"]
-                        except Exception:
-                            self._json_response(500, {"error": "Could not fetch repo public key. Install gh CLI for easier secret management."})
-                            return
-
-                        # Pure-Python sealed box encryption (X25519 + XSalsa20-Poly1305)
-                        import base64 as _b64
-                        import struct as _struct
-                        import hashlib as _hl
-
-                        def _clamp25519(k):
-                            k = bytearray(k)
-                            k[0] &= 248; k[31] &= 127; k[31] |= 64
-                            return bytes(k)
-
-                        def _x25519(k, u):
-                            # RFC 7748 X25519 scalar multiplication
-                            P = (2**255 - 19)
-                            def _decode(b): return int.from_bytes(b, 'little') % (2**256)
-                            def _encode(n): return (n % (2**256)).to_bytes(32, 'little')
-                            def _add(P1, P2, P3):
-                                A, AA, B, BB = (P1[0]+P1[1])%P, ((P1[0]+P1[1])**2)%P, (P1[0]-P1[1])%P, ((P1[0]-P1[1])**2)%P
-                                E, C = (AA-BB)%P, (AA*((P+121665)//2)%P+AA)%P
-                                return (AA*BB%P, E*(C+BB)%P)
-                            x1 = _decode(u); x2,z2 = 1,0; x3,z3 = x1,1
-                            swap = 0
-                            kt = _decode(k)
-                            for t in range(254,-1,-1):
-                                kt_t = (kt >> t) & 1
-                                swap ^= kt_t
-                                if swap: x2,x3 = x3,x2; z2,z3 = z3,z2
-                                swap = kt_t
-                                A=(x2+z2)%P; AA=A*A%P; B=(x2-z2)%P; BB=B*B%P
-                                E=(AA-BB)%P; C=(x3+z3)%P; D=(x3-z3)%P
-                                DA=D*A%P; CB=C*B%P
-                                x3=(DA+CB)**2%P; z3=x1*(DA-CB)**2%P
-                                x2=AA*BB%P; z2=E*(AA+121665*E)%P
-                            if swap: x2,x3=x3,x2; z2,z3=z3,z2
-                            return _encode(x2*pow(z2,P-2,P)%P)
-
-                        import secrets as _sec
-                        eph_sk = _clamp25519(_sec.token_bytes(32))
-                        eph_pk = _x25519(eph_sk, (9).to_bytes(32,'little'))
-                        peer_pk = _b64.b64decode(pub_key_b64)
-                        shared = _x25519(eph_sk, peer_pk)
-
-                        # BLAKE2b-512 KDF (matches libsodium crypto_box_beforenm simplified)
-                        k_material = _hl.blake2b(eph_pk + peer_pk + shared, digest_size=32).digest()
-
-                        import hmac as _hmac
-                        msg = value.encode()
-                        # XSalsa20-Poly1305 is complex; use simpler AES-256-GCM via os.urandom
-                        # If cryptography pkg not available, tell user to install gh CLI
-                        try:
-                            from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-                            nonce = _sec.token_bytes(12)
-                            ct = AESGCM(k_material).encrypt(nonce, msg, eph_pk)
-                            encrypted = _b64.b64encode(eph_pk + nonce + ct).decode()
-                        except ImportError:
-                            self._json_response(500, {"error": "Install GitHub CLI (gh) or Python cryptography package to push protected secrets."})
-                            return
-
-                        api_payload = json.dumps({"encrypted_value": encrypted, "key_id": key_id}).encode()
-                        curl_r = subprocess.run([
-                            "curl", "-s", "-X", "PUT",
-                            "-H", f"Authorization: token {token}",
-                            "-H", "Accept: application/vnd.github.v3+json",
-                            "-H", "Content-Type: application/json",
-                            "-d", api_payload,
-                            f"https://api.github.com/repos/{gh_owner}/{gh_repo}/actions/secrets/{name}"
-                        ], capture_output=True, text=True, timeout=20)
-                        if curl_r.returncode != 0:
-                            self._json_response(500, {"error": curl_r.stderr.strip()})
-                            return
-                    else:
-                        # Variables use plain text via API
-                        # Check if variable exists first
-                        chk = subprocess.run([
-                            "curl", "-s", "-o", "/dev/null", "-w", "%{{http_code}}",
-                            "-H", f"Authorization: token {token}",
-                            f"https://api.github.com/repos/{gh_owner}/{gh_repo}/actions/variables/{name}"
-                        ], capture_output=True, text=True, timeout=15)
-                        method = "PATCH" if chk.stdout.strip() == "200" else "POST"
-                        url_var = f"https://api.github.com/repos/{gh_owner}/{gh_repo}/actions/variables"
-                        if method == "PATCH":
-                            url_var += f"/{name}"
-                        api_payload = json.dumps({"name": name, "value": value}).encode()
-                        curl_r = subprocess.run([
-                            "curl", "-s", "-X", method,
-                            "-H", f"Authorization: token {token}",
-                            "-H", "Accept: application/vnd.github.v3+json",
-                            "-H", "Content-Type: application/json",
-                            "-d", api_payload,
-                            url_var
-                        ], capture_output=True, text=True, timeout=20)
-                        if curl_r.returncode != 0:
-                            self._json_response(500, {"error": curl_r.stderr.strip()})
-                            return
-
-                # Track which secrets have been configured (without storing values)
-                proj = load_project_state()
-                configured = proj.get("secrets_configured", [])
-                entry = {"name": name, "protected": protected, "set_at": datetime.now().isoformat()}
-                proj["secrets_configured"] = [s for s in configured if s.get("name") != name] + [entry]
-                with open(STATE_FILE, "w") as f:
-                    json.dump(proj, f, indent=2)
-
-                self._json_response(200, {"status": "ok", "name": name, "protected": protected})
+            if not name or not value:
+                self._json_response(400, {"error": "name and value required"})
                 return
 
-            # GET: return parsed secrets list + configured status
-            secrets_list = []
-            search_paths = [
-                os.path.join(FORGE_DIR, "15-build", "infra", "secrets-required.md"),
-                os.path.join(FORGE_DIR, "15-build", "infra", "infra", "secrets-required.md"),
-                os.path.join(FORGE_DIR, "15-build", "secrets-required.md"),
-            ]
-            for sp in search_paths:
-                if os.path.exists(sp) and os.path.getsize(sp) > 0:
-                    with open(sp, encoding="utf-8") as f:
-                        for line in f:
-                            line = line.strip()
-                            if line.startswith("|") and "`" in line:
-                                parts = [p.strip() for p in line.split("|") if p.strip()]
-                                if len(parts) >= 2:
-                                    name_raw = parts[0].strip("`").strip()
-                                    if name_raw and name_raw.lower() not in ("secret name", ":---", "---"):
-                                        secrets_list.append({
-                                            "name": name_raw,
-                                            "description": parts[1] if len(parts) > 1 else "",
-                                            "workflow": parts[2] if len(parts) > 2 else "",
-                                            "environment": parts[3] if len(parts) > 3 else "",
-                                        })
-                    break
+            if not gh_owner or not gh_repo:
+                self._json_response(400, {"error": "Git repo URL not configured in Settings"})
+                return
 
+            if not token:
+                self._json_response(400, {"error": "GitHub token not configured in Settings"})
+                return
+
+            # Try gh CLI first (handles libsodium encryption for secrets)
+            gh_check = subprocess.run(["which", "gh"], capture_output=True, text=True)
+            if gh_check.returncode == 0:
+                if protected:
+                    cmd = ["gh", "secret", "set", name, "--body", value,
+                           "--repo", f"{gh_owner}/{gh_repo}"]
+                else:
+                    cmd = ["gh", "variable", "set", name, "--body", value,
+                           "--repo", f"{gh_owner}/{gh_repo}"]
+                env = {**os.environ, "GH_TOKEN": token, "GITHUB_TOKEN": token}
+                r = subprocess.run(cmd, capture_output=True, text=True, env=env)
+                if r.returncode != 0:
+                    self._json_response(500, {"error": r.stderr.strip() or r.stdout.strip()})
+                    return
+            else:
+                # H2: no gh CLI available — for protected secrets, fail fast with clear message
+                if protected:
+                    self._json_response(400, {"error": "Install GitHub CLI (gh) to push protected secrets. Run: brew install gh"})
+                    return
+                else:
+                    # Variables use plain text via API (safe, no crypto needed)
+                    chk = subprocess.run([
+                        "curl", "-s", "-o", "/dev/null", "-w", "%{http_code}",
+                        "-H", f"Authorization: token {token}",
+                        f"https://api.github.com/repos/{gh_owner}/{gh_repo}/actions/variables/{name}"
+                    ], capture_output=True, text=True, timeout=15)
+                    method = "PATCH" if chk.stdout.strip() == "200" else "POST"
+                    url_var = f"https://api.github.com/repos/{gh_owner}/{gh_repo}/actions/variables"
+                    if method == "PATCH":
+                        url_var += f"/{name}"
+                    api_payload = json.dumps({"name": name, "value": value}).encode()
+                    curl_r = subprocess.run([
+                        "curl", "-s", "-X", method,
+                        "-H", f"Authorization: token {token}",
+                        "-H", "Accept: application/vnd.github.v3+json",
+                        "-H", "Content-Type: application/json",
+                        "-d", api_payload,
+                        url_var
+                    ], capture_output=True, text=True, timeout=20)
+                    if curl_r.returncode != 0:
+                        self._json_response(500, {"error": curl_r.stderr.strip()})
+                        return
+
+            # Track which secrets have been configured (without storing values)
             proj = load_project_state()
-            configured = {s["name"]: s for s in proj.get("secrets_configured", [])}
-            for s in secrets_list:
-                cfg = configured.get(s["name"])
-                s["configured"] = bool(cfg)
-                s["protected"] = cfg.get("protected", True) if cfg else True
-                s["set_at"] = cfg.get("set_at", "") if cfg else ""
+            configured = proj.get("secrets_configured", [])
+            entry = {"name": name, "protected": protected, "set_at": datetime.now().isoformat()}
+            proj["secrets_configured"] = [s for s in configured if s.get("name") != name] + [entry]
+            save_project_state(proj)
 
-            self._json_response(200, {
-                "secrets": secrets_list,
-                "repo": f"{gh_owner}/{gh_repo}" if gh_owner else "",
-                "has_token": bool(token),
-                "gh_cli": subprocess.run(["which", "gh"], capture_output=True).returncode == 0,
-            })
+            self._json_response(200, {"status": "ok", "name": name, "protected": protected})
             return
 
         self._json_response(404, {"error": "not found"})
 
+
 def run_server(port=8080):
-    server_address = ("", port)
+    # C1: Bind to loopback only — never expose to 0.0.0.0 in production
+    server_address = ("127.0.0.1", port)
     httpd = HTTPServer(server_address, ForgeHandler)
-    print(f"Forge Dashboard running at http://localhost:{port}")
+    print(f"Forge Dashboard running at http://127.0.0.1:{port}")
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
         pass
     httpd.server_close()
+
 
 if __name__ == "__main__":
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 8080

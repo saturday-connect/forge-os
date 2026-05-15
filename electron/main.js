@@ -20,6 +20,10 @@ const CONFIG_FILE = path.join(USER_DATA, 'config.json')
 const READY_POLL_INTERVAL_MS = 300
 const READY_TIMEOUT_MS = 20000
 
+// Shared secret for local HTTP API — generated fresh each run
+const crypto = require('crypto')
+const FORGE_TOKEN = crypto.randomBytes(32).toString('hex')
+
 // ─── State ────────────────────────────────────────────────────────────────────
 
 let win = null
@@ -41,7 +45,7 @@ function readConfig() {
 
 function writeConfig(data) {
   fs.mkdirSync(USER_DATA, { recursive: true })
-  fs.writeFileSync(CONFIG_FILE, JSON.stringify(data, null, 2))
+  fs.writeFileSync(CONFIG_FILE, JSON.stringify(data, null, 2), { mode: 0o600 })
 }
 
 // ─── Utilities ────────────────────────────────────────────────────────────────
@@ -152,8 +156,8 @@ function createSetupWindow() {
       const existing = readConfig()
       writeConfig({ ...existing, ...setupConfig })
       ipcMain.removeAllListeners('setup-open-url')
-      ipcMain.removeAllListeners('setup-verify-org')
-      ipcMain.removeAllListeners('setup-fetch-org-config')
+      ipcMain.removeHandler('setup-verify-org')
+      ipcMain.removeHandler('setup-fetch-org-config')
       setupWin.close()
       resolve(setupConfig)
     })
@@ -170,14 +174,24 @@ function createSetupWindow() {
 
 // ─── Python check ─────────────────────────────────────────────────────────────
 
-function checkPython() {
-  try {
-    execSync('python3 --version', { stdio: 'ignore' })
-    return true
-  } catch (_) {
-    return false
+function findPython3() {
+  const candidates = [
+    'python3',
+    '/usr/local/bin/python3',
+    '/opt/homebrew/bin/python3',
+    `${require('os').homedir()}/.pyenv/shims/python3`,
+    '/usr/bin/python3',
+  ]
+  for (const candidate of candidates) {
+    try {
+      execSync(`"${candidate}" --version`, { stdio: 'ignore', shell: true })
+      return candidate
+    } catch (_) {}
   }
+  return null
 }
+
+const PYTHON3 = findPython3()
 
 // ─── Authentication ───────────────────────────────────────────────────────────
 
@@ -356,8 +370,9 @@ async function ensureProjectReady(projectRoot) {
 
 function startServer(projectRoot, forgeDataDir, port) {
   const serverScript = path.join(forgeDataDir, 'scripts', 'server.py')
+  const gitPat = auth.loadGitPat() || ''
 
-  serverProcess = spawn('python3', [serverScript, String(port)], {
+  serverProcess = spawn(PYTHON3 || 'python3', [serverScript, String(port)], {
     env: {
       ...process.env,
       FORGE_REPO_ROOT: projectRoot,
@@ -365,7 +380,9 @@ function startServer(projectRoot, forgeDataDir, port) {
       FORGE_VERSION,
       FORGE_SCRIPT: forgeBinaryPath(),
       FORGE_ORG: currentOrg || '',
-      FORGE_USER: currentUser?.login || ''
+      FORGE_USER: currentUser?.login || '',
+      FORGE_TOKEN,
+      FORGE_GIT_PAT: gitPat,
     },
     stdio: ['ignore', 'pipe', 'pipe']
   })
@@ -376,6 +393,21 @@ function startServer(projectRoot, forgeDataDir, port) {
   serverProcess.on('exit', (code, signal) => {
     if (!isQuitting) {
       console.error(`[server] Exited unexpectedly (code=${code}, signal=${signal})`)
+      dialog.showMessageBox({
+        type: 'error',
+        title: 'Forge OS — Server Crashed',
+        message: 'The background server stopped unexpectedly.',
+        detail: `Exit code: ${code ?? 'unknown'}  Signal: ${signal ?? 'none'}\n\nRestart Forge OS to resume.`,
+        buttons: ['Restart', 'Quit'],
+        defaultId: 0
+      }).then(({ response }) => {
+        if (response === 0) {
+          app.relaunch()
+          app.exit(0)
+        } else {
+          app.quit()
+        }
+      })
     }
   })
 }
@@ -629,7 +661,7 @@ if (!app.requestSingleInstanceLock()) {
   app.whenReady().then(async () => {
 
     // 1. Python check
-    if (!checkPython()) {
+    if (!PYTHON3) {
       dialog.showErrorBox(
         'Python 3 Required',
         'Forge OS requires Python 3 to run.\n\nInstall it from https://python.org/downloads and relaunch the app.'
@@ -637,6 +669,19 @@ if (!app.requestSingleInstanceLock()) {
       app.exit(1)
       return
     }
+
+    // Poll for PAT signal file written by the server when user saves a new token in Settings
+    const os = require('os')
+    const PAT_SIGNAL = path.join(os.homedir(), '.forge', '_pat_signal')
+    setInterval(() => {
+      if (fs.existsSync(PAT_SIGNAL)) {
+        try {
+          const newPat = fs.readFileSync(PAT_SIGNAL, 'utf8').trim()
+          fs.unlinkSync(PAT_SIGNAL)
+          if (newPat) auth.storeGitPat(newPat)
+        } catch (_) {}
+      }
+    }, 2000)
 
     // 2. First-launch setup wizard (runs once per machine — admin or member onboarding)
     if (needsSetup()) {
