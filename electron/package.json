@@ -67,8 +67,8 @@
     },
     "publish": {
       "provider": "github",
-      "owner": "OWNER",
-      "repo": "md-orchestrator"
+      "owner": "saturday-connect",
+      "repo": "forge-os"
     }
   }
 }
