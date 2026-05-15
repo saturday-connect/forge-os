@@ -55,6 +55,13 @@ function addProjectToHistory(projectPath) {
   writeConfig({ ...config, projectHistory: history.slice(0, 10) })
 }
 
+function addOrgToHistory(orgName, repoName) {
+  const config = readConfig()
+  const history = (config.orgHistory || []).filter(o => o.org !== orgName)
+  history.unshift({ org: orgName, repo: repoName || 'forge-knowledge' })
+  writeConfig({ ...config, orgHistory: history.slice(0, 5) })
+}
+
 // ─── Utilities ────────────────────────────────────────────────────────────────
 
 function getFreePort() {
@@ -227,6 +234,11 @@ async function authenticate() {
 
   // Apply saved knowledge repo name if configured
   if (config.knowledgeRepo) org.setRepoName(config.knowledgeRepo)
+
+  // Seed org history from saved config so it shows up immediately
+  if (config.org && !(config.orgHistory || []).find(o => o.org === config.org)) {
+    addOrgToHistory(config.org, config.knowledgeRepo || 'forge-knowledge')
+  }
 
   // Attempt to use stored token first
   let token = auth.loadToken()
@@ -514,58 +526,74 @@ async function openProject(newPath) {
   buildTrayMenu()
 }
 
+const PICKER_STYLES = `
+  *{box-sizing:border-box;margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
+  body{background:#0a0a0a;color:#fff;display:flex;flex-direction:column;height:100vh;overflow:hidden}
+  .header{padding:16px 16px 12px;font-size:11px;font-weight:600;color:#555;text-transform:uppercase;letter-spacing:1px;border-bottom:1px solid #1a1a1a;flex-shrink:0}
+  .list{flex:1;overflow-y:auto}
+  .item{padding:13px 16px;cursor:pointer;border-bottom:1px solid #141414;transition:background .1s;position:relative}
+  .item:hover{background:#141414}
+  .item.active{background:#0c0c22}
+  .item-name{font-size:14px;font-weight:600;margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-right:52px}
+  .item-sub{font-size:11px;color:#444;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .item.active .item-sub{color:#494fdf66}
+  .badge{position:absolute;right:16px;top:50%;transform:translateY(-50%);font-size:10px;color:#494fdf;font-weight:700;background:#0d0d2a;padding:2px 7px;border-radius:10px;border:1px solid #494fdf44}
+  .empty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:32px 24px;text-align:center}
+  .empty-icon{font-size:28px;opacity:.3}
+  .empty-title{font-size:14px;font-weight:600;color:#555}
+  .empty-desc{font-size:12px;color:#333;line-height:1.5}
+  .footer{padding:12px 16px;border-top:1px solid #1a1a1a;flex-shrink:0;display:flex;flex-direction:column;gap:8px}
+  .btn{width:100%;padding:10px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;border:none;transition:all .15s}
+  .btn-primary{background:#494fdf;color:#fff}
+  .btn-primary:hover{background:#5a60e8}
+  .btn-ghost{background:transparent;border:1px solid #222;color:#666}
+  .btn-ghost:hover{border-color:#333;color:#aaa}
+  input{width:100%;background:#141414;border:1px solid #222;color:#fff;padding:9px 12px;border-radius:8px;font-size:13px;outline:none}
+  input:focus{border-color:#494fdf}
+  input::placeholder{color:#333}
+  .field-label{font-size:11px;color:#555;margin-bottom:5px;display:block}
+`
+
 async function showProjectPicker() {
   const config = readConfig()
   const history = (config.projectHistory || []).filter(p => fs.existsSync(p))
   const current = config.projectPath || ''
+  const isEmpty = history.length === 0
 
   const pickerWin = new BrowserWindow({
-    width: 480,
-    height: Math.min(120 + history.length * 56 + 56, 520),
-    resizable: false,
-    minimizable: false,
-    maximizable: false,
+    width: 460,
+    height: isEmpty ? 280 : Math.min(80 + history.length * 62 + 76, 500),
+    resizable: false, minimizable: false, maximizable: false,
     title: 'Switch Project',
-    parent: win || undefined,
-    modal: !!win,
+    parent: win || undefined, modal: !!win,
     webPreferences: { nodeIntegration: true, contextIsolation: false }
   })
 
   const items = history.map((p, i) => `
     <div class="item ${p === current ? 'active' : ''}" onclick="pick(${i})">
-      <div class="name">${require('path').basename(p)}</div>
-      <div class="path">${p}</div>
+      <div class="item-name">${require('path').basename(p)}</div>
+      <div class="item-sub">${p}</div>
+      ${p === current ? '<span class="badge">active</span>' : ''}
     </div>`).join('')
 
-  pickerWin.loadURL(`data:text/html,<!DOCTYPE html><html><head>
-    <style>
-      *{box-sizing:border-box;margin:0;padding:0;font-family:-apple-system,sans-serif}
-      body{background:#0d0d0d;color:#fff;display:flex;flex-direction:column;height:100vh;overflow:hidden}
-      .header{padding:14px 16px 10px;font-size:12px;color:#666;text-transform:uppercase;letter-spacing:.8px;border-bottom:1px solid #1f1f1f;flex-shrink:0}
-      .list{flex:1;overflow-y:auto}
-      .item{padding:12px 16px;cursor:pointer;border-bottom:1px solid #1a1a1a;transition:background .1s}
-      .item:hover{background:#1a1a1a}
-      .item.active{background:#0e0e2e}
-      .name{font-size:14px;font-weight:600;margin-bottom:2px}
-      .path{font-size:11px;color:#555;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-      .item.active .path{color:#494fdf88}
-      .item.active::after{content:'active';float:right;font-size:10px;color:#494fdf;font-weight:600;margin-top:-18px}
-      .footer{padding:10px 16px;border-top:1px solid #1f1f1f;flex-shrink:0}
-      .btn-new{width:100%;background:transparent;border:1px solid #2a2a2a;color:#888;padding:9px;border-radius:6px;font-size:13px;cursor:pointer;transition:all .15s}
-      .btn-new:hover{border-color:#494fdf;color:#fff}
-      .empty{padding:24px 16px;color:#555;font-size:13px;text-align:center}
-    </style>
-  </head><body>
+  const emptyState = `
+    <div class="empty">
+      <div class="empty-icon">📁</div>
+      <div class="empty-title">No recent projects</div>
+      <div class="empty-desc">Open a folder to initialize it as a Forge project. Your projects will appear here for quick switching.</div>
+    </div>`
+
+  pickerWin.loadURL(`data:text/html,<!DOCTYPE html><html><head><style>${PICKER_STYLES}</style></head><body>
     <div class="header">Recent Projects</div>
-    <div class="list">${items || '<div class="empty">No recent projects</div>'}</div>
+    ${isEmpty ? emptyState : `<div class="list">${items}</div>`}
     <div class="footer">
-      <button class="btn-new" onclick="browseNew()">+ Open Different Folder</button>
+      <button class="btn btn-${isEmpty ? 'primary' : 'ghost'}" onclick="browseNew()">Open Folder…</button>
     </div>
     <script>
-      const {ipcRenderer} = require('electron')
-      const paths = ${JSON.stringify(history)}
-      function pick(i){ ipcRenderer.send('project-pick', paths[i]) }
-      function browseNew(){ ipcRenderer.send('project-browse') }
+      const {ipcRenderer}=require('electron')
+      const paths=${JSON.stringify(history)}
+      function pick(i){ipcRenderer.send('project-pick',paths[i])}
+      function browseNew(){ipcRenderer.send('project-browse')}
     </script>
   </body></html>`)
 
@@ -573,12 +601,7 @@ async function showProjectPicker() {
 
   return new Promise(resolve => {
     const { ipcMain: ipc } = require('electron')
-
-    ipc.once('project-pick', (_e, pickedPath) => {
-      pickerWin.close()
-      resolve(pickedPath)
-    })
-
+    ipc.once('project-pick', (_e, p) => { pickerWin.close(); resolve(p) })
     ipc.once('project-browse', async () => {
       pickerWin.close()
       const result = await dialog.showOpenDialog(win || null, {
@@ -589,7 +612,6 @@ async function showProjectPicker() {
       })
       resolve(result.canceled || !result.filePaths.length ? null : result.filePaths[0])
     })
-
     pickerWin.on('closed', () => {
       ipc.removeAllListeners('project-pick')
       ipc.removeAllListeners('project-browse')
@@ -646,65 +668,72 @@ function buildTrayMenu() {
         if (!token) return
 
         const config = readConfig()
+        const orgHistory = config.orgHistory || []
+        const currentRepo = config.knowledgeRepo || 'forge-knowledge'
+        const isEmpty = orgHistory.length === 0
 
-        // Show input dialog — always works, no dependency on repo name discovery
-        const { response, checkboxChecked } = await dialog.showMessageBox(win || null, {
-          type: 'question',
+        const orgWin = new BrowserWindow({
+          width: 460,
+          height: isEmpty ? 340 : Math.min(80 + orgHistory.length * 62 + 180, 520),
+          resizable: false, minimizable: false, maximizable: false,
           title: 'Switch Organization',
-          message: 'Enter your GitHub organization name',
-          detail: `Current: ${currentOrg || 'none'}\n\nEnter the exact organization login (e.g. acme-corp):`,
-          buttons: ['Switch', 'Cancel'],
-          defaultId: 0,
-          cancelId: 1
-        })
-        if (response !== 0) return
-
-        // Electron doesn't support text input in showMessageBox — use a small prompt window
-        const promptWin = new BrowserWindow({
-          width: 420,
-          height: 220,
-          resizable: false,
-          minimizable: false,
-          maximizable: false,
-          title: 'Switch Organization',
-          parent: win || undefined,
-          modal: true,
+          parent: win || undefined, modal: !!win,
           webPreferences: { nodeIntegration: true, contextIsolation: false }
         })
 
-        const currentRepo = config.knowledgeRepo || 'forge-knowledge'
-        promptWin.loadURL(`data:text/html,<!DOCTYPE html><html><head>
-          <style>
-            *{box-sizing:border-box;margin:0;padding:0;font-family:-apple-system,sans-serif}
-            body{background:#1a1a1a;color:#fff;padding:20px;display:flex;flex-direction:column;gap:12px}
-            label{font-size:12px;color:#888;margin-bottom:4px;display:block}
-            input{width:100%;background:#2a2a2a;border:1px solid #444;color:#fff;padding:8px 10px;border-radius:6px;font-size:14px;outline:none}
-            input:focus{border-color:#494fdf}
-            .row{display:flex;gap:8px;margin-top:4px}
-            button{flex:1;padding:9px;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer}
-            .ok{background:#494fdf;color:#fff}
-            .cancel{background:#2a2a2a;color:#aaa}
-          </style>
-        </head><body>
-          <div><label>Organization name</label><input id="org" value="${currentOrg || ''}" placeholder="acme-corp" autofocus /></div>
-          <div><label>Knowledge repository name</label><input id="repo" value="${currentRepo}" placeholder="forge-knowledge" /></div>
-          <div class="row">
-            <button class="cancel" onclick="require('electron').ipcRenderer.send('org-prompt-cancel')">Cancel</button>
-            <button class="ok" onclick="require('electron').ipcRenderer.send('org-prompt-save',document.getElementById('org').value.trim(),document.getElementById('repo').value.trim())">Switch</button>
+        const items = orgHistory.map((o, i) => `
+          <div class="item ${o.org === currentOrg ? 'active' : ''}" onclick="pick(${i})">
+            <div class="item-name">${o.org}</div>
+            <div class="item-sub">${o.org}/${o.repo}</div>
+            ${o.org === currentOrg ? '<span class="badge">active</span>' : ''}
+          </div>`).join('')
+
+        const emptyState = `
+          <div class="empty">
+            <div class="empty-icon">🏢</div>
+            <div class="empty-title">No recent organizations</div>
+            <div class="empty-desc">Enter your GitHub organization name below. It will appear here for quick switching next time.</div>
+          </div>`
+
+        orgWin.loadURL(`data:text/html,<!DOCTYPE html><html><head><style>${PICKER_STYLES}</style></head><body>
+          <div class="header">Organizations</div>
+          ${isEmpty ? emptyState : `<div class="list">${items}</div>`}
+          <div class="footer">
+            <div style="display:flex;flex-direction:column;gap:6px">
+              <div><label class="field-label">Organization name</label><input id="org" value="${currentOrg || ''}" placeholder="acme-corp" autofocus /></div>
+              <div><label class="field-label">Knowledge repository</label><input id="repo" value="${currentRepo}" placeholder="forge-knowledge" /></div>
+            </div>
+            <button class="btn btn-primary" style="margin-top:4px" onclick="save()">Switch Organization</button>
           </div>
+          <script>
+            const {ipcRenderer}=require('electron')
+            const orgs=${JSON.stringify(orgHistory)}
+            function pick(i){
+              document.getElementById('org').value=orgs[i].org
+              document.getElementById('repo').value=orgs[i].repo
+            }
+            function save(){
+              const o=document.getElementById('org').value.trim()
+              const r=document.getElementById('repo').value.trim()
+              if(!o)return
+              ipcRenderer.send('org-switch-save',o,r)
+            }
+            document.addEventListener('keydown',e=>{if(e.key==='Enter')save()})
+          </script>
         </body></html>`)
+
+        orgWin.once('ready-to-show', () => orgWin.show())
 
         const result = await new Promise(resolve => {
           const { ipcMain: ipc } = require('electron')
-          ipc.once('org-prompt-save', (_e, orgVal, repoVal) => {
-            promptWin.close()
+          ipc.once('org-switch-save', (_e, orgVal, repoVal) => {
+            orgWin.close()
             resolve({ orgVal, repoVal })
           })
-          ipc.once('org-prompt-cancel', () => {
-            promptWin.close()
+          orgWin.on('closed', () => {
+            ipc.removeAllListeners('org-switch-save')
             resolve(null)
           })
-          promptWin.on('closed', () => resolve(null))
         })
 
         if (!result || !result.orgVal) return
@@ -714,6 +743,7 @@ function buildTrayMenu() {
 
         currentOrg = orgVal
         org.setRepoName(repoName)
+        addOrgToHistory(orgVal, repoName)
         writeConfig({ ...readConfig(), org: orgVal, knowledgeRepo: repoName })
 
         org.syncInBackground(token, orgVal)
