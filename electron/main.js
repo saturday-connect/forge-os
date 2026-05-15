@@ -556,16 +556,82 @@ function buildTrayMenu() {
       click: async () => {
         const token = auth.loadToken()
         if (!token) return
-        const orgLogin = await resolveOrg(token)
-        if (!orgLogin || orgLogin === currentOrg) return
 
-        currentOrg = orgLogin
         const config = readConfig()
-        writeConfig({ ...config, org: orgLogin })
 
-        // Sync the newly selected org in background
-        org.syncInBackground(token, orgLogin)
+        // Show input dialog — always works, no dependency on repo name discovery
+        const { response, checkboxChecked } = await dialog.showMessageBox(win || null, {
+          type: 'question',
+          title: 'Switch Organization',
+          message: 'Enter your GitHub organization name',
+          detail: `Current: ${currentOrg || 'none'}\n\nEnter the exact organization login (e.g. acme-corp):`,
+          buttons: ['Switch', 'Cancel'],
+          defaultId: 0,
+          cancelId: 1
+        })
+        if (response !== 0) return
+
+        // Electron doesn't support text input in showMessageBox — use a small prompt window
+        const promptWin = new BrowserWindow({
+          width: 420,
+          height: 220,
+          resizable: false,
+          minimizable: false,
+          maximizable: false,
+          title: 'Switch Organization',
+          parent: win || undefined,
+          modal: true,
+          webPreferences: { nodeIntegration: true, contextIsolation: false }
+        })
+
+        const currentRepo = config.knowledgeRepo || 'forge-knowledge'
+        promptWin.loadURL(`data:text/html,<!DOCTYPE html><html><head>
+          <style>
+            *{box-sizing:border-box;margin:0;padding:0;font-family:-apple-system,sans-serif}
+            body{background:#1a1a1a;color:#fff;padding:20px;display:flex;flex-direction:column;gap:12px}
+            label{font-size:12px;color:#888;margin-bottom:4px;display:block}
+            input{width:100%;background:#2a2a2a;border:1px solid #444;color:#fff;padding:8px 10px;border-radius:6px;font-size:14px;outline:none}
+            input:focus{border-color:#494fdf}
+            .row{display:flex;gap:8px;margin-top:4px}
+            button{flex:1;padding:9px;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer}
+            .ok{background:#494fdf;color:#fff}
+            .cancel{background:#2a2a2a;color:#aaa}
+          </style>
+        </head><body>
+          <div><label>Organization name</label><input id="org" value="${currentOrg || ''}" placeholder="acme-corp" autofocus /></div>
+          <div><label>Knowledge repository name</label><input id="repo" value="${currentRepo}" placeholder="forge-knowledge" /></div>
+          <div class="row">
+            <button class="cancel" onclick="require('electron').ipcRenderer.send('org-prompt-cancel')">Cancel</button>
+            <button class="ok" onclick="require('electron').ipcRenderer.send('org-prompt-save',document.getElementById('org').value.trim(),document.getElementById('repo').value.trim())">Switch</button>
+          </div>
+        </body></html>`)
+
+        const result = await new Promise(resolve => {
+          const { ipcMain: ipc } = require('electron')
+          ipc.once('org-prompt-save', (_e, orgVal, repoVal) => {
+            promptWin.close()
+            resolve({ orgVal, repoVal })
+          })
+          ipc.once('org-prompt-cancel', () => {
+            promptWin.close()
+            resolve(null)
+          })
+          promptWin.on('closed', () => resolve(null))
+        })
+
+        if (!result || !result.orgVal) return
+
+        const { orgVal, repoVal } = result
+        const repoName = repoVal || 'forge-knowledge'
+
+        currentOrg = orgVal
+        org.setRepoName(repoName)
+        writeConfig({ ...readConfig(), org: orgVal, knowledgeRepo: repoName })
+
+        org.syncInBackground(token, orgVal)
         buildTrayMenu()
+
+        dialog.showMessageBox({ type: 'info', title: 'Organization Updated', message: `Switched to ${orgVal}/${repoName}.\n\nKnowledge base sync started in the background.` })
       }
     },
     { type: 'separator' },
