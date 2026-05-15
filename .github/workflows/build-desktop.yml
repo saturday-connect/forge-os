@@ -17,10 +17,8 @@ jobs:
         include:
           - os: macos-latest
             platform: mac
-            artifact: "*.dmg"
           - os: windows-latest
             platform: win
-            artifact: "*.exe"
 
     runs-on: ${{ matrix.os }}
 
@@ -49,19 +47,15 @@ jobs:
 
       - name: Build desktop app (macOS)
         if: runner.os == 'macOS'
-        run: npm run build:mac -- --publish ${{ startsWith(github.ref, 'refs/tags/') && 'always' || 'never' }}
+        run: npm run build:mac -- --publish never
         working-directory: electron
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # TODO: add CSC_LINK and CSC_KEY_PASSWORD secrets for code signing before public release
+        # TODO: add CSC_LINK and CSC_KEY_PASSWORD secrets for code signing before public release
 
       - name: Build desktop app (Windows)
         if: runner.os == 'Windows'
-        run: npm run build:win -- --publish ${{ startsWith(github.ref, 'refs/tags/') && 'always' || 'never' }}
+        run: npm run build:win -- --publish never
         working-directory: electron
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # TODO: add WIN_CSC_LINK and WIN_CSC_KEY_PASSWORD for Authenticode signing
+        # TODO: add WIN_CSC_LINK and WIN_CSC_KEY_PASSWORD for Authenticode signing
 
       - name: Upload build artifact
         if: ${{ !startsWith(github.ref, 'refs/tags/') }}
@@ -70,6 +64,19 @@ jobs:
           name: forge-os-${{ runner.os }}
           retention-days: 14
           path: |
-            electron/dist/${{ matrix.artifact }}
+            electron/dist/*.dmg
+            electron/dist/*.exe
             electron/dist/*.zip
             electron/dist/latest*.yml
+
+      - name: Publish to GitHub Releases
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            electron/dist/*.dmg
+            electron/dist/*.exe
+            electron/dist/*.zip
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
