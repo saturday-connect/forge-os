@@ -527,6 +527,8 @@ function buildTrayMenu() {
         writeConfig({ ...config, projectPath: newPath })
         killServer()
 
+        try { await runForgeCommand(newPath, 'upgrade') } catch (_) {}
+
         serverPort = await getFreePort()
         startServer(newPath, newDataDir, serverPort)
 
@@ -747,6 +749,9 @@ if (!app.requestSingleInstanceLock()) {
     if (!forgeDataDir) { app.exit(0); return }
 
     writeConfig({ ...readConfig(), projectPath: projectRoot })
+
+    // Upgrade project scripts to match the current forge binary before serving
+    try { await runForgeCommand(projectRoot, 'upgrade') } catch (_) {}
 
     // 7. Start Python server
     serverPort = await getFreePort()
