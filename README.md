@@ -136,4 +136,4 @@ Authentication uses GitHub Device Flow. The OAuth App Client ID is configured vi
 
 ## License
 
-Private.
+Apache License 2.0 — see [LICENSE](LICENSE) for details.
