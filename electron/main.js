@@ -464,8 +464,6 @@ function createWindow(port) {
     }
   })
 
-  win.loadURL(`http://127.0.0.1:${port}`)
-
   win.on('close', e => {
     if (!isQuitting) {
       e.preventDefault()
@@ -801,9 +799,10 @@ if (!app.requestSingleInstanceLock()) {
     createTray()
     setupAutoUpdater()
 
-    // 9. Wait for server then show window
+    // 9. Wait for server, then load URL and show window
     try {
       await waitForServer(serverPort)
+      win.loadURL(`http://127.0.0.1:${serverPort}`)
       win.show()
     } catch (err) {
       dialog.showErrorBox(
