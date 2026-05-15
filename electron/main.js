@@ -54,7 +54,6 @@ function addProjectToHistory(projectPath) {
   history.unshift(projectPath)
   writeConfig({ ...config, projectHistory: history.slice(0, 10) })
 }
-}
 
 // ─── Utilities ────────────────────────────────────────────────────────────────
 
