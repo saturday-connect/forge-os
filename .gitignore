@@ -8,3 +8,8 @@ __pycache__/
 *.pyc
 node_modules/
 electron/package-lock.json
+.DS_Store
+*.log
+dist/
+electron/dist/
+electron/out/
