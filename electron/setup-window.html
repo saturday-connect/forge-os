@@ -566,29 +566,8 @@
     <div class="step-pane" id="pane-3">
       <h2>Connect your GitHub organization</h2>
       <p class="step-desc">
-        Forge OS stores shared knowledge, agents, and project documentation in a private repository called <code style="font-family:monospace;font-size:12px">forge-knowledge</code> in your GitHub org.
+        Forge OS syncs shared knowledge and configuration from a private repository in your GitHub org.
       </p>
-      <div class="guide-box">
-        <div class="guide-box-header">Create the knowledge repository</div>
-        <div class="guide-steps">
-          <div class="guide-step">
-            <div class="guide-step-num">1</div>
-            <div class="guide-step-text">Go to your organization on GitHub and create a new repository named exactly <code>forge-knowledge</code></div>
-          </div>
-          <div class="guide-step">
-            <div class="guide-step-num">2</div>
-            <div class="guide-step-text">Set visibility to <strong>Private</strong></div>
-          </div>
-          <div class="guide-step">
-            <div class="guide-step-num">3</div>
-            <div class="guide-step-text">Initialize with a README (so the repo has a default branch)</div>
-          </div>
-          <div class="guide-step">
-            <div class="guide-step-num">4</div>
-            <div class="guide-step-text">Invite team members to your GitHub org — they'll be auto-discovered by Forge OS</div>
-          </div>
-        </div>
-      </div>
       <div class="field">
         <label class="field-label" for="org-input">Organization name</label>
         <span class="field-hint">The part after <code style="font-family:monospace;font-size:11px">github.com/</code> — e.g. <code style="font-family:monospace;font-size:11px">acme-corp</code></span>
@@ -603,6 +582,19 @@
         >
         <span class="field-error" id="org-error"></span>
         <span class="field-ok" id="org-ok"></span>
+      </div>
+      <div class="field">
+        <label class="field-label" for="repo-input">Knowledge repository name</label>
+        <span class="field-hint">The repo in your org that holds shared context — defaults to <code style="font-family:monospace;font-size:11px">forge-knowledge</code></span>
+        <input
+          class="field-input"
+          id="repo-input"
+          type="text"
+          placeholder="forge-knowledge"
+          autocomplete="off"
+          spellcheck="false"
+          oninput="clearOrgStatus()"
+        >
       </div>
     </div>
 
@@ -779,6 +771,7 @@
 
   async function verifyOrg() {
     const val = document.getElementById('org-input').value.trim().toLowerCase()
+    const repoVal = document.getElementById('repo-input').value.trim() || 'forge-knowledge'
     const input = document.getElementById('org-input')
     const err = document.getElementById('org-error')
     const ok = document.getElementById('org-ok')
@@ -799,7 +792,7 @@
     btn.disabled = true
     btn.innerHTML = '<span class="spinner-sm"></span>Verifying…'
 
-    const result = await window.setupAPI.verifyOrg(val)
+    const result = await window.setupAPI.verifyOrg(val, repoVal)
 
     btn.disabled = false
     btn.textContent = 'Verify & Continue →'
@@ -813,9 +806,9 @@
 
     input.className = 'field-input valid'
     if (result.repoExists) {
-      ok.textContent = `✓ Found ${val}/forge-knowledge`
+      ok.textContent = `✓ Found ${val}/${repoVal}`
     } else {
-      ok.textContent = `✓ Organization found — create the forge-knowledge repo then continue`
+      ok.textContent = `✓ Organization found — make sure "${repoVal}" repo exists then continue`
     }
     ok.className = 'field-ok visible'
     return true
@@ -879,10 +872,12 @@
 
   function buildConfig() {
     if (role === 'admin') {
+      const repoVal = document.getElementById('repo-input').value.trim()
       return {
         role: 'admin',
         githubClientId: document.getElementById('client-id-input').value.trim(),
-        org: document.getElementById('org-input').value.trim().toLowerCase()
+        org: document.getElementById('org-input').value.trim().toLowerCase(),
+        knowledgeRepo: repoVal || 'forge-knowledge'
       }
     } else {
       return {

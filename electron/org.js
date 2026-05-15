@@ -17,7 +17,11 @@ const github = require('./github')
 const fs = require('fs')
 const path = require('path')
 
-const REPO_NAME = 'forge-knowledge'
+let REPO_NAME = 'forge-knowledge'
+
+function setRepoName(name) {
+  if (name && typeof name === 'string') REPO_NAME = name.trim()
+}
 const CACHE_ROOT = path.join(app.getPath('home'), '.forge', 'org-cache')
 const CACHE_TTL_MS = 60 * 60 * 1000   // 1 hour
 const META_FILE = '.sync_meta.json'
@@ -221,5 +225,6 @@ module.exports = {
   resolveUserRole,
   listOrgContextFiles,
   pushToOrg,
-  cacheDir
+  cacheDir,
+  setRepoName
 }

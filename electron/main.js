@@ -101,9 +101,10 @@ function createSetupWindow() {
     ipcMain.on('setup-open-url', (_e, url) => shell.openExternal(url))
 
     // IPC: verify org (admin step 3)
-    ipcMain.handle('setup-verify-org', async (_e, orgName) => {
+    ipcMain.handle('setup-verify-org', async (_e, orgName, repoName) => {
+      const repo = repoName || 'forge-knowledge'
       try {
-        const exists = await github.repoExists(null, orgName, 'forge-knowledge').catch(() => false)
+        const exists = await github.repoExists(null, orgName, repo).catch(() => false)
         return { repoExists: exists }
       } catch (err) {
         return { error: `Could not verify organization: ${err.message}` }
@@ -155,6 +156,7 @@ function createSetupWindow() {
     ipcMain.once('setup-save', (_e, setupConfig) => {
       const existing = readConfig()
       writeConfig({ ...existing, ...setupConfig })
+      if (setupConfig.knowledgeRepo) org.setRepoName(setupConfig.knowledgeRepo)
       ipcMain.removeAllListeners('setup-open-url')
       ipcMain.removeHandler('setup-verify-org')
       ipcMain.removeHandler('setup-fetch-org-config')
@@ -215,6 +217,9 @@ ipcMain.on('auth-copy-code', () => {
  */
 async function authenticate() {
   const config = readConfig()
+
+  // Apply saved knowledge repo name if configured
+  if (config.knowledgeRepo) org.setRepoName(config.knowledgeRepo)
 
   // Attempt to use stored token first
   let token = auth.loadToken()
@@ -588,6 +593,28 @@ function buildTrayMenu() {
       click: () => autoUpdater.checkForUpdatesAndNotify()
     },
     { type: 'separator' },
+    {
+      label: 'Reset Setup & Reconfigure',
+      click: async () => {
+        const { response } = await dialog.showMessageBox({
+          type: 'warning',
+          title: 'Reset Setup',
+          message: 'This will clear your configuration and restart the setup wizard.',
+          detail: 'Your project data will not be deleted.',
+          buttons: ['Reset', 'Cancel'],
+          defaultId: 1
+        })
+        if (response !== 0) return
+        auth.clearToken()
+        fs.rmSync(CONFIG_FILE, { force: true })
+        currentUser = null
+        currentOrg = null
+        isQuitting = true
+        killServer()
+        app.relaunch()
+        app.exit(0)
+      }
+    },
     {
       label: 'Disconnect GitHub Account',
       click: async () => {
