@@ -859,19 +859,19 @@ def _assemble_dashboard_html():
     index_path = os.path.join(base, "index.html")
     css_path = os.path.join(base, "styles.css")
     if not os.path.exists(index_path):
-        return open(assembled_path).read()
-    html = open(index_path).read()
+        return open(assembled_path, encoding='utf-8').read()
+    html = open(index_path, encoding='utf-8').read()
     if os.path.exists(css_path):
-        css = open(css_path).read()
+        css = open(css_path, encoding='utf-8').read()
         html = html.replace("<!-- FORGE_DASHBOARD_CSS -->", css)
     scripts_dir = os.path.join(base, "scripts")
     for match in _re.findall(r'<!-- FORGE_DASHBOARD_SCRIPT:([\w\-\.]+) -->', html):
         js_path = os.path.join(scripts_dir, match)
         if os.path.exists(js_path):
-            js = open(js_path).read()
+            js = open(js_path, encoding='utf-8').read()
             html = html.replace(f"<!-- FORGE_DASHBOARD_SCRIPT:{match} -->", js)
     # Write assembled output so it's available as a build artifact too
-    open(assembled_path, "w").write(html)
+    open(assembled_path, "w", encoding='utf-8').write(html)
     return html
 
 DASHBOARD_HTML_CONTENT = _assemble_dashboard_html()
@@ -939,7 +939,7 @@ BUILD_ORDER = ["backend", "frontend", "integration", "tests", "infra"]
 def load_build_status():
     if os.path.exists(BUILD_STATUS_FILE):
         try:
-            with open(BUILD_STATUS_FILE) as f:
+            with open(BUILD_STATUS_FILE, encoding='utf-8') as f:
                 return json.load(f)
         except Exception:
             pass
@@ -954,7 +954,7 @@ def save_step_status(step, status_val, files=None, error=None):
         "generated_at": datetime.now().isoformat() if status_val == "complete" else existing.get("generated_at", ""),
         "error": error,
     }
-    with open(BUILD_STATUS_FILE, "w") as f:
+    with open(BUILD_STATUS_FILE, "w", encoding='utf-8') as f:
         json.dump(status, f, indent=2)
 
 def collect_docs(meta):
@@ -1003,7 +1003,7 @@ def invoke_ai(prompt, tool, model_id):
             cmd = ["claude", "-p", prompt, "--output-format", "text"]
         else:
             cmd = ["gemini", "--skip-trust", "-p", prompt]
-        with open(tmp_path, "w") as out_f:
+        with open(tmp_path, "w", encoding='utf-8') as out_f:
             result = subprocess.run(cmd, stdout=out_f, stderr=subprocess.PIPE, timeout=600)
         if result.returncode != 0:
             err = result.stderr.decode("utf-8", errors="replace") if result.stderr else "AI call failed"
@@ -1500,7 +1500,7 @@ def main():
             print(f"[STAGE-RUNNER] Generating: {{output_file}} ({{file_idx+1}}/{{total_files}})")
 
             if os.path.exists("runs"):
-                with open(status_file, "w") as sf:
+                with open(status_file, "w", encoding='utf-8') as sf:
                     json.dump({{
                         "status": "running",
                         "stage": stage,
@@ -1526,12 +1526,12 @@ def main():
                 try:
                     reviews_path = "reviews.json"
                     if os.path.exists(reviews_path):
-                        with open(reviews_path) as rf:
+                        with open(reviews_path, encoding='utf-8') as rf:
                             _reviews = json.load(rf)
                     else:
                         _reviews = {{}}
                     _reviews.pop(output_file, None)
-                    with open(reviews_path, "w") as rf:
+                    with open(reviews_path, "w", encoding='utf-8') as rf:
                         json.dump(_reviews, rf, indent=2)
                 except Exception:
                     pass
@@ -1542,7 +1542,7 @@ def main():
                 err_msg = "Generation failed — the AI model may have reached its usage limit. Try again in a few minutes."
                 if os.path.exists(run_error_file):
                     try:
-                        with open(run_error_file) as ef:
+                        with open(run_error_file, encoding='utf-8') as ef:
                             err_msg = json.load(ef).get("message", err_msg)
                     except Exception:
                         pass
@@ -1562,7 +1562,7 @@ def main():
             }}
             if last_err:
                 idle_data["last_error"] = last_err
-            with open(status_file, "w") as sf:
+            with open(status_file, "w", encoding='utf-8') as sf:
                 json.dump(idle_data, sf)
         if failed_count > 0:
             sys.exit(1)
@@ -1859,9 +1859,9 @@ def invoke_model(prompt, output_path):
             if model_id:
                 cmd += ["-m", model_id]
             cmd += ["-p", prompt]
-            subprocess.run(cmd, stdout=open(tmp_path, 'w'), check=True)
+            subprocess.run(cmd, stdout=open(tmp_path, 'w', encoding='utf-8'), check=True)
         elif tool == "claude":
-            subprocess.run(["claude"], input=prompt, text=True, stdout=open(tmp_path, 'w'), check=True)
+            subprocess.run(["claude"], input=prompt, text=True, stdout=open(tmp_path, 'w', encoding='utf-8'), check=True)
         elif tool == "codex":
             cmd = ["codex", "exec", "--dangerously-bypass-approvals-and-sandbox", "--ephemeral",
                    "-o", tmp_path]
@@ -1889,7 +1889,7 @@ def invoke_model(prompt, output_path):
                 }}
             )
             try:
-                with urllib.request.urlopen(req) as response:
+                with urllib.request.urlopen(req, encoding='utf-8') as response:
                     res_body = response.read().decode('utf-8')
                     res_json = json.loads(res_body)
                     content = res_json['choices'][0]['message']['content']
@@ -2000,7 +2000,7 @@ def _write_run_error(output_file, message):
     err_path = os.path.join(REPO_ROOT, "runs", "last-run-error.json")
     try:
         os.makedirs(os.path.dirname(err_path), exist_ok=True)
-        with open(err_path, "w") as f:
+        with open(err_path, "w", encoding='utf-8') as f:
             json.dump({{
                 "file": output_file,
                 "message": message,
@@ -2125,7 +2125,7 @@ def cmd_init():
     files_to_touch = {FILES_TO_TOUCH}
 
     for f in files_to_touch:
-        with open(os.path.join(FORGE_DIR, f), 'a'):
+        with open(os.path.join(FORGE_DIR, f), 'a', encoding='utf-8'):
             pass
 
     # Agents
@@ -2213,50 +2213,50 @@ PENDING
 """
 {GATE_CODE}
 
-    with open(os.path.join(FORGE_DIR, "13-decisions/decision-log.md"), "w") as f:
+    with open(os.path.join(FORGE_DIR, "13-decisions/decision-log.md"), "w", encoding='utf-8') as f:
         f.write("# Decision Log\\n\\n| Date | Decision | Context | Owner | Status |\\n|---|---|---|---|---|\\n")
 
-    with open(os.path.join(FORGE_DIR, "13-decisions/change-log.md"), "w") as f:
+    with open(os.path.join(FORGE_DIR, "13-decisions/change-log.md"), "w", encoding='utf-8') as f:
         f.write("# Change Log\\n\\n| Date | Change | Reason | Owner |\\n|---|---|---|---|\\n")
 
-    with open(os.path.join(FORGE_DIR, "13-decisions/adr-index.md"), "w") as f:
+    with open(os.path.join(FORGE_DIR, "13-decisions/adr-index.md"), "w", encoding='utf-8') as f:
         f.write("# ADR Index\\n\\n| ADR | Title | Status | Date |\\n|---|---|---|---|\\n")
 
     current_date = datetime.now().strftime("%a %b %d %H:%M:%S %Z %Y")
-    with open(os.path.join(FORGE_DIR, "runs/run-log.md"), "w") as f:
+    with open(os.path.join(FORGE_DIR, "runs/run-log.md"), "w", encoding='utf-8') as f:
         f.write(f"# Run Log\\n\\n| Date | Command | Status |\\n|---|---|---|\\n| {{current_date}} | init | SUCCESS |\\n")
 
-    with open(os.path.join(FORGE_DIR, "runs/execution-history.md"), "w") as f:
+    with open(os.path.join(FORGE_DIR, "runs/execution-history.md"), "w", encoding='utf-8') as f:
         f.write("# Execution History\\n")
 
-    with open(os.path.join(FORGE_DIR, "runs/failed-runs.md"), "w") as f:
+    with open(os.path.join(FORGE_DIR, "runs/failed-runs.md"), "w", encoding='utf-8') as f:
         f.write("# Failed Runs\\n")
 
     # Seed Scripts
-    with open(os.path.join(FORGE_DIR, "scripts/stage_runner.py"), "w") as f:
+    with open(os.path.join(FORGE_DIR, "scripts/stage_runner.py"), "w", encoding='utf-8') as f:
         f.write(STAGE_RUNNER_PY)
-    with open(os.path.join(FORGE_DIR, "scripts/run.py"), "w") as f:
+    with open(os.path.join(FORGE_DIR, "scripts/run.py"), "w", encoding='utf-8') as f:
         f.write(RUN_PY)
-    with open(os.path.join(FORGE_DIR, "scripts/validate_gates.py"), "w") as f:
+    with open(os.path.join(FORGE_DIR, "scripts/validate_gates.py"), "w", encoding='utf-8') as f:
         f.write(VALIDATE_GATES_PY)
-    with open(os.path.join(FORGE_DIR, "scripts/build_runner.py"), "w") as f:
+    with open(os.path.join(FORGE_DIR, "scripts/build_runner.py"), "w", encoding='utf-8') as f:
         f.write(BUILD_RUNNER_PY)
-    with open(os.path.join(FORGE_DIR, "scripts/server.py"), "w") as f:
+    with open(os.path.join(FORGE_DIR, "scripts/server.py"), "w", encoding='utf-8') as f:
         f.write(SERVER_PY)
-    with open(os.path.join(FORGE_DIR, "scripts/dashboard.html"), "w") as f:
+    with open(os.path.join(FORGE_DIR, "scripts/dashboard.html"), "w", encoding='utf-8') as f:
         f.write(DASHBOARD_HTML)
     print("Dashboard deployed to .forge/scripts/")
 
     reviews_path = os.path.join(FORGE_DIR, "reviews.json")
     if not os.path.exists(reviews_path):
-        with open(reviews_path, "w") as f:
+        with open(reviews_path, "w", encoding='utf-8') as f:
             json.dump({{}}, f)
 
     os.makedirs(os.path.join(FORGE_DIR, "00-raw-input"), exist_ok=True)
 
     state_path = os.path.join(FORGE_DIR, "project-state.json")
     if not os.path.exists(state_path):
-        with open(state_path, "w") as f:
+        with open(state_path, "w", encoding='utf-8') as f:
             json.dump({{}}, f)
 
     print(f"Forge OS environment initialized successfully in {{FORGE_DIR}}")
@@ -2486,7 +2486,7 @@ def build_forge():
                   '                _content = _af.read()\n'
                   '            needs_write = "Define this agent" in _content or "TBD" in _content\n'
                   '        if needs_write:\n'
-                  '            with open(agent_path, "w") as f:\n')
+                  '            with open(agent_path, "w", encoding="utf-8") as f:\n')
     first = True
     for agent, text in all_agents.items():
         if first:
@@ -2497,7 +2497,7 @@ def build_forge():
 
     agent_code += '                else:\n                    f.write(agent_template.format(agent=agent))\n'
     
-    gate_code = '    for gate in gates:\n        gate_path = os.path.join(FORGE_DIR, f"12-gates/{gate}.md")\n        if not os.path.exists(gate_path):\n            with open(gate_path, "w") as f:\n'
+    gate_code = '    for gate in gates:\n        gate_path = os.path.join(FORGE_DIR, f"12-gates/{gate}.md")\n        if not os.path.exists(gate_path):\n            with open(gate_path, "w", encoding="utf-8") as f:\n'
     first_gate = True
     for gate, text in GATES.items():
         if first_gate:
@@ -2518,7 +2518,7 @@ def build_forge():
     )
 
     forge_content = forge_content.replace("__FORGE_SERVER_PY__", SERVER_PY_CONTENT)
-    with open("forge", "w") as f:
+    with open("forge", "w", encoding='utf-8') as f:
         f.write(forge_content)
 
     print("forge built successfully.")
