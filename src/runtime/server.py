@@ -78,6 +78,7 @@ KNOWN_TOOLS = {
     "openai": {
         "label": "OpenAI API (direct)",
         "models": [
+            {"id": "gpt-5.5",     "label": "GPT-5.5"},
             {"id": "gpt-4o",      "label": "GPT-4o"},
             {"id": "gpt-4o-mini", "label": "GPT-4o Mini"},
             {"id": "o3-mini",     "label": "o3 Mini"},
