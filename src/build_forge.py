@@ -2521,6 +2521,28 @@ def build_forge():
     with open("forge", "w", encoding='utf-8') as f:
         f.write(forge_content)
 
+    # Hot-deploy dashboard.html to all existing .forge/scripts/ directories so
+    # a rebuild immediately takes effect without requiring a manual upgrade run.
+    import glob
+    dashboard_src = os.path.join(os.path.dirname(__file__), "dashboard.html")
+    targets = (
+        glob.glob(os.path.join(os.path.dirname(__file__), "../.forge/scripts/dashboard.html"))
+        + glob.glob(os.path.join(os.path.dirname(__file__), "../.projects/*/.forge/scripts/dashboard.html"))
+        + glob.glob(os.path.join(os.path.dirname(__file__), "../test-projects/*/.forge/scripts/dashboard.html"))
+    )
+    copied = 0
+    for dst in targets:
+        dst = os.path.normpath(dst)
+        if os.path.exists(os.path.dirname(dst)):
+            try:
+                import shutil
+                shutil.copy2(dashboard_src, dst)
+                copied += 1
+            except Exception:
+                pass
+    if copied:
+        print(f"Dashboard hot-deployed to {copied} runtime director{'y' if copied==1 else 'ies'}.")
+
     print("forge built successfully.")
 
 if __name__ == "__main__":
