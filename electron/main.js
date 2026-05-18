@@ -1056,6 +1056,7 @@ let _updateChecking     = false
 let _updateReadyVersion = null
 let _downloadRetries    = 0
 let _manualCheckPending = false
+let _manualCheckTimer   = null    // fallback timeout for throttled/no-op checks
 const _MAX_RETRIES      = 3
 const _RETRY_DELAYS_MS  = [10000, 30000, 60000]  // 10s → 30s → 60s
 
@@ -1277,6 +1278,27 @@ function _startDownload() {
   })
 }
 
+// Clear the manual-check fallback timer (called whenever an updater event fires,
+// so the timeout never races against a real result).
+function _clearManualCheckTimer() {
+  if (_manualCheckTimer) { clearTimeout(_manualCheckTimer); _manualCheckTimer = null }
+}
+
+// Show "you're up to date" dialog and reset all manual-check state.
+function _showUpToDateDialog() {
+  _manualCheckPending = false
+  _updateCheckManual  = false
+  _updateChecking     = false
+  if (tray) tray.setToolTip('Forge OS')
+  dialog.showMessageBox({ icon: appDialogIcon,
+    type: 'info',
+    title: 'You\'re up to date',
+    message: `Forge OS ${app.getVersion()} is the latest version.`,
+    detail: 'No updates are currently available.',
+    buttons: ['OK']
+  }).catch(() => {})
+}
+
 function setupAutoUpdater() {
   autoUpdater.logger = console
   autoUpdater.autoDownload = false      // we own the download promise; avoids detached rejections
@@ -1297,10 +1319,13 @@ function setupAutoUpdater() {
 
   autoUpdater.on('checking-for-update', () => {
     console.log('[updater] Checking for updates…')
+    // Timer keeps running — we're waiting for a result
   })
 
   autoUpdater.on('update-available', info => {
     console.log(`[updater] Update available: ${info.version}`)
+    _clearManualCheckTimer()
+    _manualCheckPending = false   // we'll show the progress window / restart dialog instead
 
     const wasManual = _updateCheckManual
     _updateCheckManual = false
@@ -1320,25 +1345,19 @@ function setupAutoUpdater() {
 
   autoUpdater.on('update-not-available', () => {
     console.log('[updater] Already up to date.')
-    if (tray) tray.setToolTip('Forge OS')
+    _clearManualCheckTimer()
     _updateChecking = false
     if (_manualCheckPending) {
-      _manualCheckPending = false
-      _updateCheckManual  = false
-      dialog.showMessageBox({ icon: appDialogIcon,
-        type: 'info',
-        title: 'You\'re up to date',
-        message: `Forge OS ${app.getVersion()} is the latest version.`,
-        detail: 'No updates are currently available.',
-        buttons: ['OK']
-      }).catch(() => {})
+      _showUpToDateDialog()
     } else {
+      if (tray) tray.setToolTip('Forge OS')
       _updateCheckManual = false
     }
   })
 
   autoUpdater.on('update-downloaded', info => {
     console.log(`[updater] Update downloaded: ${info.version}`)
+    _clearManualCheckTimer()
     _updateChecking  = false
     _downloadRetries = 0
 
@@ -1355,18 +1374,7 @@ function setupAutoUpdater() {
       _updateReadyVersion = null
       if (tray) { tray.setToolTip('Forge OS'); buildTrayMenu() }
       // If this was a manual check, let the user know they're up to date
-      if (_manualCheckPending) {
-        _manualCheckPending = false
-        _updateCheckManual  = false
-        _updateChecking     = false
-        dialog.showMessageBox({ icon: appDialogIcon,
-          type: 'info',
-          title: 'You\'re up to date',
-          message: `Forge OS ${app.getVersion()} is the latest version.`,
-          detail: 'No updates are currently available.',
-          buttons: ['OK']
-        }).catch(() => {})
-      }
+      if (_manualCheckPending) _showUpToDateDialog()
       return
     }
 
@@ -1402,6 +1410,7 @@ function setupAutoUpdater() {
 
   autoUpdater.on('error', err => {
     console.error('[updater]', err.message)
+    _clearManualCheckTimer()
     if (tray) tray.setToolTip('Forge OS')
 
     // Retry on likely transient failures (network, timeout, server error)
@@ -1428,7 +1437,7 @@ function setupAutoUpdater() {
     if (_progressWin && !_progressWin.isDestroyed()) {
       // Progress window is visible — show inline error with retry button
       errorProgressWindow(canRetry)
-    } else if (_updateCheckManual) {
+    } else if (_manualCheckPending || _updateCheckManual) {
       // Failed during the check phase itself (no progress window yet)
       dialog.showMessageBox({ icon: appDialogIcon,
         type: 'warning',
@@ -1436,11 +1445,12 @@ function setupAutoUpdater() {
         message: 'Could not check for updates.',
         detail: `${err.message}\n\nCheck your internet connection and try again.`,
         buttons: ['OK']
-      })
+      }).catch(() => {})
     }
     // Background failures after retries: silent — don't interrupt the user
-    _updateCheckManual = false
-    _updateChecking    = false
+    _manualCheckPending = false
+    _updateCheckManual  = false
+    _updateChecking     = false
   })
 
   // Background check on startup — silent unless an update is found.
@@ -1468,9 +1478,21 @@ function checkForUpdatesManual() {
   _updateChecking     = true
   _downloadRetries    = 0
   if (tray) tray.setToolTip('Forge OS — Checking for updates…')
+
+  // Fallback: electron-updater sometimes throttles rapid back-to-back calls (e.g.
+  // startup check + user click within the same second) and returns without firing any
+  // event. After 8s with no result, assume up to date and give the user feedback.
+  _manualCheckTimer = setTimeout(() => {
+    _manualCheckTimer = null
+    if (_manualCheckPending) {
+      console.log('[updater] Manual check timed out — assuming up to date')
+      _showUpToDateDialog()
+    }
+  }, 8000)
+
   autoUpdater.checkForUpdates().catch(err => {
-    // If the check rejects without firing the 'error' event (can happen in dev/offline),
-    // fall through to the error handler manually so the user gets feedback.
+    // Promise rejected without an 'error' event (rare). Clear the timer and handle.
+    _clearManualCheckTimer()
     if (_manualCheckPending) {
       _manualCheckPending = false
       _updateCheckManual  = false
