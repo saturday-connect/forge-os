@@ -52,7 +52,9 @@ jobs:
 
       # Clean any stale dist/ artifacts from prior runs — prevents electron-builder
       # from publishing old latest*.yml files that reference renamed/missing assets.
+      # shell: bash required — rm -rf is not valid in PowerShell on Windows runners.
       - name: Clean dist
+        shell: bash
         run: rm -rf electron/dist
 
       - name: Build desktop app (macOS)
