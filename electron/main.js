@@ -1204,6 +1204,19 @@ function _notifyUpdateReady(version, releaseNotes) {
     buildTrayMenu()
   }
 
+  // Guard: if we already showed the restart dialog for this exact version in a
+  // previous session, don't spam it again on every relaunch.
+  // The flag is cleared automatically when a *newer* version is downloaded.
+  // In production this never triggers (quitAndInstall advances the app version
+  // so the update check finds nothing on next launch). In dev mode — where
+  // app.relaunch() doesn't install anything — it prevents the infinite loop.
+  const config = readConfig()
+  if (config.updateNotifiedVersion === ver) {
+    console.log(`[updater] Restart dialog already shown for ${ver} — tray updated, skipping dialog`)
+    return
+  }
+  writeConfig({ ...config, updateNotifiedVersion: ver })
+
   // Build release-notes excerpt for the dialog detail line
   const notes = _truncate(_stripHtml(releaseNotes || ''), 280)
   const detail = notes
@@ -1293,6 +1306,12 @@ function setupAutoUpdater() {
     _updateReadyVersion = info.version
     _updateChecking     = false
     _downloadRetries    = 0
+    // Clear the "already notified" flag if this is a newer version than what was
+    // previously shown — ensures a fresh dialog for each distinct release.
+    const cfg = readConfig()
+    if (cfg.updateNotifiedVersion && cfg.updateNotifiedVersion !== info.version) {
+      writeConfig({ ...cfg, updateNotifiedVersion: null })
+    }
 
     if (_progressWin && !_progressWin.isDestroyed()) {
       // Manual flow: fill bar to 100%, close the window, then show restart dialog
