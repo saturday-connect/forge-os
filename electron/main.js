@@ -2,7 +2,7 @@
 
 const { app, BrowserWindow, Tray, Menu, shell, dialog, nativeImage, ipcMain, clipboard } = require('electron')
 const { autoUpdater } = require('electron-updater')
-const { spawn, execSync } = require('child_process')
+const { spawn, execSync, execFileSync } = require('child_process')
 const path = require('path')
 const net = require('net')
 const fs = require('fs')
@@ -19,6 +19,10 @@ function writeTempHtml(name, html) {
   return p
 }
 
+// ─── App identity (must be set before 'ready') ───────────────────────────────
+
+app.setName('Forge OS')
+
 // ─── Constants ───────────────────────────────────────────────────────────────
 
 const FORGE_VERSION = app.getVersion()
@@ -30,6 +34,10 @@ const READY_TIMEOUT_MS = 20000
 // Shared secret for local HTTP API — generated fresh each run
 const crypto = require('crypto')
 const FORGE_TOKEN = crypto.randomBytes(32).toString('hex')
+
+// App icon for native dialogs (overrides default Electron icon)
+const APP_ICON_PATH = path.join(__dirname, 'assets', 'icon-256.png')
+const appDialogIcon = fs.existsSync(APP_ICON_PATH) ? nativeImage.createFromPath(APP_ICON_PATH) : undefined
 
 // ─── State ────────────────────────────────────────────────────────────────────
 
@@ -173,14 +181,158 @@ function createSetupWindow() {
       })
     })
 
+    // IPC: copy text to clipboard (used by SSH key copy button)
+    ipcMain.on('setup-copy-clipboard', (_e, text) => clipboard.writeText(text))
+
+    // IPC: check git installation, global identity, and SSH key
+    ipcMain.handle('setup-git-status', async () => {
+      const result = { gitInstalled: false, gitName: '', gitEmail: '', sshKeyExists: false, sshPublicKey: '' }
+      try { execSync('git --version', { stdio: 'ignore' }); result.gitInstalled = true } catch (_) { return result }
+      try { result.gitName = execSync('git config --global user.name', { encoding: 'utf8' }).trim() } catch (_) {}
+      try { result.gitEmail = execSync('git config --global user.email', { encoding: 'utf8' }).trim() } catch (_) {}
+      const pubPath = path.join(os.homedir(), '.ssh', 'id_ed25519_forge_os.pub')
+      if (fs.existsSync(pubPath)) {
+        result.sshKeyExists = true
+        result.sshPublicKey = fs.readFileSync(pubPath, 'utf8').trim()
+      }
+      return result
+    })
+
+    // IPC: save git global name/email
+    ipcMain.handle('setup-git-config', async (_e, name, email) => {
+      try {
+        if (name) execFileSync('git', ['config', '--global', 'user.name', name])
+        if (email) execFileSync('git', ['config', '--global', 'user.email', email])
+        return { ok: true }
+      } catch (err) { return { error: err.message } }
+    })
+
+    // IPC: generate ed25519 SSH key
+    ipcMain.handle('setup-ssh-generate', async () => {
+      const sshDir = path.join(os.homedir(), '.ssh')
+      const keyPath = path.join(sshDir, 'id_ed25519_forge_os')
+      const pubPath = keyPath + '.pub'
+      if (fs.existsSync(pubPath)) return { publicKey: fs.readFileSync(pubPath, 'utf8').trim() }
+      try {
+        fs.mkdirSync(sshDir, { recursive: true })
+        try { fs.chmodSync(sshDir, 0o700) } catch (_) {}
+        execFileSync('ssh-keygen', ['-t', 'ed25519', '-C', 'forge-os', '-f', keyPath, '-N', ''])
+        return { publicKey: fs.readFileSync(pubPath, 'utf8').trim() }
+      } catch (err) { return { error: err.message } }
+    })
+
+    // IPC: test SSH connection to GitHub (exit code 1 = success for ssh -T)
+    ipcMain.handle('setup-ssh-test', () => {
+      return new Promise(resolve => {
+        let finished = false
+        const done = (connected, message) => {
+          if (finished) return
+          finished = true
+          resolve({ connected, message })
+        }
+        const sshDir = path.join(os.homedir(), '.ssh')
+        const keyPath = path.join(sshDir, 'id_ed25519_forge_os')
+
+        // Ensure correct permissions
+        try { fs.chmodSync(sshDir, 0o700) } catch (_) {}
+        if (fs.existsSync(keyPath)) { try { fs.chmodSync(keyPath, 0o600) } catch (_) {} }
+
+        if (!fs.existsSync(keyPath)) {
+          return done(false, 'Private key not found at ~/.ssh/id_ed25519_forge_os. Generate the key first.')
+        }
+
+        // Detect if the key has a passphrase (ssh-keygen -y with empty passphrase fails if protected)
+        let hasPassphrase = false
+        try { execFileSync('ssh-keygen', ['-y', '-f', keyPath, '-P', ''], { stdio: 'pipe' }) }
+        catch (_) { hasPassphrase = true }
+
+        // Write the standard macOS SSH config for github.com if not already present
+        // This enables UseKeychain so once added with ssh-add --apple-use-keychain it persists
+        const sshConfigPath = path.join(sshDir, 'config')
+        const sshConfig = fs.existsSync(sshConfigPath) ? fs.readFileSync(sshConfigPath, 'utf8') : ''
+        if (!sshConfig.includes('Host github.com')) {
+          const entry = '\nHost github.com\n  AddKeysToAgent yes\n  UseKeychain yes\n  IdentityFile ~/.ssh/id_ed25519_forge_os\n'
+          fs.appendFileSync(sshConfigPath, entry)
+          try { fs.chmodSync(sshConfigPath, 0o644) } catch (_) {}
+        }
+
+        // If key has a passphrase and agent has nothing, we can't auth without passphrase
+        if (hasPassphrase) {
+          const agentKeys = (() => { try { return execSync('ssh-add -l', { encoding: 'utf8' }) } catch (_) { return '' } })()
+          if (!agentKeys.includes('id_ed25519_forge_os') && !agentKeys.includes(path.basename(keyPath, ''))) {
+            return done(false, 'PASSPHRASE_NEEDED')
+          }
+        }
+
+        const proc = spawn('ssh', [
+          '-T', 'git@github.com',
+          '-o', 'StrictHostKeyChecking=accept-new',
+          '-o', 'ConnectTimeout=10'
+        ], { stdio: ['ignore', 'pipe', 'pipe'] })
+        let out = ''
+        proc.stdout.on('data', d => { out += d })
+        proc.stderr.on('data', d => { out += d })
+        proc.on('close', () => {
+          const connected = out.includes('successfully authenticated')
+          let message = out.trim()
+          if (!connected) {
+            if (out.includes('Permission denied') || out.includes('publickey')) {
+              message = 'GitHub does not recognise this key. Make sure you copied the full public key and saved it at github.com/settings/ssh/new.'
+            } else if (out.includes('Could not resolve') || out.includes('Network')) {
+              message = 'Network error — check your internet connection.'
+            } else if (!message) {
+              message = 'Authentication failed.'
+            }
+          }
+          done(connected, message)
+        })
+        proc.on('error', err => done(false, `Could not run SSH: ${err.message}`))
+        setTimeout(() => { try { proc.kill() } catch (_) {} done(false, 'Connection timed out.') }, 15000)
+      })
+    })
+
+    // IPC: unlock passphrase-protected SSH key and add to macOS Keychain / agent
+    ipcMain.handle('setup-ssh-unlock', async (_e, passphrase) => {
+      const keyPath = path.join(os.homedir(), '.ssh', 'id_ed25519_forge_os')
+      if (!fs.existsSync(keyPath)) return { error: 'Key file not found. Generate the key first.' }
+
+      // Askpass script reads passphrase from env — no passphrase embedded in the file
+      const tmpScript = path.join(os.tmpdir(), `forge-askpass-${Date.now()}.sh`)
+      try {
+        fs.writeFileSync(tmpScript, '#!/bin/sh\nprintf \'%s\' "$FORGE_SSH_PASS"\n', { mode: 0o700 })
+        const env = { ...process.env, SSH_ASKPASS: tmpScript, SSH_ASKPASS_REQUIRE: 'force', DISPLAY: 'localhost:0', FORGE_SSH_PASS: passphrase }
+
+        // Try --apple-use-keychain (Ventura+), fall back to plain ssh-add
+        try {
+          execFileSync('ssh-add', ['--apple-use-keychain', keyPath], { env, stdio: 'pipe' })
+        } catch (_) {
+          execFileSync('ssh-add', [keyPath], { env, stdio: 'pipe' })
+        }
+        return { ok: true }
+      } catch (err) {
+        const msg = (err.stderr?.toString() || err.stdout?.toString() || err.message || '').toLowerCase()
+        return { error: msg.includes('bad passphrase') || msg.includes('incorrect') || msg.includes('wrong')
+          ? 'Incorrect passphrase — please try again.'
+          : `Could not unlock key: ${err.message}` }
+      } finally {
+        try { fs.unlinkSync(tmpScript) } catch (_) {}
+      }
+    })
+
     // IPC: save setup config and close window
     ipcMain.once('setup-save', (_e, setupConfig) => {
       const existing = readConfig()
       writeConfig({ ...existing, ...setupConfig })
       if (setupConfig.knowledgeRepo) org.setRepoName(setupConfig.knowledgeRepo)
       ipcMain.removeAllListeners('setup-open-url')
+      ipcMain.removeAllListeners('setup-copy-clipboard')
       ipcMain.removeHandler('setup-verify-org')
       ipcMain.removeHandler('setup-fetch-org-config')
+      ipcMain.removeHandler('setup-git-status')
+      ipcMain.removeHandler('setup-git-config')
+      ipcMain.removeHandler('setup-ssh-generate')
+      ipcMain.removeHandler('setup-ssh-unlock')
+      ipcMain.removeHandler('setup-ssh-test')
       setupWin.close()
       resolve(setupConfig)
     })
@@ -307,7 +459,7 @@ async function resolveOrg(token) {
   if (available.length === 1) return available[0]
 
   // Multiple orgs — ask user to pick
-  const { response } = await dialog.showMessageBox({
+  const { response } = await dialog.showMessageBox({ icon: appDialogIcon,
     type: 'question',
     title: 'Select Organization',
     message: 'Multiple organizations have a forge-knowledge repository.',
@@ -365,7 +517,7 @@ async function ensureProjectReady(projectRoot) {
   let dotfile = readForgeDotfile(projectRoot)
 
   if (!dotfile) {
-    const { response } = await dialog.showMessageBox({
+    const { response } = await dialog.showMessageBox({ icon: appDialogIcon,
       type: 'question',
       title: 'Initialize Forge Project',
       message: `No Forge project found in:\n${projectRoot}`,
@@ -380,7 +532,7 @@ async function ensureProjectReady(projectRoot) {
   }
 
   if (dotfile.isLegacy) {
-    const { response } = await dialog.showMessageBox({
+    const { response } = await dialog.showMessageBox({ icon: appDialogIcon,
       type: 'question',
       title: 'Migrate Forge Project',
       message: 'This project uses the old layout.',
@@ -402,12 +554,17 @@ async function ensureProjectReady(projectRoot) {
 function startServer(projectRoot, forgeDataDir, port) {
   const serverScript = path.join(forgeDataDir, 'scripts', 'server.py')
   const gitPat = auth.loadGitPat() || ''
+  // projectsRoot is always ~/.forge/projects regardless of projectRoot
+  const forgeBase = path.join(path.dirname(forgeDataDir), '..')  // forgeDataDir/../.. = ~/.forge
+  const projectsRoot = path.join(os.homedir(), '.forge', 'projects')
 
   serverProcess = spawn(PYTHON3 || 'python3', [serverScript, String(port)], {
     env: {
       ...process.env,
       FORGE_REPO_ROOT: projectRoot,
       FORGE_DATA_DIR: forgeDataDir,
+      FORGE_ORCHESTRATOR_ROOT: path.join(os.homedir(), '.forge'),
+      FORGE_PROJECTS_ROOT: projectsRoot,
       FORGE_VERSION,
       FORGE_SCRIPT: forgeBinaryPath(),
       FORGE_ORG: currentOrg || '',
@@ -424,7 +581,7 @@ function startServer(projectRoot, forgeDataDir, port) {
   serverProcess.on('exit', (code, signal) => {
     if (!isQuitting) {
       console.error(`[server] Exited unexpectedly (code=${code}, signal=${signal})`)
-      dialog.showMessageBox({
+      dialog.showMessageBox({ icon: appDialogIcon,
         type: 'error',
         title: 'Forge OS — Server Crashed',
         message: 'The background server stopped unexpectedly.',
@@ -475,6 +632,7 @@ function waitForServer(port) {
 // ─── Window ───────────────────────────────────────────────────────────────────
 
 function createWindow(port) {
+  const appIconPath = path.join(__dirname, 'assets', 'icon-256.png')
   win = new BrowserWindow({
     width: 1280,
     height: 800,
@@ -482,6 +640,7 @@ function createWindow(port) {
     minHeight: 600,
     title: 'Forge OS',
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
+    icon: fs.existsSync(appIconPath) ? appIconPath : undefined,
     show: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -534,7 +693,7 @@ async function openProject(newPath) {
 }
 
 const PICKER_STYLES = `
-  *{box-sizing:border-box;margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
+  *{box-sizing:border-box;margin:0;padding:0;font-family:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
   body{background:#0a0a0a;color:#fff;display:flex;flex-direction:column;height:100vh;overflow:hidden}
   .header{padding:16px 16px 12px;font-size:11px;font-weight:600;color:#555;text-transform:uppercase;letter-spacing:1px;border-bottom:1px solid #1a1a1a;flex-shrink:0}
   .list{flex:1;overflow-y:auto}
@@ -633,9 +792,11 @@ async function showProjectPicker() {
 // ─── Tray ─────────────────────────────────────────────────────────────────────
 
 function createTray() {
-  const iconPath = path.join(__dirname, 'assets', 'icon.png')
-  const icon = fs.existsSync(iconPath)
-    ? nativeImage.createFromPath(iconPath).resize({ width: 16, height: 16 })
+  const icon16 = path.join(__dirname, 'assets', 'icon-16.png')
+  const iconFallback = path.join(__dirname, 'assets', 'icon.png')
+  const iconSrc = fs.existsSync(icon16) ? icon16 : iconFallback
+  const icon = fs.existsSync(iconSrc)
+    ? nativeImage.createFromPath(iconSrc)
     : nativeImage.createEmpty()
 
   tray = new Tray(icon)
@@ -758,7 +919,7 @@ function buildTrayMenu() {
         org.syncInBackground(token, orgVal)
         buildTrayMenu()
 
-        dialog.showMessageBox({ type: 'info', title: 'Organization Updated', message: `Switched to ${orgVal}/${repoName}.\n\nKnowledge base sync started in the background.` })
+        dialog.showMessageBox({ icon: appDialogIcon, type: 'info', title: 'Organization Updated', message: `Switched to ${orgVal}/${repoName}.\n\nKnowledge base sync started in the background.` })
       }
     },
     { type: 'separator' },
@@ -770,7 +931,7 @@ function buildTrayMenu() {
         if (require('fs').existsSync(dir)) {
           shell.openPath(dir)
         } else {
-          dialog.showMessageBox({ type: 'info', title: 'Knowledge Base', message: `No local cache yet for ${currentOrg}.\n\nForge OS syncs the knowledge base on first launch. Try switching org or restarting.` })
+          dialog.showMessageBox({ icon: appDialogIcon, type: 'info', title: 'Knowledge Base', message: `No local cache yet for ${currentOrg}.\n\nForge OS syncs the knowledge base on first launch. Try switching org or restarting.` })
         }
       }
     },
@@ -779,15 +940,18 @@ function buildTrayMenu() {
       enabled: !!serverPort,
       click: () => { if (serverPort) shell.openExternal(`http://127.0.0.1:${serverPort}`) }
     },
-    {
+    ...(_updateReady ? [{
+      label: '⬆  Restart to Update',
+      click: () => _notifyUpdateReady()
+    }] : [{
       label: 'Check for Updates',
-      click: () => autoUpdater.checkForUpdatesAndNotify()
-    },
+      click: () => checkForUpdatesManual()
+    }]),
     { type: 'separator' },
     {
       label: 'Reset Setup & Reconfigure',
       click: async () => {
-        const { response } = await dialog.showMessageBox({
+        const { response } = await dialog.showMessageBox({ icon: appDialogIcon,
           type: 'warning',
           title: 'Reset Setup',
           message: 'This will clear your configuration and restart the setup wizard.',
@@ -809,7 +973,7 @@ function buildTrayMenu() {
     {
       label: 'Disconnect GitHub Account',
       click: async () => {
-        const { response } = await dialog.showMessageBox({
+        const { response } = await dialog.showMessageBox({ icon: appDialogIcon,
           type: 'question',
           title: 'Disconnect GitHub Account',
           message: 'Disconnect your GitHub account?',
@@ -841,43 +1005,134 @@ function buildTrayMenu() {
 
 // ─── Auto-updater ─────────────────────────────────────────────────────────────
 
+// Track whether the current check was triggered manually (tray menu click)
+// so we can show "You're up to date" — background checks are silent on no-update.
+let _updateCheckManual = false
+let _updateReady = false          // true once update-downloaded fires
+let _updateChecking = false       // debounce rapid tray clicks
+
+function _applyUpdateNow() {
+  isQuitting = true
+  killServer()
+  autoUpdater.quitAndInstall()
+}
+
+function _notifyUpdateReady() {
+  // Update tray tooltip + menu so the user always has a visible signal
+  if (tray) {
+    tray.setToolTip('Forge OS — Update ready to install')
+    buildTrayMenu()   // re-renders menu with "Restart to Update" item
+  }
+
+  dialog.showMessageBox({ icon: appDialogIcon,
+    type: 'info',
+    title: 'Update Ready to Install',
+    message: 'A Forge OS update has downloaded and is ready.',
+    detail: 'Restart now to apply it, or it will install automatically the next time you quit.',
+    buttons: ['Restart Now', 'Later'],
+    defaultId: 0
+  }).then(({ response }) => {
+    if (response === 0) _applyUpdateNow()
+  })
+}
+
 function setupAutoUpdater() {
   autoUpdater.logger = console
   autoUpdater.autoDownload = true
   autoUpdater.autoInstallOnAppQuit = true
 
-  autoUpdater.on('update-available', info => {
-    dialog.showMessageBox({
-      type: 'info',
-      title: 'Update Available',
-      message: `Forge OS ${info.version} is available.`,
-      detail: 'It will download in the background and install when you quit.',
-      buttons: ['OK']
-    })
+  autoUpdater.on('checking-for-update', () => {
+    console.log('[updater] Checking for updates…')
   })
 
-  autoUpdater.on('update-downloaded', () => {
-    dialog.showMessageBox({
+  autoUpdater.on('update-available', info => {
+    console.log(`[updater] Update available: ${info.version}`)
+    // Always notify — whether manual or background — when a new version is found.
+    // Downloading happens automatically (autoDownload: true).
+    dialog.showMessageBox({ icon: appDialogIcon,
       type: 'info',
-      title: 'Update Ready',
-      message: 'Forge OS update is ready to install.',
-      detail: 'Restart now to apply the update, or it will install the next time you quit.',
-      buttons: ['Restart Now', 'Later']
-    }).then(({ response }) => {
-      if (response === 0) {
-        isQuitting = true
-        killServer()
-        autoUpdater.quitAndInstall()
-      }
+      title: 'Update Downloading',
+      message: `Forge OS ${info.version} is available.`,
+      detail: 'Downloading in the background. You\'ll be prompted to restart when it\'s ready.',
+      buttons: ['OK']
     })
+    _updateCheckManual = false
+    _updateChecking = false
+  })
+
+  autoUpdater.on('update-not-available', () => {
+    console.log('[updater] Already up to date.')
+    if (_updateCheckManual) {
+      // Only show dialog when user explicitly asked — background checks stay silent
+      dialog.showMessageBox({ icon: appDialogIcon,
+        type: 'info',
+        title: 'You\'re up to date',
+        message: `Forge OS ${FORGE_VERSION} is the latest version.`,
+        buttons: ['OK']
+      })
+    }
+    _updateCheckManual = false
+    _updateChecking = false
+  })
+
+  autoUpdater.on('update-downloaded', info => {
+    console.log(`[updater] Update downloaded: ${info.version}`)
+    _updateReady = true
+    _updateChecking = false
+    _notifyUpdateReady()
+  })
+
+  autoUpdater.on('download-progress', progress => {
+    const pct = Math.round(progress.percent)
+    if (tray) tray.setToolTip(`Forge OS — Downloading update ${pct}%`)
+    console.log(`[updater] Download ${pct}%`)
   })
 
   autoUpdater.on('error', err => {
     console.error('[updater]', err.message)
+    if (_updateCheckManual) {
+      dialog.showMessageBox({ icon: appDialogIcon,
+        type: 'warning',
+        title: 'Update Check Failed',
+        message: 'Could not check for updates.',
+        detail: `${err.message}\n\nCheck your internet connection and try again.`,
+        buttons: ['OK']
+      })
+    }
+    _updateCheckManual = false
+    _updateChecking = false
   })
 
-  autoUpdater.checkForUpdatesAndNotify().catch(err => {
-    console.warn('[updater] Check failed:', err.message)
+  // Background check on startup — silent unless an update is found
+  autoUpdater.checkForUpdates().catch(err => {
+    console.warn('[updater] Startup check failed:', err.message)
+  })
+
+  // Periodic background check every 4 hours — keeps long-running sessions current
+  setInterval(() => {
+    autoUpdater.checkForUpdates().catch(err => {
+      console.warn('[updater] Periodic check failed:', err.message)
+    })
+  }, 4 * 60 * 60 * 1000)
+}
+
+// Called from tray "Check for Updates" — marks intent as manual so "up to date"
+// dialog is shown, then fires the check.
+function checkForUpdatesManual() {
+  if (_updateReady) {
+    // Update already downloaded — skip network round-trip, go straight to install prompt
+    _notifyUpdateReady()
+    return
+  }
+  if (_updateChecking) return   // debounce rapid clicks
+  _updateCheckManual = true
+  _updateChecking = true
+  if (tray) tray.setToolTip('Forge OS — Checking for updates…')
+  autoUpdater.checkForUpdates().catch(err => {
+    console.warn('[updater] Manual check failed:', err.message)
+    _updateCheckManual = false
+    _updateChecking = false
+    if (tray) tray.setToolTip('Forge OS')
   })
 }
 
@@ -891,6 +1146,14 @@ if (!app.requestSingleInstanceLock()) {
   })
 
   app.whenReady().then(async () => {
+
+    // Set dock icon and app name explicitly (overrides Electron defaults in dev mode)
+    if (process.platform === 'darwin' && app.dock) {
+      const dockIconPath = path.join(__dirname, 'assets', 'icon-512.png')
+      if (fs.existsSync(dockIconPath)) {
+        app.dock.setIcon(nativeImage.createFromPath(dockIconPath))
+      }
+    }
 
     // 1. Python check
     if (!PYTHON3) {
@@ -955,38 +1218,125 @@ if (!app.requestSingleInstanceLock()) {
       })
     }
 
-    // 5. Resolve project path
-    let config = readConfig()
-    let projectRoot = config.projectPath
+    // 5. Resolve orchestrator data dir — lives inside ~/.forge/projects/<uuid>/
+    // Projects are created and managed there via the dashboard. No folder picker.
+    const homeDir = app.getPath('home')
+    const projectsRoot = path.join(homeDir, '.forge', 'projects')
 
-    if (!projectRoot || !fs.existsSync(projectRoot)) {
-      const result = await dialog.showOpenDialog({
-        title: 'Open Forge Project',
-        message: 'Select or create a project folder to get started',
-        defaultPath: app.getPath('home'),
-        properties: ['openDirectory', 'createDirectory'],
-        buttonLabel: 'Open Project'
-      })
-      if (result.canceled || !result.filePaths.length) {
-        app.exit(0)
-        return
+    // Find the best available data dir.
+    // Priority: (1) index.json active_project_id, (2) any non-archived index project,
+    // (3) most-recently-modified UUID dir with scripts (deterministic across restarts).
+    function resolveOrchestratorDataDir() {
+      if (!fs.existsSync(projectsRoot)) return null
+      const indexPath = path.join(projectsRoot, 'index.json')
+      if (fs.existsSync(indexPath)) {
+        try {
+          const idx = JSON.parse(fs.readFileSync(indexPath, 'utf8'))
+          const activeId = idx.active_project_id
+          if (activeId) {
+            const candidate = path.join(projectsRoot, activeId)
+            if (fs.existsSync(path.join(candidate, 'scripts', 'server.py'))) return candidate
+          }
+          for (const p of (idx.projects || [])) {
+            if (p.status === 'archived') continue
+            const candidate = path.join(projectsRoot, p.id)
+            if (fs.existsSync(path.join(candidate, 'scripts', 'server.py'))) return candidate
+          }
+        } catch (_) {}
       }
-      projectRoot = result.filePaths[0]
+      // Fallback: scan dirs, pick the most recently modified one with server.py
+      // (avoids random inode-order selection that varies across OS restarts)
+      let best = null, bestMtime = 0
+      try {
+        for (const entry of fs.readdirSync(projectsRoot)) {
+          const candidate = path.join(projectsRoot, entry)
+          const serverPy = path.join(candidate, 'scripts', 'server.py')
+          if (!fs.existsSync(serverPy)) continue
+          try {
+            const mtime = fs.statSync(serverPy).mtimeMs
+            if (mtime > bestMtime) { bestMtime = mtime; best = candidate }
+          } catch (_) {}
+        }
+      } catch (_) {}
+      return best
     }
 
-    // 6. Ensure project has a valid .forge dotfile + data directory
-    const forgeDataDir = await ensureProjectReady(projectRoot)
-    if (!forgeDataDir) { app.exit(0); return }
+    // Bootstrap: ensure ~/.forge/projects/ exists and has at least one data dir
+    fs.mkdirSync(projectsRoot, { recursive: true })
 
-    addProjectToHistory(projectRoot)
-    writeConfig({ ...readConfig(), projectPath: projectRoot })
+    let forgeDataDir = resolveOrchestratorDataDir()
 
-    // Upgrade project scripts to match the current forge binary before serving
-    try { await runForgeCommand(projectRoot, 'upgrade') } catch (_) {}
+    // If no valid data dir found, create a fresh one.
+    // We create the directory, write a temporary .forge dotfile, run forge init
+    // (which populates scripts/), then remove the dotfile.
+    if (!forgeDataDir) {
+      const newId = (() => { try { return require('crypto').randomUUID() } catch (_) { return Date.now().toString() } })()
+      const newDir = path.join(projectsRoot, newId)
+      fs.mkdirSync(newDir, { recursive: true })
+      const newDotfile = path.join(newDir, '.forge')
+      try {
+        fs.writeFileSync(newDotfile, JSON.stringify({
+          project_id: newId,
+          project_name: 'forge-orchestrator',
+          data_dir: newDir
+        }, null, 2), { mode: 0o600 })
+        execFileSync(PYTHON3 || 'python3', [forgeBinaryPath(), 'init'], {
+          stdio: 'ignore',
+          env: { ...process.env, FORGE_REPO_ROOT: newDir }
+        })
+      } catch (_) {}
+      // Remove dotfile — the data dir is self-contained, no project root needed
+      try { fs.unlinkSync(newDotfile) } catch (_) {}
+      forgeDataDir = resolveOrchestratorDataDir()
+    }
+
+    if (!forgeDataDir) {
+      dialog.showErrorBox('Forge OS', 'Could not initialize Forge data directory.\nPlease reinstall the app.')
+      app.exit(1); return
+    }
+
+    // Keep scripts fresh: run forge upgrade against the data dir by injecting a
+    // temporary .forge dotfile so the forge binary can locate the data directory.
+    // This ensures server.py + dashboard.html are always current after app updates.
+    const tmpDotfile = path.join(forgeDataDir, '.forge')
+    const hadDotfile = fs.existsSync(tmpDotfile)
+    if (!hadDotfile) {
+      try {
+        fs.writeFileSync(tmpDotfile, JSON.stringify({
+          project_id: path.basename(forgeDataDir),
+          project_name: 'forge-orchestrator',
+          data_dir: forgeDataDir
+        }, null, 2), { mode: 0o600 })
+      } catch (_) {}
+    }
+    try {
+      execFileSync(PYTHON3 || 'python3', [forgeBinaryPath(), 'upgrade'], {
+        stdio: 'ignore',
+        env: { ...process.env, FORGE_REPO_ROOT: forgeDataDir }
+      })
+    } catch (_) {}
+    // Clean up temporary dotfile if we created it
+    if (!hadDotfile && fs.existsSync(tmpDotfile)) {
+      try { fs.unlinkSync(tmpDotfile) } catch (_) {}
+    }
+
+    // Ensure index.json exists (server will create it on first load_projects_index call,
+    // but writing it here makes resolveOrchestratorDataDir deterministic on next start)
+    const indexPath = path.join(projectsRoot, 'index.json')
+    if (!fs.existsSync(indexPath)) {
+      try {
+        fs.writeFileSync(indexPath, JSON.stringify({
+          active_project_id: '',
+          projects: []
+        }, null, 2), { mode: 0o600 })
+      } catch (_) {}
+    }
+
+    writeConfig({ ...readConfig(), projectPath: homeDir })
 
     // 7. Start Python server
     serverPort = await getFreePort()
-    startServer(projectRoot, forgeDataDir, serverPort)
+    startServer(homeDir, forgeDataDir, serverPort)
 
     // 8. Create window and tray
     createWindow(serverPort)

@@ -121,7 +121,7 @@ async function loadCemFile(step, path, displayName) {
   const loading = document.getElementById('cem-loading');
   loading.style.display = 'flex';
   try {
-    const res = await fetch('/api/build-file?step=' + encodeURIComponent(step) + '&path=' + encodeURIComponent(path));
+    const res = await apiFetch('/api/build-file?step=' + encodeURIComponent(step) + '&path=' + encodeURIComponent(path));
     const data = await res.json();
     const content = data.content || '';
     if (monacoEditor) {

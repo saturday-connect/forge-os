@@ -1,7 +1,7 @@
 import os
 from pprint import pformat
 
-FORGE_VERSION = "0.2.0"
+FORGE_VERSION = "0.3.1"
 
 # Agents mapped to their definition blocks
 AGENTS = {
@@ -850,7 +850,31 @@ FILES_TO_TOUCH = pformat(
     width=100,
 )
 
-DASHBOARD_HTML_CONTENT = open(os.path.join(os.path.dirname(__file__), "dashboard.html")).read()
+def _assemble_dashboard_html():
+    """Auto-assemble src/dashboard.html from src/dashboard/* before embedding."""
+    import re as _re
+    base = os.path.join(os.path.dirname(__file__), "dashboard")
+    assembled_path = os.path.join(os.path.dirname(__file__), "dashboard.html")
+    # Only assemble if the component source files exist
+    index_path = os.path.join(base, "index.html")
+    css_path = os.path.join(base, "styles.css")
+    if not os.path.exists(index_path):
+        return open(assembled_path).read()
+    html = open(index_path).read()
+    if os.path.exists(css_path):
+        css = open(css_path).read()
+        html = html.replace("<!-- FORGE_DASHBOARD_CSS -->", css)
+    scripts_dir = os.path.join(base, "scripts")
+    for match in _re.findall(r'<!-- FORGE_DASHBOARD_SCRIPT:([\w\-\.]+) -->', html):
+        js_path = os.path.join(scripts_dir, match)
+        if os.path.exists(js_path):
+            js = open(js_path).read()
+            html = html.replace(f"<!-- FORGE_DASHBOARD_SCRIPT:{match} -->", js)
+    # Write assembled output so it's available as a build artifact too
+    open(assembled_path, "w").write(html)
+    return html
+
+DASHBOARD_HTML_CONTENT = _assemble_dashboard_html()
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 with open(os.path.join(_HERE, 'runtime', 'server.py'), 'r', encoding='utf-8') as _f:

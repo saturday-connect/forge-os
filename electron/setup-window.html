@@ -8,52 +8,34 @@
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     :root {
-      --bg: #0d1117;
-      --surface: #161b22;
-      --surface-2: #1c2128;
-      --border: #30363d;
-      --text: #e6edf3;
-      --text-muted: #8b949e;
-      --text-subtle: #484f58;
-      --accent: #238636;
-      --accent-hover: #2ea043;
-      --accent-subtle: rgba(35, 134, 54, 0.12);
-      --blue: #388bfd;
-      --blue-subtle: rgba(56, 139, 253, 0.1);
-      --error: #f85149;
-      --error-subtle: rgba(248, 81, 73, 0.1);
-      --success: #3fb950;
-      --warning: #d29922;
-      --radius: 8px;
-      --radius-sm: 6px;
+      --bg: #060D06;
+      --surface: rgba(255,255,255,0.04);
+      --surface-2: rgba(255,255,255,0.06);
+      --border: rgba(255,255,255,0.08);
+      --text: #ffffff;
+      --text-muted: rgba(255,255,255,0.55);
+      --text-subtle: rgba(255,255,255,0.25);
+      --accent: #4ADE80;
+      --accent-hover: #6EE79A;
+      --accent-subtle: rgba(74,222,128,0.1);
+      --blue: #0EA5E9;
+      --blue-subtle: rgba(14,165,233,0.1);
+      --error: #F87171;
+      --error-subtle: rgba(248,113,113,0.1);
+      --success: #4ADE80;
+      --warning: #F59E0B;
+      --radius: 12px;
+      --radius-sm: 8px;
     }
 
-    @media (prefers-color-scheme: light) {
-      :root {
-        --bg: #f6f8fa;
-        --surface: #ffffff;
-        --surface-2: #f6f8fa;
-        --border: #d0d7de;
-        --text: #24292f;
-        --text-muted: #57606a;
-        --text-subtle: #8c959f;
-        --accent: #1a7f37;
-        --accent-hover: #116329;
-        --accent-subtle: rgba(26, 127, 55, 0.1);
-        --blue: #0969da;
-        --blue-subtle: rgba(9, 105, 218, 0.1);
-        --error: #cf222e;
-        --error-subtle: rgba(207, 34, 46, 0.1);
-        --success: #1a7f37;
-        --warning: #9a6700;
-      }
-    }
+    /* macOS hiddenInset: push sidebar content below traffic-light buttons */
+    html.mac .sidebar { padding-top: 44px; }
 
     html, body {
       height: 100%;
       background: var(--bg);
       color: var(--text);
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       font-size: 13px;
       line-height: 1.5;
       -webkit-app-region: drag;
@@ -68,8 +50,8 @@
     .sidebar {
       width: 180px;
       flex-shrink: 0;
-      background: var(--surface);
-      border-right: 1px solid var(--border);
+      background: rgba(255,255,255,0.03);
+      border-right: 1px solid rgba(255,255,255,0.06);
       padding: 28px 0 20px;
       display: flex;
       flex-direction: column;
@@ -78,14 +60,38 @@
     }
 
     .sidebar-logo {
-      font-size: 11px;
-      font-weight: 700;
-      letter-spacing: 0.1em;
-      text-transform: uppercase;
-      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      gap: 8px;
       padding: 0 16px 16px;
-      border-bottom: 1px solid var(--border);
+      border-bottom: 1px solid rgba(255,255,255,0.08);
       margin-bottom: 8px;
+    }
+    .sidebar-logo-mark {
+      width: 28px;
+      height: 28px;
+      border-radius: 6px;
+      flex-shrink: 0;
+      background: linear-gradient(160deg, #4ADE80 0%, #22C55E 100%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .sidebar-logo-text {
+      display: flex;
+      flex-direction: column;
+      line-height: 1.2;
+    }
+    .sidebar-logo-text span:first-child {
+      font-size: 13px;
+      font-weight: 700;
+      color: #ffffff;
+      letter-spacing: -0.01em;
+    }
+    .sidebar-logo-text span:last-child {
+      font-size: 10px;
+      color: rgba(255,255,255,0.45);
+      letter-spacing: 0.02em;
     }
 
     .step-item {
@@ -101,38 +107,37 @@
       width: 20px;
       height: 20px;
       border-radius: 50%;
-      border: 1.5px solid var(--border);
+      border: 1.5px solid rgba(255,255,255,0.15);
       display: flex;
       align-items: center;
       justify-content: center;
       font-size: 10px;
       font-weight: 600;
-      color: var(--text-subtle);
+      color: rgba(255,255,255,0.3);
       flex-shrink: 0;
       transition: all 0.2s;
     }
 
     .step-label {
       font-size: 12px;
-      color: var(--text-muted);
+      color: rgba(255,255,255,0.45);
       transition: color 0.2s;
       line-height: 1.3;
     }
 
     .step-item.active .step-num {
-      background: var(--accent);
-      border-color: var(--accent);
-      color: #fff;
+      background: #4ADE80;
+      border-color: #4ADE80;
+      color: #000000;
     }
-    .step-item.active .step-label { color: var(--text); font-weight: 500; }
+    .step-item.active .step-label { color: #ffffff; font-weight: 500; }
 
     .step-item.done .step-num {
-      background: var(--accent-subtle);
-      border-color: var(--success);
-      color: var(--success);
+      background: rgba(74,222,128,0.1);
+      border-color: rgba(74,222,128,0.5);
+      color: #4ADE80;
     }
-    .step-item.done .step-label { color: var(--text-muted); }
-    .step-item.done .step-num::before { content: '✓'; }
+    .step-item.done .step-label { color: rgba(255,255,255,0.4); }
 
     /* ── Main content ── */
     .content {
@@ -158,33 +163,33 @@
     h2 {
       font-size: 16px;
       font-weight: 600;
-      color: var(--text);
+      color: #ffffff;
       line-height: 1.3;
     }
 
     .step-desc {
       font-size: 13px;
-      color: var(--text-muted);
+      color: rgba(255,255,255,0.55);
       line-height: 1.6;
     }
 
     /* ── Instructions box ── */
     .guide-box {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
+      background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 12px;
       overflow: hidden;
     }
 
     .guide-box-header {
-      background: var(--surface-2);
+      background: rgba(255,255,255,0.04);
       padding: 9px 14px;
-      border-bottom: 1px solid var(--border);
+      border-bottom: 1px solid rgba(255,255,255,0.08);
       font-size: 11px;
       font-weight: 600;
       letter-spacing: 0.06em;
       text-transform: uppercase;
-      color: var(--text-muted);
+      color: rgba(255,255,255,0.5);
     }
 
     .guide-steps {
@@ -206,8 +211,8 @@
       width: 18px;
       height: 18px;
       border-radius: 50%;
-      background: var(--blue-subtle);
-      color: var(--blue);
+      background: rgba(14,165,233,0.1);
+      color: #0EA5E9;
       font-size: 10px;
       font-weight: 700;
       display: flex;
@@ -218,7 +223,7 @@
     }
 
     .guide-step-text {
-      font-size: 12.5px;
+      font-size: 13px;
       color: var(--text);
       line-height: 1.5;
       overflow-wrap: break-word;
@@ -227,13 +232,13 @@
     }
 
     .guide-step-text code {
-      font-family: 'SF Mono', 'Fira Code', monospace;
+      font-family: "SFMono-Regular", "SF Mono", Menlo, Monaco, Consolas, monospace;
       font-size: 11px;
-      background: var(--surface-2);
-      border: 1px solid var(--border);
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.1);
       border-radius: 4px;
       padding: 1px 5px;
-      color: var(--blue);
+      color: #4ADE80;
       word-break: break-all;
     }
 
@@ -245,41 +250,41 @@
     .field-label {
       font-size: 12px;
       font-weight: 600;
-      color: var(--text);
+      color: rgba(255,255,255,0.8);
     }
 
     .field-hint {
-      font-size: 11.5px;
-      color: var(--text-muted);
+      font-size: 12px;
+      color: rgba(255,255,255,0.45);
     }
 
     .field-input {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: var(--radius-sm);
-      color: var(--text);
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 8px;
+      color: #ffffff;
       font-size: 13px;
-      font-family: 'SF Mono', 'Fira Code', monospace;
+      font-family: inherit;
       padding: 8px 12px;
       outline: none;
       width: 100%;
       transition: border-color 0.15s;
     }
-    .field-input::placeholder { color: var(--text-subtle); font-family: inherit; }
-    .field-input:focus { border-color: var(--blue); }
-    .field-input.error { border-color: var(--error); }
-    .field-input.valid { border-color: var(--success); }
+    .field-input::placeholder { color: rgba(255,255,255,0.25); font-family: inherit; }
+    .field-input:focus { border-color: #4ADE80; box-shadow: 0 0 0 3px rgba(74,222,128,0.15); }
+    .field-input.error { border-color: #F87171; }
+    .field-input.valid { border-color: #4ADE80; }
 
     .field-error {
-      font-size: 11.5px;
-      color: var(--error);
+      font-size: 12px;
+      color: #F87171;
       display: none;
     }
     .field-error.visible { display: block; }
 
     .field-ok {
-      font-size: 11.5px;
-      color: var(--success);
+      font-size: 12px;
+      color: #4ADE80;
       display: none;
     }
     .field-ok.visible { display: block; }
@@ -294,34 +299,34 @@
     .mode-btn {
       width: 100%;
       padding: 10px 12px;
-      border: 1.5px solid var(--border);
-      border-radius: var(--radius-sm);
+      border: 1.5px solid rgba(255,255,255,0.1);
+      border-radius: 12px;
       background: transparent;
-      color: var(--text-muted);
+      color: rgba(255,255,255,0.5);
       cursor: pointer;
       text-align: left;
       transition: all 0.15s;
     }
-    .mode-btn:hover { border-color: var(--text-muted); color: var(--text); }
+    .mode-btn:hover { border-color: rgba(255,255,255,0.25); color: #ffffff; }
     .mode-btn.selected {
-      border-color: var(--accent);
-      background: var(--accent-subtle);
-      color: var(--text);
+      border-color: rgba(74,222,128,0.5);
+      background: rgba(74,222,128,0.08);
+      color: #ffffff;
     }
 
     .mode-btn-title {
-      font-size: 12.5px;
+      font-size: 13px;
       font-weight: 600;
       display: block;
       margin-bottom: 2px;
     }
     .mode-btn-desc {
       font-size: 11px;
-      color: var(--text-muted);
+      color: rgba(255,255,255,0.4);
       display: block;
       line-height: 1.4;
     }
-    .mode-btn.selected .mode-btn-desc { color: var(--text-muted); }
+    .mode-btn.selected .mode-btn-desc { color: rgba(255,255,255,0.4); }
 
     /* ── Link button ── */
     .link-btn {
@@ -329,21 +334,21 @@
       align-items: center;
       gap: 5px;
       font-size: 12px;
-      color: var(--blue);
-      background: var(--blue-subtle);
+      color: #4ADE80;
+      background: rgba(74,222,128,0.08);
       border: 1px solid transparent;
-      border-radius: var(--radius-sm);
+      border-radius: 9999px;
       padding: 6px 12px;
       cursor: pointer;
       text-decoration: none;
       transition: background 0.15s;
     }
-    .link-btn:hover { background: rgba(56, 139, 253, 0.18); }
+    .link-btn:hover { background: rgba(74,222,128,0.15); }
 
     /* ── Success card ── */
     .success-card {
-      background: var(--accent-subtle);
-      border: 1px solid rgba(63, 185, 80, 0.3);
+      background: rgba(74,222,128,0.08);
+      border: 1px solid rgba(74,222,128,0.25);
       border-radius: var(--radius);
       padding: 14px 16px;
       display: flex;
@@ -351,43 +356,45 @@
       align-items: flex-start;
     }
     .success-card-icon { color: var(--success); font-size: 15px; margin-top: 1px; }
-    .success-card-text { font-size: 12.5px; color: var(--text); line-height: 1.5; }
-    .success-card-text strong { color: var(--success); }
+    .success-card-text { font-size: 13px; color: var(--text); line-height: 1.5; }
+    .success-card-text strong { color: #4ADE80; }
 
     /* ── Footer ── */
     .footer {
       padding: 16px 28px;
-      border-top: 1px solid var(--border);
+      border-top: 1px solid rgba(255,255,255,0.06);
       display: flex;
       align-items: center;
       justify-content: space-between;
-      background: var(--bg);
+      background: rgba(6,13,6,0.95);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
       flex-shrink: 0;
     }
 
     .btn-primary {
-      background: var(--accent);
-      color: #fff;
+      background: #4ADE80;
+      color: #000000;
       border: none;
-      border-radius: var(--radius-sm);
+      border-radius: 9999px;
       font-size: 13px;
-      font-weight: 500;
+      font-weight: 600;
       padding: 8px 20px;
       cursor: pointer;
-      transition: background 0.15s;
+      transition: background 0.15s, box-shadow 0.15s;
     }
-    .btn-primary:hover:not(:disabled) { background: var(--accent-hover); }
+    .btn-primary:hover:not(:disabled) { background: #6EE79A; box-shadow: 0 0 12px rgba(74,222,128,0.35); }
     .btn-primary:disabled { opacity: 0.45; cursor: not-allowed; }
 
     .btn-ghost {
       background: transparent;
-      color: var(--text-muted);
+      color: rgba(255,255,255,0.45);
       border: none;
       font-size: 12px;
       cursor: pointer;
       padding: 8px 4px;
     }
-    .btn-ghost:hover { color: var(--text); }
+    .btn-ghost:hover { color: #ffffff; }
 
     .spinner-sm {
       display: inline-block;
@@ -410,7 +417,22 @@
 
   <!-- Sidebar -->
   <aside class="sidebar">
-    <div class="sidebar-logo">Forge OS</div>
+    <div class="sidebar-logo">
+      <div class="sidebar-logo-mark">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+          <rect x="6"   y="4.5" width="3"  height="15"  rx="0.5" fill="white"/>
+          <rect x="6"   y="4.5" width="12" height="2.8"  rx="0.5" fill="white"/>
+          <rect x="6"   y="12"  width="9"  height="2.5"  rx="0.5" fill="white"/>
+          <path transform="translate(18.5,5.1)"
+            d="M0,-1.6 C.22,-.52 .52,-.22 1.6,0 C.52,.22 .22,.52 0,1.6 C-.22,.52 -.52,.22 -1.6,0 C-.52,-.22 -.22,-.52 0,-1.6Z"
+            fill="white" opacity="0.85"/>
+        </svg>
+      </div>
+      <div class="sidebar-logo-text">
+        <span>Forge</span>
+        <span>OS</span>
+      </div>
+    </div>
 
     <div class="step-item" id="nav-0">
       <div class="step-num">1</div>
@@ -430,6 +452,10 @@
     </div>
     <div class="step-item" id="nav-4">
       <div class="step-num">5</div>
+      <span class="step-label">Git &amp; SSH</span>
+    </div>
+    <div class="step-item" id="nav-5">
+      <div class="step-num">6</div>
       <span class="step-label">Complete</span>
     </div>
   </aside>
@@ -523,7 +549,7 @@
         </button>
         <div class="field" style="margin-top:4px">
           <label class="field-label" for="client-id-input">Paste Client ID</label>
-          <span class="field-hint">From the GitHub OAuth App page — looks like <code style="font-family:monospace;font-size:11px">Ov23liXXXXXXXXXXXXXX</code></span>
+          <span class="field-hint">From the GitHub OAuth App page — looks like <code style="font-family:"SFMono-Regular","SF Mono",Menlo,Monaco,Consolas,monospace;font-size:11px">Ov23liXXXXXXXXXXXXXX</code></span>
           <input
             class="field-input"
             id="client-id-input"
@@ -546,7 +572,7 @@
         </p>
         <div class="field">
           <label class="field-label" for="member-org-input">Organization name</label>
-          <span class="field-hint">The part after <code style="font-family:monospace;font-size:11px">github.com/</code> — e.g. <code style="font-family:monospace;font-size:11px">acme-corp</code></span>
+          <span class="field-hint">The part after <code style="font-family:"SFMono-Regular","SF Mono",Menlo,Monaco,Consolas,monospace;font-size:11px">github.com/</code> — e.g. <code style="font-family:"SFMono-Regular","SF Mono",Menlo,Monaco,Consolas,monospace;font-size:11px">acme-corp</code></span>
           <input
             class="field-input"
             id="member-org-input"
@@ -570,7 +596,7 @@
       </p>
       <div class="field">
         <label class="field-label" for="org-input">Organization name</label>
-        <span class="field-hint">The part after <code style="font-family:monospace;font-size:11px">github.com/</code> — e.g. <code style="font-family:monospace;font-size:11px">acme-corp</code></span>
+        <span class="field-hint">The part after <code style="font-family:"SFMono-Regular","SF Mono",Menlo,Monaco,Consolas,monospace;font-size:11px">github.com/</code> — e.g. <code style="font-family:"SFMono-Regular","SF Mono",Menlo,Monaco,Consolas,monospace;font-size:11px">acme-corp</code></span>
         <input
           class="field-input"
           id="org-input"
@@ -585,7 +611,7 @@
       </div>
       <div class="field">
         <label class="field-label" for="repo-input">Knowledge repository name</label>
-        <span class="field-hint">The repo in your org that holds shared context — defaults to <code style="font-family:monospace;font-size:11px">forge-knowledge</code></span>
+        <span class="field-hint">The repo in your org that holds shared context — defaults to <code style="font-family:"SFMono-Regular","SF Mono",Menlo,Monaco,Consolas,monospace;font-size:11px">forge-knowledge</code></span>
         <input
           class="field-input"
           id="repo-input"
@@ -598,8 +624,112 @@
       </div>
     </div>
 
-    <!-- Step 4: Complete -->
+    <!-- Step 4: Git & SSH Setup -->
     <div class="step-pane" id="pane-4">
+      <h2>Git &amp; SSH Setup</h2>
+      <p class="step-desc">
+        Set up your Git identity and SSH key so you can work with repositories without passwords. You can skip this if Git is already configured.
+      </p>
+
+      <div id="git-loading" style="color:var(--text-muted);font-size:12px">Checking Git installation…</div>
+
+      <!-- Git not installed -->
+      <div id="git-not-installed" style="display:none">
+        <div class="guide-box">
+          <div class="guide-box-header">Git Not Found</div>
+          <div class="guide-steps">
+            <div class="guide-step">
+              <div class="guide-step-num">1</div>
+              <div class="guide-step-text">Install Git from <a href="#" onclick="window.setupAPI.openUrl('https://git-scm.com/downloads');return false" style="color:var(--blue)">git-scm.com/downloads</a></div>
+            </div>
+            <div class="guide-step">
+              <div class="guide-step-num">2</div>
+              <div class="guide-step-text">Restart Forge OS after installation and revisit this step</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Git identity -->
+      <div id="git-identity-section" style="display:none; flex-direction:column; gap:12px">
+        <div class="guide-box">
+          <div class="guide-box-header">Git Identity</div>
+          <div style="padding:14px; display:flex; flex-direction:column; gap:12px">
+            <div class="field">
+              <label class="field-label" for="git-name-input">Your name</label>
+              <span class="field-hint">Appears in git commit history</span>
+              <input class="field-input" id="git-name-input" type="text" placeholder="Your Name" autocomplete="off" spellcheck="false">
+            </div>
+            <div class="field">
+              <label class="field-label" for="git-email-input">Your email</label>
+              <span class="field-hint">Should match your GitHub account email</span>
+              <input class="field-input" id="git-email-input" type="email" placeholder="you@example.com" autocomplete="off" spellcheck="false">
+            </div>
+            <div style="display:flex; align-items:center; gap:10px">
+              <button class="btn-primary" id="git-config-btn" onclick="saveGitConfig()" style="font-size:12px;padding:7px 16px">Save Identity</button>
+              <span id="git-config-ok" style="display:none;font-size:12px;color:var(--success)">✓ Saved</span>
+              <span id="git-config-err" style="display:none;font-size:12px;color:var(--error)"></span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- SSH key section -->
+      <div id="ssh-section" style="display:none">
+        <!-- No key -->
+        <div id="ssh-no-key">
+          <div class="guide-box">
+            <div class="guide-box-header">SSH Key — Not Found</div>
+            <div style="padding:14px; display:flex; flex-direction:column; gap:10px">
+              <p class="step-desc" style="margin:0">No SSH key found at <code style="font-family:"SFMono-Regular","SF Mono",Menlo,Monaco,Consolas,monospace;font-size:11px">~/.ssh/id_ed25519</code>. Generate one to authenticate with GitHub.</p>
+              <div style="display:flex; align-items:center; gap:10px">
+                <button class="btn-primary" id="ssh-gen-btn" onclick="generateSshKey()" style="font-size:12px;padding:7px 16px">Generate SSH Key</button>
+                <span id="ssh-gen-err" style="display:none;font-size:12px;color:var(--error)"></span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <!-- Key exists -->
+        <div id="ssh-has-key" style="display:none; flex-direction:column; gap:12px">
+          <div class="guide-box">
+            <div class="guide-box-header">Your SSH Public Key</div>
+            <div style="padding:10px 14px 14px">
+              <div id="ssh-pubkey-display" style="font-family:'SFMono-Regular','SF Mono',Menlo,Monaco,Consolas,monospace;font-size:11px;color:var(--text);word-break:break-all;line-height:1.6;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:4px;padding:8px;margin-bottom:8px"></div>
+              <button class="link-btn" id="ssh-copy-btn" onclick="copySshKey()">Copy to Clipboard</button>
+            </div>
+          </div>
+          <div class="guide-box">
+            <div class="guide-box-header">Add Key to GitHub</div>
+            <div class="guide-steps">
+              <div class="guide-step">
+                <div class="guide-step-num">1</div>
+                <div class="guide-step-text">Click <strong>Copy to Clipboard</strong> above</div>
+              </div>
+              <div class="guide-step">
+                <div class="guide-step-num">2</div>
+                <div class="guide-step-text">Click <strong>Open GitHub SSH Settings</strong> below</div>
+              </div>
+              <div class="guide-step">
+                <div class="guide-step-num">3</div>
+                <div class="guide-step-text">Click <strong>New SSH key</strong>, title it <code>Forge OS</code>, paste the key, then click <strong>Add SSH key</strong></div>
+              </div>
+              <div class="guide-step">
+                <div class="guide-step-num">4</div>
+                <div class="guide-step-text">Click <strong>Test Connection</strong> to verify</div>
+              </div>
+            </div>
+            <div style="padding:0 14px 14px;display:flex;gap:8px;flex-wrap:wrap">
+              <button class="link-btn" onclick="window.setupAPI.openUrl('https://github.com/settings/ssh/new')">↗ Open GitHub SSH Settings</button>
+              <button class="link-btn" id="ssh-test-btn" onclick="testSshConnection()">Test Connection</button>
+            </div>
+            <div id="ssh-test-result" style="display:none;margin:0 14px 14px;font-size:12px;padding:8px 12px;border-radius:6px"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Step 5: Complete -->
+    <div class="step-pane" id="pane-5">
       <h2>You're all set</h2>
       <p class="step-desc">Forge OS is configured and ready to use.</p>
 
@@ -636,6 +766,7 @@
     <!-- Footer -->
     <div class="footer">
       <button class="btn-ghost" id="btn-back" onclick="goBack()" style="display:none">← Back</button>
+      <button class="btn-ghost" id="btn-skip-git" onclick="skipGitSetup()" style="display:none">Skip Git Setup</button>
       <div class="spacer"></div>
       <button class="btn-primary" id="btn-next" onclick="goNext()">Get Started →</button>
     </div>
@@ -647,7 +778,9 @@
   // ── State ──────────────────────────────────────────────────────────────────
   let currentStep = 0
   let role = 'admin'   // 'admin' | 'member'
-  const TOTAL_STEPS = 5
+  const TOTAL_STEPS = 6
+  let sshPublicKey = ''
+  let gitSetupReady = false   // true when SSH test passes or already configured
 
   // ── Navigation ─────────────────────────────────────────────────────────────
   function updateUI() {
@@ -666,8 +799,12 @@
     // Back button
     document.getElementById('btn-back').style.display = currentStep > 0 ? 'block' : 'none'
 
+    // Skip git setup button — only on step 4
+    document.getElementById('btn-skip-git').style.display = currentStep === 4 ? 'block' : 'none'
+
     // Next button label
     const btn = document.getElementById('btn-next')
+    btn.disabled = (currentStep === 4 && !gitSetupReady)
     if (currentStep === TOTAL_STEPS - 1) {
       btn.textContent = 'Launch Forge OS'
     } else if (currentStep === 2 && role === 'member') {
@@ -676,6 +813,8 @@
       btn.textContent = 'Continue →'
     } else if (currentStep === 3) {
       btn.textContent = 'Verify & Continue →'
+    } else if (currentStep === 4) {
+      btn.textContent = 'Continue →'
     } else {
       btn.textContent = currentStep === 0 ? 'Get Started →' : 'Continue →'
     }
@@ -706,10 +845,13 @@
         // Member: verify org + pull config
         const ok = await verifyMemberOrg()
         if (!ok) return
-        // Skip step 3 (org setup) for members — jump straight to complete
+        // Skip step 3 (org setup) for members — jump to git setup
         currentStep = 4
+        gitSetupReady = false
         buildSummary()
-        updateUI(); return
+        updateUI()
+        loadGitStatus()
+        return
       }
     }
 
@@ -717,6 +859,15 @@
       const ok = await verifyOrg()
       if (!ok) return
       buildSummary()
+      currentStep++
+      gitSetupReady = false
+      updateUI()
+      loadGitStatus()
+      return
+    }
+
+    if (currentStep === 4) {
+      // Git setup — no hard validation, user can skip
       currentStep++; updateUI(); return
     }
 
@@ -745,8 +896,10 @@
     const ok = document.getElementById('client-id-ok')
 
     if (!val) {
-      input.className = 'field-input'
-      err.className = 'field-error'; ok.className = 'field-ok'
+      input.className = 'field-input error'
+      err.textContent = 'Please enter your GitHub OAuth App Client ID.'
+      err.className = 'field-error visible'
+      ok.className = 'field-ok'
       return false
     }
     // GitHub OAuth App client IDs: "Ov23li" prefix + 20 alphanumeric chars
@@ -888,7 +1041,168 @@
     }
   }
 
+  // ── Git Setup (step 4) ─────────────────────────────────────────────────────
+  async function loadGitStatus() {
+    const loadingEl = document.getElementById('git-loading')
+    loadingEl.textContent = 'Checking Git installation…'
+    loadingEl.style.display = 'block'
+    document.getElementById('git-not-installed').style.display = 'none'
+    document.getElementById('git-identity-section').style.display = 'none'
+    document.getElementById('ssh-section').style.display = 'none'
+
+    let s
+    try {
+      s = await Promise.race([
+        window.setupAPI.gitStatus(),
+        new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 10000))
+      ])
+    } catch (_) {
+      loadingEl.textContent = 'Could not check Git status. Use Skip Git Setup to continue.'
+      return
+    }
+    loadingEl.style.display = 'none'
+
+    if (!s.gitInstalled) {
+      document.getElementById('git-not-installed').style.display = 'block'
+      return
+    }
+
+    document.getElementById('git-identity-section').style.display = 'flex'
+    document.getElementById('git-name-input').value = s.gitName || ''
+    document.getElementById('git-email-input').value = s.gitEmail || ''
+
+    document.getElementById('ssh-section').style.display = 'block'
+    if (s.sshKeyExists) {
+      showSshKey(s.sshPublicKey)
+    } else {
+      document.getElementById('ssh-no-key').style.display = 'block'
+      document.getElementById('ssh-has-key').style.display = 'none'
+    }
+
+    // Auto-enable Continue if git is fully configured (key exists + identity set)
+    if (s.gitName && s.gitEmail && s.sshKeyExists) {
+      gitSetupReady = true
+      document.getElementById('btn-next').disabled = false
+    }
+  }
+
+  async function saveGitConfig() {
+    const name = document.getElementById('git-name-input').value.trim()
+    const email = document.getElementById('git-email-input').value.trim()
+    const btn = document.getElementById('git-config-btn')
+    const okEl = document.getElementById('git-config-ok')
+    const errEl = document.getElementById('git-config-err')
+    btn.disabled = true
+    btn.innerHTML = '<span class="spinner-sm"></span>Saving…'
+    okEl.style.display = 'none'
+    errEl.style.display = 'none'
+    const result = await window.setupAPI.gitConfig(name, email)
+    btn.disabled = false
+    btn.textContent = 'Save Identity'
+    if (result.error) {
+      errEl.textContent = result.error
+      errEl.style.display = 'inline'
+    } else {
+      okEl.style.display = 'inline'
+      setTimeout(() => { okEl.style.display = 'none' }, 3000)
+    }
+  }
+
+  async function generateSshKey() {
+    const btn = document.getElementById('ssh-gen-btn')
+    const errEl = document.getElementById('ssh-gen-err')
+    btn.disabled = true
+    btn.innerHTML = '<span class="spinner-sm"></span>Generating…'
+    errEl.style.display = 'none'
+    const result = await window.setupAPI.sshGenerate()
+    btn.disabled = false
+    btn.textContent = 'Generate SSH Key'
+    if (result.error) {
+      errEl.textContent = result.error
+      errEl.style.display = 'inline'
+    } else {
+      showSshKey(result.publicKey)
+    }
+  }
+
+  function showSshKey(key) {
+    sshPublicKey = key
+    document.getElementById('ssh-pubkey-display').textContent = key
+    document.getElementById('ssh-no-key').style.display = 'none'
+    const hasKey = document.getElementById('ssh-has-key')
+    hasKey.style.display = 'flex'
+    hasKey.style.flexDirection = 'column'
+  }
+
+  function copySshKey() {
+    if (!sshPublicKey) return
+    window.setupAPI.copyToClipboard(sshPublicKey)
+    const btn = document.getElementById('ssh-copy-btn')
+    btn.textContent = '✓ Copied!'
+    setTimeout(() => { btn.textContent = 'Copy to Clipboard' }, 2000)
+  }
+
+  async function testSshConnection() {
+    const btn = document.getElementById('ssh-test-btn')
+    const resultEl = document.getElementById('ssh-test-result')
+    btn.disabled = true
+    btn.textContent = 'Testing…'
+    resultEl.style.display = 'none'
+    const result = await window.setupAPI.sshTest()
+    btn.disabled = false
+    btn.textContent = 'Test Connection'
+    resultEl.style.display = 'block'
+
+    if (result.connected) {
+      resultEl.style.cssText = 'display:block;font-size:12px;padding:8px 12px;border-radius:6px;background:var(--accent-subtle);border:1px solid rgba(63,185,80,0.3);color:var(--success)'
+      resultEl.textContent = '✓ ' + (result.message || 'Successfully authenticated with GitHub!')
+      gitSetupReady = true
+      document.getElementById('btn-next').disabled = false
+    } else if (result.message === 'PASSPHRASE_NEEDED') {
+      resultEl.style.cssText = 'display:block;font-size:12px;padding:10px 12px;border-radius:6px;background:var(--blue-subtle);border:1px solid rgba(56,139,253,0.3);color:var(--text);line-height:1.7'
+      resultEl.innerHTML =
+        '<strong style="color:var(--blue)">This key has a passphrase.</strong> Enter it to unlock and save to Keychain:<br>' +
+        '<div style="display:flex;gap:8px;margin-top:8px;align-items:center">' +
+          '<input id="ssh-passphrase-input" type="password" placeholder="Enter passphrase…" ' +
+            'style="flex:1;background:var(--surface);border:1px solid var(--border);border-radius:5px;color:var(--text);font-size:12px;padding:6px 10px;outline:none" ' +
+            'onkeydown="if(event.key===\'Enter\')unlockSshKey()">' +
+          '<button id="ssh-unlock-btn" class="btn-primary" onclick="unlockSshKey()" style="font-size:12px;padding:6px 14px;white-space:nowrap">Unlock</button>' +
+        '</div>' +
+        '<span id="ssh-unlock-err" style="display:none;color:var(--error);font-size:12px;margin-top:4px;display:block"></span>'
+    } else {
+      resultEl.style.cssText = 'display:block;font-size:12px;padding:8px 12px;border-radius:6px;background:var(--error-subtle);border:1px solid rgba(248,81,73,0.3);color:var(--error)'
+      resultEl.textContent = '✗ ' + (result.message || 'Could not connect to GitHub via SSH.')
+    }
+  }
+
+  async function unlockSshKey() {
+    const input = document.getElementById('ssh-passphrase-input')
+    const btn = document.getElementById('ssh-unlock-btn')
+    const errEl = document.getElementById('ssh-unlock-err')
+    if (!input || !input.value) return
+    btn.disabled = true
+    btn.innerHTML = '<span class="spinner-sm"></span>Unlocking…'
+    errEl.style.display = 'none'
+    const result = await window.setupAPI.sshUnlock(input.value)
+    btn.disabled = false
+    btn.textContent = 'Unlock'
+    if (result.error) {
+      errEl.textContent = result.error
+      errEl.style.display = 'block'
+      input.select()
+    } else {
+      // Key is now in agent — run the actual SSH test
+      await testSshConnection()
+    }
+  }
+
+  function skipGitSetup() {
+    currentStep++
+    updateUI()
+  }
+
   // ── Init ───────────────────────────────────────────────────────────────────
+  if (navigator.userAgent.includes('Macintosh')) document.documentElement.classList.add('mac')
   updateUI()
 </script>
 </body>

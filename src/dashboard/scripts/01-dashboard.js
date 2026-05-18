@@ -127,3 +127,12 @@ function parseMarkdown(src) {
   }
   return out;
 }
+
+// Central fetch wrapper — injects X-Forge-Token on all requests
+function apiFetch(url, opts) {
+  opts = opts || {};
+  opts.headers = opts.headers || {};
+  const tok = window.__FORGE_TOKEN__;
+  if (tok) opts.headers['X-Forge-Token'] = tok;
+  return fetch(url, opts);
+}

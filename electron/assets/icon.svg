@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="24" x2="0" y2="488" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#4ADE80"/>
+      <stop offset="100%" stop-color="#16A34A"/>
+    </linearGradient>
+  </defs>
+
+  <!-- 24px inset padding on all sides — matches macOS safe-zone convention -->
+  <!-- Background: rounded square -->
+  <rect x="24" y="24" width="464" height="464" rx="104" ry="104" fill="url(#bg)"/>
+
+  <!-- Bold geometric F — re-centered within inset canvas -->
+  <!-- Vertical stroke -->
+  <rect x="149" y="114" width="58" height="292" rx="6" fill="white"/>
+  <!-- Top horizontal bar -->
+  <rect x="149" y="114" width="228" height="55" rx="6" fill="white"/>
+  <!-- Middle horizontal bar -->
+  <rect x="149" y="258" width="172" height="48" rx="6" fill="white"/>
+
+  <!-- Primary sparkle -->
+  <path transform="translate(388, 122)" fill="white" opacity="0.90"
+    d="M0,-18 C2.2,-5.8 5.8,-2.2 18,0 C5.8,2.2 2.2,5.8 0,18 C-2.2,5.8 -5.8,2.2 -18,0 C-5.8,-2.2 -2.2,-5.8 0,-18Z"/>
+
+  <!-- Secondary smaller sparkle -->
+  <path transform="translate(410, 100)" fill="white" opacity="0.55"
+    d="M0,-9 C1.1,-2.9 2.9,-1.1 9,0 C2.9,1.1 1.1,2.9 0,9 C-1.1,2.9 -2.9,1.1 -9,0 C-2.9,-1.1 -1.1,-2.9 0,-9Z"/>
+</svg>

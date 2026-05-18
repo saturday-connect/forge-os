@@ -204,7 +204,7 @@ async function loadState() {
       renderTopbar();
       return;
     }
-    const res = await fetch('/api/state');
+    const res = await apiFetch('/api/state');
     if (!res.ok) return;
     state = await res.json();
     renderAll();
@@ -215,7 +215,7 @@ async function loadState() {
 
 async function loadProjectsState() {
   try {
-    const res = await fetch('/api/projects');
+    const res = await apiFetch('/api/projects');
     if (!res.ok) return;
     projectsState = await res.json();
   } catch (e) {
@@ -258,7 +258,26 @@ function renderProjectsHome() {
     : sourceProjects;
   const activeId = projectsState.active_project_id || '';
   const activeProject = activeProjects.find((p) => p.id === activeId);
-  const summaryActiveName = activeProject?.name || PROJECT_UI_TEXT.never;
+  const summaryActiveName = activeProject?.name || '';
+
+  // Sidebar recent list — show up to 8 rows from sourceProjects (no search filter)
+  const sidebarList = (projectListMode === 'archived' ? archivedProjects : activeProjects)
+    .slice(0, 8)
+    .map((p) => {
+      const isActive = p.id === activeId;
+      const isArchived = (p.status || 'active') === 'archived';
+      return `
+        <div class="proj-recent-item ${isActive ? 'is-active' : ''}" onclick="openProject('${escHtmlJs(p.id)}')">
+          <div class="proj-recent-item-info">
+            <div class="proj-recent-item-name" title="${escHtmlJs(p.name || PROJECT_UI_TEXT.unnamed)}">${escHtmlJs(p.name || PROJECT_UI_TEXT.unnamed)}</div>
+            <div class="proj-recent-item-slug">${escHtmlJs(p.slug || '')}</div>
+          </div>
+          ${!isArchived ? `<button class="proj-recent-item-open" onclick="event.stopPropagation();openProject('${escHtmlJs(p.id)}')">${PROJECT_UI_TEXT.openProject}</button>` : ''}
+        </div>
+      `;
+    }).join('');
+
+  // Main grid cards
   const projectCards = visibleProjects.map((p) => {
     const isActive = p.id === activeId;
     const updated = formatProjectDate(p.updated_at);
@@ -310,63 +329,71 @@ function renderProjectsHome() {
       </div>
     `;
   }).join('');
+
   const emptyState = sourceProjects.length
     ? renderProjectsEmpty(PROJECT_UI_TEXT.noMatchesTitle, PROJECT_UI_TEXT.noMatchesCopy)
     : projectListMode === 'archived'
       ? renderProjectsEmpty(PROJECT_UI_TEXT.emptyArchivedTitle, PROJECT_UI_TEXT.emptyArchivedCopy)
       : renderProjectsEmpty(PROJECT_UI_TEXT.emptyTitle, PROJECT_UI_TEXT.emptyCopy);
 
+  const statsActiveChip = activeProject
+    ? `<div class="proj-stat-chip active-chip"><strong>${escHtmlJs(activeProject.name)}</strong> &mdash; active</div>`
+    : '';
+
   shell.innerHTML = `
-    <div class="projects-workspace">
-      <div class="projects-header">
+    <aside class="projects-sidebar">
+      <div class="proj-sidebar-logo">
+        <div class="proj-sidebar-logo-mark">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+            <path d="M2 17l10 5 10-5"/>
+            <path d="M2 12l10 5 10-5"/>
+          </svg>
+        </div>
+        <span class="proj-sidebar-wordmark">Forge OS</span>
+      </div>
+
+      <button class="proj-new-btn" onclick="(document.getElementById('project-create-name')?.value?.trim() ? createProjectFromHome() : document.getElementById('project-create-name')?.focus())">${PROJECT_UI_TEXT.createButton}</button>
+      <input
+        id="project-create-name"
+        class="proj-name-input"
+        value="${escHtmlJs(projectDraftName)}"
+        placeholder="${PROJECT_UI_TEXT.projectNamePlaceholder}"
+        oninput="onProjectDraftChange(this.value)"
+      />
+
+      <div class="proj-sidebar-divider"></div>
+      <div class="proj-sidebar-section-label">${projectListMode === 'archived' ? PROJECT_UI_TEXT.archivedTab : 'Recent Projects'}</div>
+
+      <div class="proj-recent-list">
+        ${sidebarList || `<div style="color:rgba(255,255,255,.36);font-size:12px;padding:8px 0;">${PROJECT_UI_TEXT.emptyTitle}</div>`}
+      </div>
+
+      <div class="proj-sidebar-tabs">
+        <button class="proj-sidebar-tab ${projectListMode === 'active' ? 'active' : ''}" onclick="setProjectListMode('active')">${PROJECT_UI_TEXT.activeTab} (${activeProjects.length})</button>
+        <button class="proj-sidebar-tab ${projectListMode === 'archived' ? 'active' : ''}" onclick="setProjectListMode('archived')">${PROJECT_UI_TEXT.archivedTab} (${archivedProjects.length})</button>
+      </div>
+    </aside>
+
+    <main class="projects-main">
+      <div class="proj-main-topbar">
         <div>
-          <div class="projects-eyebrow">${PROJECT_UI_TEXT.eyebrow}</div>
-          <div class="projects-title">${PROJECT_UI_TEXT.title}</div>
-          <div class="projects-subtitle">${PROJECT_UI_TEXT.subtitle}</div>
+          <div class="proj-main-title">Projects</div>
+          <div class="proj-main-subtitle">${PROJECT_UI_TEXT.subtitle}</div>
         </div>
-        <div class="projects-summary">
-          <div class="projects-summary-card">
-            <div class="projects-summary-value">${activeProjects.length}</div>
-            <div class="projects-summary-label">${PROJECT_UI_TEXT.totalProjects}</div>
-          </div>
-          <div class="projects-summary-card">
-            <div class="projects-summary-value" title="${escHtmlJs(summaryActiveName)}">${escHtmlJs(summaryActiveName)}</div>
-            <div class="projects-summary-label">${PROJECT_UI_TEXT.activeProject}</div>
-          </div>
+        <div class="proj-search-wrap">
+          <input id="project-search" class="projects-search" value="${escHtmlJs(projectSearchTerm)}" placeholder="${PROJECT_UI_TEXT.searchPlaceholder}" oninput="onProjectSearch(this.value)" />
         </div>
       </div>
-      <div class="projects-content">
-        <section class="project-create-panel">
-          <div class="panel-title">${PROJECT_UI_TEXT.createTitle}</div>
-          <div class="panel-copy">${PROJECT_UI_TEXT.createCopy}</div>
-          <div class="project-form">
-            <label>
-              <span class="project-field-label">${PROJECT_UI_TEXT.projectNameLabel}</span>
-              <input id="project-create-name" class="project-input" value="${escHtmlJs(projectDraftName)}" placeholder="${PROJECT_UI_TEXT.projectNamePlaceholder}" oninput="onProjectDraftChange(this.value)" />
-            </label>
-            <div class="project-form-actions">
-              <button class="btn btn-primary" onclick="createProjectFromHome()">${PROJECT_UI_TEXT.createButton}</button>
-            </div>
-          </div>
-        </section>
-        <section class="projects-list-panel">
-          <div class="projects-list-header">
-            <div>
-              <div class="panel-title">${PROJECT_UI_TEXT.listTitle}</div>
-              <div class="panel-copy">${PROJECT_UI_TEXT.listCopy}</div>
-            </div>
-            <div class="projects-list-tools">
-              <div class="project-tabs">
-                <button class="project-tab ${projectListMode === 'active' ? 'active' : ''}" onclick="setProjectListMode('active')">${PROJECT_UI_TEXT.activeTab} (${activeProjects.length})</button>
-                <button class="project-tab ${projectListMode === 'archived' ? 'active' : ''}" onclick="setProjectListMode('archived')">${PROJECT_UI_TEXT.archivedTab} (${archivedProjects.length})</button>
-              </div>
-              <input id="project-search" class="projects-search" value="${escHtmlJs(projectSearchTerm)}" placeholder="${PROJECT_UI_TEXT.searchPlaceholder}" oninput="onProjectSearch(this.value)" />
-            </div>
-          </div>
-          ${visibleProjects.length ? `<div class="projects-grid">${projectCards}</div>` : emptyState}
-        </section>
+
+      <div class="proj-stats-row">
+        <div class="proj-stat-chip"><strong>${activeProjects.length}</strong>&nbsp;${activeProjects.length === 1 ? 'project' : 'projects'}</div>
+        ${statsActiveChip}
+        ${archivedProjects.length ? `<div class="proj-stat-chip">${archivedProjects.length} archived</div>` : ''}
       </div>
-    </div>
+
+      ${visibleProjects.length ? `<div class="projects-grid">${projectCards}</div>` : emptyState}
+    </main>
   `;
   bindProjectHomeEvents();
 }
@@ -415,7 +442,12 @@ function setProjectListMode(mode) {
 function formatProjectDate(value) {
   if (!value) return PROJECT_UI_TEXT.never;
   try {
-    return new Date(value).toLocaleString();
+    const d = new Date(value);
+    if (isNaN(d.getTime())) return PROJECT_UI_TEXT.never;
+    // Compact format: "16 May '26  01:49" — fits in narrow meta cells
+    const date = d.toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: '2-digit' });
+    const time = d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false });
+    return `${date}  ${time}`;
   } catch (e) {
     return PROJECT_UI_TEXT.never;
   }
@@ -429,7 +461,7 @@ async function createProjectFromHome() {
     return;
   }
   try {
-    const res = await fetch('/api/projects', {
+    const res = await apiFetch('/api/projects', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name })
@@ -451,7 +483,7 @@ async function createProjectFromHome() {
 
 async function openProject(projectId) {
   try {
-    const res = await fetch('/api/projects/select', {
+    const res = await apiFetch('/api/projects/select', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ project_id: projectId })
@@ -471,7 +503,7 @@ async function openProject(projectId) {
 
 async function archiveProject(projectId) {
   try {
-    const res = await fetch('/api/projects/archive', {
+    const res = await apiFetch('/api/projects/archive', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ project_id: projectId })
@@ -491,7 +523,7 @@ async function archiveProject(projectId) {
 
 async function restoreProject(projectId) {
   try {
-    const res = await fetch('/api/projects/restore', {
+    const res = await apiFetch('/api/projects/restore', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ project_id: projectId })
@@ -522,7 +554,7 @@ function cancelDeleteProject() {
 
 async function deleteArchivedProject(projectId) {
   try {
-    const res = await fetch('/api/projects', {
+    const res = await apiFetch('/api/projects', {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ project_id: projectId })
@@ -550,14 +582,18 @@ function renderTopbar() {
   const projectsBtn = document.getElementById('btn-projects-home');
 
   if (appMode === 'projects') {
-    document.getElementById('projects-shell').style.display = 'block';
+    document.getElementById('projects-shell').style.display = 'flex';
     document.getElementById('app').style.display = 'none';
     stepper.style.display = 'none';
     pill.style.display = 'none';
     projectsBtn.style.display = 'none';
+    document.body.classList.add('projects-mode');
+    if (window.__webglControl) window.__webglControl.start();
     return;
   }
 
+  if (window.__webglControl) window.__webglControl.stop();
+  document.body.classList.remove('projects-mode');
   stepper.style.display = 'flex';
   pill.style.display = 'flex';
   projectsBtn.style.display = 'inline-flex';
@@ -807,7 +843,7 @@ async function openInputFile(name) {
   renderInput(); // re-render to update active highlight
 
   try {
-    const res = await fetch(`/api/raw-input?name=${encodeURIComponent(name)}`);
+    const res = await apiFetch(`/api/raw-input?name=${encodeURIComponent(name)}`);
     const text = await res.text();
     document.getElementById('input-editor').value = text;
   } catch (e) {
@@ -819,7 +855,7 @@ async function saveCurrentFile() {
   if (!currentInputFile) return;
   const content = document.getElementById('input-editor').value;
   try {
-    await fetch('/api/raw-input', {
+    await apiFetch('/api/raw-input', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: currentInputFile, content })
@@ -835,7 +871,7 @@ async function deleteCurrentFile() {
   if (!currentInputFile) return;
   if (!confirm(`Delete ${currentInputFile}?`)) return;
   try {
-    await fetch('/api/raw-input', {
+    await apiFetch('/api/raw-input', {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: currentInputFile })
@@ -873,7 +909,7 @@ async function createNewFile() {
     ? `# ${title.charAt(0).toUpperCase() + title.slice(1)}\n\nDescribe your ${newFileCat} details here...\n`
     : `# ${title.charAt(0).toUpperCase() + title.slice(1)}\n\nDescribe your product idea here...\n`;
   try {
-    await fetch('/api/raw-input', {
+    await apiFetch('/api/raw-input', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: fullPath, content: placeholder })
@@ -1029,7 +1065,7 @@ async function generate(stage) {
   renderGenerate();
 
   try {
-    await fetch('/api/generate', {
+    await apiFetch('/api/generate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ stage })
@@ -1130,7 +1166,7 @@ async function openReviewFile(path, status, size, modifiedAt) {
   document.getElementById('meta-modified').textContent = modifiedAt ? new Date(modifiedAt * 1000).toLocaleString() : '—';
 
   try {
-    const res = await fetch(`/api/file?path=${encodeURIComponent(path)}`);
+    const res = await apiFetch(`/api/file?path=${encodeURIComponent(path)}`);
     if (res.ok) {
       const text = await res.text();
       const raw = text || '(empty file)';
@@ -1154,7 +1190,7 @@ async function openReviewFile(path, status, size, modifiedAt) {
 async function markFile(status) {
   if (!currentReviewFile) return;
   try {
-    await fetch('/api/review', {
+    await apiFetch('/api/review', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ path: currentReviewFile, status })
@@ -1183,7 +1219,7 @@ async function fetchVersions(path) {
   const labelEl = document.getElementById('versions-label');
   listEl.innerHTML = '<span style="font-size:10px;color:var(--text-3)">Loading...</span>';
   try {
-    const res = await fetch(`/api/versions?path=${encodeURIComponent(path)}`);
+    const res = await apiFetch(`/api/versions?path=${encodeURIComponent(path)}`);
     const data = await res.json();
     const versions = data.versions || [];
     labelEl.textContent = versions.length ? `Version History (${versions.length})` : 'Version History';
@@ -1208,7 +1244,7 @@ async function fetchVersions(path) {
 async function openVersion(id, timestamp) {
   if (!currentReviewFile) return;
   try {
-    const res = await fetch(`/api/version?path=${encodeURIComponent(currentReviewFile)}&id=${encodeURIComponent(id)}`);
+    const res = await apiFetch(`/api/version?path=${encodeURIComponent(currentReviewFile)}&id=${encodeURIComponent(id)}`);
     if (!res.ok) { showToast('Version not found', 'error'); return; }
     const text = await res.text();
     viewingVersion = { id, timestamp };
@@ -1248,7 +1284,7 @@ function closeVersion() {
 async function restoreVersion() {
   if (!currentReviewFile || !viewingVersion) return;
   try {
-    const res = await fetch('/api/version/restore', {
+    const res = await apiFetch('/api/version/restore', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ path: currentReviewFile, id: viewingVersion.id })
@@ -1265,7 +1301,7 @@ async function restoreVersion() {
 async function reloadCurrentFile() {
   if (!currentReviewFile) return;
   try {
-    const res = await fetch(`/api/file?path=${encodeURIComponent(currentReviewFile)}`);
+    const res = await apiFetch(`/api/file?path=${encodeURIComponent(currentReviewFile)}`);
     if (res.ok) {
       const text = await res.text();
       const raw = text || '(empty file)';
@@ -1293,7 +1329,7 @@ async function submitFix() {
   document.getElementById('meta-status').innerHTML = `<span class="badge badge-needs-review">regenerating</span>`;
 
   try {
-    await fetch('/api/fix', {
+    await apiFetch('/api/fix', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ path: currentReviewFile, critique })
@@ -1326,7 +1362,7 @@ let buildCodePanelStep = null;
 
 async function fetchBuildSteps() {
   try {
-    const res = await fetch('/api/build-system');
+    const res = await apiFetch('/api/build-system');
     if (res.ok) {
       const data = await res.json();
       buildStepsState = data.steps || {};
@@ -1383,7 +1419,7 @@ async function runBuildStep(step) {
   try {
     optimisticRunning = { stage: step, startTime: Date.now() };
     renderBuildSteps();
-    const res = await fetch('/api/build-system', {
+    const res = await apiFetch('/api/build-system', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ step })
@@ -1426,7 +1462,7 @@ async function openBuildCodePanel(step) {
 
 async function loadBuildFile(step, path) {
   try {
-    const res = await fetch('/api/build-file?step=' + encodeURIComponent(step) + '&path=' + encodeURIComponent(path));
+    const res = await apiFetch('/api/build-file?step=' + encodeURIComponent(step) + '&path=' + encodeURIComponent(path));
     if (res.ok) {
       const data = await res.json();
       document.getElementById('build-file-content').textContent = data.content;
@@ -1568,7 +1604,7 @@ async function checkAllPrStatuses() {
 
 async function checkPrStatus(prUrl) {
   try {
-    const res = await fetch('/api/pr-status?pr_url=' + encodeURIComponent(prUrl));
+    const res = await apiFetch('/api/pr-status?pr_url=' + encodeURIComponent(prUrl));
     const d = await res.json();
     if (d.merged) {
       // Remove from checked cache so the badge re-renders on next loadState()
@@ -1583,7 +1619,7 @@ let _reviewPollTimer = null;
 async function syncReviewStatus() {
   // Called on every renderBuild() — re-attaches polling and panel after refresh/tab switch
   try {
-    const res = await fetch('/api/build-review');
+    const res = await apiFetch('/api/build-review');
     const d = await res.json();
     if (!d || d.status === 'idle') return;
     // Show panel regardless of how we got here
@@ -1604,7 +1640,7 @@ async function startReviewAndPush() {
   btn.innerHTML = `<span style="opacity:.6">Starting review…</span>`;
 
   try {
-    const res = await fetch('/api/build-review', {
+    const res = await apiFetch('/api/build-review', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({})
@@ -1629,7 +1665,7 @@ function pollReview() {
   if (_reviewPollTimer) clearInterval(_reviewPollTimer);
   _reviewPollTimer = setInterval(async () => {
     try {
-      const res = await fetch('/api/build-review');
+      const res = await apiFetch('/api/build-review');
       const d = await res.json();
       showReviewPanel(d);
       if (d.status !== 'reviewing') {
@@ -1771,7 +1807,7 @@ async function proceedWithPush() {
   if (panel) panel.innerHTML = `<div class="card" style="border-color:var(--blue)"><div style="font-size:13px;color:var(--blue);">${icon('cloudUp',14)} Pushing to GitHub…</div></div>`;
 
   try {
-    const res = await fetch('/api/build', {
+    const res = await apiFetch('/api/build', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ reviewed: true })
@@ -1779,7 +1815,7 @@ async function proceedWithPush() {
     const d = await res.json();
     showToast(`Build started: ${d.branch || ''}`, 'info');
     // Clear review file
-    await fetch('/api/build-review', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'clear' }) });
+    await apiFetch('/api/build-review', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'clear' }) });
     if (panel) panel.style.display = 'none';
     loadState();
   } catch (e) {
@@ -1792,12 +1828,12 @@ async function cancelReview() {
   // If done/cancelled/idle → just clear the panel
   let action = 'clear';
   try {
-    const r = await fetch('/api/build-review');
+    const r = await apiFetch('/api/build-review');
     const d = await r.json();
     if (d.status === 'reviewing') action = 'cancel';
   } catch (e) { /* use clear */ }
 
-  await fetch('/api/build-review', {
+  await apiFetch('/api/build-review', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ action })
@@ -1821,10 +1857,10 @@ async function cancelReview() {
 async function skipReviewAndPush() {
   // Cancel any running review first, then push directly
   try {
-    const r = await fetch('/api/build-review');
+    const r = await apiFetch('/api/build-review');
     const d = await r.json();
     if (d.status === 'reviewing') {
-      await fetch('/api/build-review', {
+      await apiFetch('/api/build-review', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'cancel' })
@@ -1840,14 +1876,14 @@ async function skipReviewAndPush() {
   if (panel) panel.innerHTML = `<div class="card" style="border-color:var(--blue)"><div style="font-size:13px;color:var(--blue);">Pushing to GitHub…</div></div>`;
 
   try {
-    const res = await fetch('/api/build', {
+    const res = await apiFetch('/api/build', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({})
     });
     const d = await res.json();
     showToast(`Build started: ${d.branch || ''}`, 'info');
-    await fetch('/api/build-review', {
+    await apiFetch('/api/build-review', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'clear' })
@@ -1912,7 +1948,7 @@ async function refreshSecrets() {
   const container = document.getElementById('secrets-container');
   if (!container) return;
   try {
-    const res = await fetch('/api/secrets');
+    const res = await apiFetch('/api/secrets');
     _secretsData = await res.json();
     renderSecretsTable(_secretsData);
   } catch (e) {
@@ -2048,7 +2084,7 @@ async function pushSecret(name) {
   btn.innerHTML = `<span style="opacity:.6">Pushing…</span>`;
 
   try {
-    const res = await fetch('/api/secrets', {
+    const res = await apiFetch('/api/secrets', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name, value, protected: protEl ? protEl.checked : true }),
@@ -2145,7 +2181,7 @@ async function createIssue() {
   if (!title) { showToast('Title is required', 'error'); return; }
 
   try {
-    await fetch('/api/issue', {
+    await apiFetch('/api/issue', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ type, priority, title, description })
@@ -2162,7 +2198,7 @@ async function createIssue() {
 
 async function updateIssue(id, data) {
   try {
-    await fetch('/api/issue', {
+    await apiFetch('/api/issue', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id, ...data })
@@ -2181,7 +2217,7 @@ let detectedTools = null;  // populated from /api/tools on settings open
 
 async function fetchDetectedTools() {
   try {
-    const res = await fetch('/api/tools');
+    const res = await apiFetch('/api/tools');
     detectedTools = await res.json();
     // Rebuild tool dropdown to show only installed tools (with badge for uninstalled)
     const toolSel = document.getElementById('settings-tool');
@@ -2261,7 +2297,7 @@ async function saveSettings() {
   };
 
   try {
-    await fetch('/api/settings', {
+    await apiFetch('/api/settings', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)
@@ -2334,7 +2370,7 @@ function closeResetDialog() {
 async function resetPipeline() {
   closeResetDialog();
   try {
-    const res = await fetch('/api/reset', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+    const res = await apiFetch('/api/reset', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
     const data = await res.json();
     showToast(`Pipeline reset — ${data.cleared} files cleared`, 'success');
     currentReviewFile = null;

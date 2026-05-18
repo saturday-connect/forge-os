@@ -203,12 +203,13 @@ function pollForToken(deviceCode, intervalSec) {
 function createAuthWindow() {
   const win = new BrowserWindow({
     width: 460,
-    height: 380,
+    height: 420,      // +40 to absorb hiddenInset top padding without squishing content
     resizable: false,
     minimizable: false,
     maximizable: false,
     fullscreenable: false,
     title: 'Connect GitHub Account',
+    titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
     webPreferences: {
       preload: path.join(__dirname, 'auth-preload.js'),
       contextIsolation: true,

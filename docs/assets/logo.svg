@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 232 48" width="232" height="48">
+
+  <!-- F icon mark (48×48) -->
+  <defs>
+    <linearGradient id="ibg" x1="0" y1="0" x2="0" y2="48" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#5B63F5"/>
+      <stop offset="100%" stop-color="#3538D0"/>
+    </linearGradient>
+  </defs>
+  <rect width="48" height="48" rx="9.4" fill="url(#ibg)"/>
+
+  <!-- F letterform scaled to 48px icon -->
+  <rect x="12.3" y="9"   width="5.8"  height="30"   rx="0.7" fill="white"/>
+  <rect x="12.3" y="9"   width="23.4" height="5.6"   rx="0.7" fill="white"/>
+  <rect x="12.3" y="24"  width="17.6" height="4.9"   rx="0.7" fill="white"/>
+
+  <!-- Sparkle at tip of top bar -->
+  <path transform="translate(37.1, 10.1)" fill="white" opacity="0.90"
+    d="M0,-1.88 C.23,-.61 .61,-.23 1.88,0 C.61,.23 .23,.61 0,1.88 C-.23,.61 -.61,.23 -1.88,0 C-.61,-.23 -.23,-.61 0,-1.88Z"/>
+  <path transform="translate(39.3, 7.9)" fill="white" opacity="0.55"
+    d="M0,-.94 C.11,-.3 .3,-.11 .94,0 C.3,.11 .11,.3 0,.94 C-.11,.3 -.3,.11 -.94,0 C-.3,-.11 -.11,-.3 0,-.94Z"/>
+
+  <!-- Wordmark: "Forge" bold + "OS" cobalt -->
+  <text
+    x="60" y="33"
+    font-family="-apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif"
+    font-size="26" font-weight="700" letter-spacing="-0.4"
+    fill="#ffffff">Forge</text>
+  <text
+    x="153" y="33"
+    font-family="-apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif"
+    font-size="26" font-weight="400"
+    fill="#7B80F5">OS</text>
+
+</svg>

@@ -49,14 +49,19 @@ jobs:
         if: runner.os == 'macOS'
         run: npm run build:mac -- --publish never
         working-directory: electron
-        # TODO: add CSC_LINK and CSC_KEY_PASSWORD secrets for code signing before public release
+        # Code signing: add CSC_LINK + CSC_KEY_PASSWORD secrets when Apple Developer cert is ready
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: false   # skip signing until cert is configured
 
       - name: Build desktop app (Windows)
         if: runner.os == 'Windows'
         run: npm run build:win -- --publish never
         working-directory: electron
-        # TODO: add WIN_CSC_LINK and WIN_CSC_KEY_PASSWORD for Authenticode signing
+        # Code signing: add WIN_CSC_LINK + WIN_CSC_KEY_PASSWORD secrets when EV cert is ready
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: false
 
+      # Non-tag builds: upload as workflow artifacts for testing/QA (14-day retention)
       - name: Upload build artifact
         if: ${{ !startsWith(github.ref, 'refs/tags/') }}
         uses: actions/upload-artifact@v4
@@ -69,6 +74,10 @@ jobs:
             electron/dist/*.zip
             electron/dist/latest*.yml
 
+      # Tag builds: publish to GitHub Releases so electron-updater can detect new versions.
+      # CRITICAL: latest*.yml MUST be included — electron-updater reads these files to
+      # determine whether the installed version is outdated. Without them, auto-update
+      # checks will silently find "no update available" even when a newer release exists.
       - name: Publish to GitHub Releases
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
@@ -77,6 +86,9 @@ jobs:
             electron/dist/*.dmg
             electron/dist/*.exe
             electron/dist/*.zip
+            electron/dist/latest*.yml
           generate_release_notes: true
+          draft: false
+          prerelease: ${{ contains(github.ref, '-beta') || contains(github.ref, '-rc') }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

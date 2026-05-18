@@ -20,7 +20,9 @@ REPO_ROOT = os.path.abspath(os.environ.get("FORGE_REPO_ROOT", os.environ.get("AE
 ORCHESTRATOR_ROOT = os.path.abspath(os.environ.get("FORGE_ORCHESTRATOR_ROOT", REPO_ROOT))
 _data_dir = os.environ.get("FORGE_DATA_DIR", "")
 FORGE_DIR = os.path.abspath(_data_dir) if _data_dir else os.path.join(REPO_ROOT, ".forge")
-PROJECTS_ROOT = os.path.join(ORCHESTRATOR_ROOT, ".projects")
+# FORGE_PROJECTS_ROOT overrides computed path — Electron passes ~/.forge/projects explicitly
+_projects_root_override = os.environ.get("FORGE_PROJECTS_ROOT", "")
+PROJECTS_ROOT = os.path.abspath(os.path.expanduser(_projects_root_override)) if _projects_root_override else os.path.join(ORCHESTRATOR_ROOT, ".projects")
 PROJECTS_INDEX_FILE = os.path.join(PROJECTS_ROOT, "index.json")
 PROJECT_STATUS_ACTIVE = "active"
 PROJECT_STATUS_ARCHIVED = "archived"
@@ -834,13 +836,19 @@ class ForgeHandler(BaseHTTPRequestHandler):
         if path == "/":
             dashboard_path = os.path.join(FORGE_DIR, "scripts/dashboard.html")
             if os.path.exists(dashboard_path):
-                content = open(dashboard_path, "rb").read()
+                content = open(dashboard_path, "r", encoding="utf-8").read()
+                # Inject runtime config (token) so dashboard JS can authenticate writes
+                inject = (
+                    f'<script>window.__FORGE_TOKEN__={json.dumps(FORGE_TOKEN)};</script>\n'
+                )
+                content = content.replace("</head>", inject + "</head>", 1)
+                encoded = content.encode("utf-8")
                 self.send_response(200)
                 self.send_header("Content-Type", "text/html; charset=utf-8")
                 self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
                 self.send_header("Pragma", "no-cache")
                 self.end_headers()
-                self.wfile.write(content)
+                self.wfile.write(encoded)
             else:
                 self.send_response(404)
                 self.end_headers()

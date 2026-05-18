@@ -15,8 +15,14 @@
 <div id="topbar">
   <div class="logo">
     <div class="logo-icon">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-        <path d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z"/>
+      <!-- F mark — matches electron/assets/icon.svg, no background (logo-icon provides it) -->
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+        <rect x="6"   y="4.5" width="3"  height="15"  rx="0.5" fill="currentColor"/>
+        <rect x="6"   y="4.5" width="12" height="2.8"  rx="0.5" fill="currentColor"/>
+        <rect x="6"   y="12"  width="9"  height="2.5"  rx="0.5" fill="currentColor"/>
+        <path transform="translate(18.5,5.1)"
+          d="M0,-1.6 C.22,-.52 .52,-.22 1.6,0 C.52,.22 .22,.52 0,1.6 C-.22,.52 -.52,.22 -1.6,0 C-.52,-.22 -.22,-.52 0,-1.6Z"
+          fill="currentColor" opacity="0.85"/>
       </svg>
     </div>
     Forge OS
@@ -35,6 +41,9 @@
   </div>
 </div>
 
+
+<!-- WebGL particle field background for Projects page -->
+<canvas id="projects-webgl" style="position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:0;opacity:0;transition:opacity 0.6s ease;" aria-hidden="true"></canvas>
 
 <!-- App layout -->
 <div id="projects-shell" class="projects-shell"></div>
@@ -252,7 +261,7 @@
               <div id="viewer-fix-filename" style="font-size:10px;color:var(--text-3);font-family:var(--mono);max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></div>
             </div>
             <div id="viewer-content" class="md-body">Select a file from the tree to review its contents.</div>
-            <pre id="viewer-raw-pre" style="display:none;white-space:pre-wrap;word-break:break-word;font-family:'JetBrains Mono','Fira Code','SF Mono',monospace;font-size:11.5px;line-height:1.7;color:var(--text-2);margin:0;"></pre>
+            <pre id="viewer-raw-pre" style="display:none;white-space:pre-wrap;word-break:break-word;font-family:var(--mono);font-size:12px;line-height:1.7;color:var(--text-2);margin:0;"></pre>
           </div>
         </div>
         <div class="review-panel">
@@ -637,9 +646,11 @@
 <div id="toast-container"></div>
 
 <!-- inline markdown parser (no external deps) -->
-<!-- FORGE_DASHBOARD_SCRIPT:01-dashboard.js -->
+<script><!-- FORGE_DASHBOARD_SCRIPT:01-dashboard.js --></script>
 
-<!-- FORGE_DASHBOARD_SCRIPT:02-dashboard.js -->
+<script><!-- FORGE_DASHBOARD_SCRIPT:02-dashboard.js --></script>
+
+<script><!-- FORGE_DASHBOARD_SCRIPT:03-dashboard.js --></script>
 
 <!-- Monaco Code Editor Modal -->
 <div id="code-editor-modal" style="display:none;position:fixed;inset:0;z-index:9000;flex-direction:column;background:#1e1e1e;">
@@ -682,5 +693,114 @@
   </div>
 </div>
 
+<script>
+  // macOS hiddenInset: traffic lights float over content — add padding to clear them
+  if (navigator.userAgent.includes('Macintosh')) document.body.classList.add('mac')
+</script>
+
+<script>
+// LaserFlow WebGL dot-matrix particle field
+(function() {
+  const canvas = document.getElementById('projects-webgl');
+  if (!canvas) return;
+  const gl = canvas.getContext('webgl', { alpha: true, antialias: false, premultipliedAlpha: false });
+  if (!gl) return;
+
+  const VERT = `
+    attribute vec2 a_pos;
+    uniform vec2 u_resolution;
+    uniform float u_time;
+    uniform vec2 u_mouse;
+    void main() {
+      vec2 drift = (u_mouse - 0.5) * 0.015;
+      vec2 pos = a_pos + drift;
+      vec2 clip = (pos / u_resolution) * 2.0 - 1.0;
+      gl_Position = vec4(clip * vec2(1,-1), 0, 1);
+      float pulse = 0.5 + 0.5 * sin(u_time * 0.6 + a_pos.x * 0.003 + a_pos.y * 0.003);
+      gl_PointSize = 1.5 + pulse * 1.2;
+    }
+  `;
+  const FRAG = `
+    precision mediump float;
+    uniform float u_time;
+    void main() {
+      vec2 c = gl_PointCoord - 0.5;
+      float d = length(c);
+      if (d > 0.5) discard;
+      float alpha = 0.12 + 0.18 * (0.5 + 0.5 * sin(u_time * 0.4));
+      alpha *= smoothstep(0.5, 0.1, d) * 0.9;
+      gl_FragColor = vec4(0.29, 0.87, 0.50, alpha);
+    }
+  `;
+
+  function compile(type, src) {
+    const sh = gl.createShader(type);
+    gl.shaderSource(sh, src); gl.compileShader(sh); return sh;
+  }
+  const prog = gl.createProgram();
+  gl.attachShader(prog, compile(gl.VERTEX_SHADER, VERT));
+  gl.attachShader(prog, compile(gl.FRAGMENT_SHADER, FRAG));
+  gl.linkProgram(prog);
+  gl.useProgram(prog);
+
+  const uRes = gl.getUniformLocation(prog, 'u_resolution');
+  const uTime = gl.getUniformLocation(prog, 'u_time');
+  const uMouse = gl.getUniformLocation(prog, 'u_mouse');
+  const aPos = gl.getAttribLocation(prog, 'a_pos');
+
+  let pts = [], mouse = { x: 0.5, y: 0.5 };
+  const buf = gl.createBuffer();
+
+  function buildGrid(w, h) {
+    pts = [];
+    const gap = 28;
+    for (let x = gap; x < w; x += gap)
+      for (let y = gap; y < h; y += gap)
+        pts.push(x, y);
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(pts), gl.STATIC_DRAW);
+  }
+
+  function resize() {
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = window.innerWidth * dpr;
+    canvas.height = window.innerHeight * dpr;
+    canvas.style.width = window.innerWidth + 'px';
+    canvas.style.height = window.innerHeight + 'px';
+    gl.viewport(0, 0, canvas.width, canvas.height);
+    buildGrid(canvas.width, canvas.height);
+  }
+  resize();
+  window.addEventListener('resize', resize);
+  window.addEventListener('mousemove', e => {
+    mouse.x = e.clientX / window.innerWidth;
+    mouse.y = e.clientY / window.innerHeight;
+  });
+
+  let raf = null;
+  function draw(t) {
+    raf = requestAnimationFrame(draw);
+    gl.clearColor(0, 0, 0, 0);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+    gl.uniform2f(uRes, canvas.width, canvas.height);
+    gl.uniform1f(uTime, t * 0.001);
+    gl.uniform2f(uMouse, mouse.x, mouse.y);
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+    gl.enableVertexAttribArray(aPos);
+    gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 0, 0);
+    gl.drawArrays(gl.POINTS, 0, pts.length / 2);
+  }
+
+  function startWebGL() { if (!raf) draw(0); canvas.style.opacity = '1'; }
+  function stopWebGL() {
+    if (raf) { cancelAnimationFrame(raf); raf = null; }
+    canvas.style.opacity = '0';
+  }
+
+  window.__webglControl = { start: startWebGL, stop: stopWebGL };
+})();
+</script>
 </body>
 </html>

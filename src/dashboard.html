@@ -6,38 +6,62 @@
 <title>Forge OS</title>
 <style>
 :root {
-  --bg: #0a0c0f;
-  --bg-1: #111318;
-  --bg-2: #181b22;
-  --bg-3: #1f2330;
-  --border: #252b38;
-  --border-light: #2e3548;
-  --text: #e2e8f5;
-  --text-2: #8892a4;
-  --text-3: #525d70;
-  --blue: #3b82f6;
-  --blue-dim: #1d3d7a;
-  --green: #22c55e;
-  --green-dim: #14532d;
-  --amber: #f59e0b;
-  --amber-dim: #78350f;
-  --red: #ef4444;
-  --red-dim: #7f1d1d;
-  --purple: #a855f7;
-  --purple-dim: #4c1d95;
+  --primary: #4ADE80;
+  --primary-soft: #6EE79A;
+  --primary-deep: #22C55E;
+  --primary-dim: rgba(74,222,128,0.14);
+  --on-primary: #000000;
+  --blue: #0EA5E9;
+  --blue-dim: rgba(14,165,233,0.14);
+  --green: #4ADE80;
+  --green-dim: rgba(74,222,128,0.14);
+  --amber: #F59E0B;
+  --amber-dim: rgba(245,158,11,0.16);
+  --red: #F87171;
+  --red-dim: rgba(248,113,113,0.14);
+  --purple: #4ADE80;
+  --purple-dim: rgba(74,222,128,0.14);
+  --canvas: #060D06;
+  --canvas-dark: #060D06;
+  --canvas-light: #0F1A0F;
+  --surface-soft: rgba(255,255,255,0.04);
+  --surface-card: rgba(255,255,255,0.04);
+  --surface-deep: rgba(0,0,0,0.4);
+  --surface-elevated: rgba(255,255,255,0.05);
+  --bg: #060D06;
+  --bg-1: #0A140A;
+  --bg-2: rgba(255,255,255,0.04);
+  --bg-3: rgba(255,255,255,0.08);
+  --border: rgba(255,255,255,0.08);
+  --border-light: rgba(255,255,255,0.06);
+  --text: #ffffff;
+  --text-2: rgba(255,255,255,0.7);
+  --text-3: rgba(255,255,255,0.38);
+  --hairline: rgba(255,255,255,0.08);
+  --hairline-dark: rgba(255,255,255,0.08);
+  --hairline-strong: rgba(255,255,255,0.2);
+  --hairline-dashed: rgba(255,255,255,0.1);
   --nav-w: 220px;
-  --topbar-h: 52px;
-  --r: 6px;
+  --topbar-h: 56px;
+  --r: 12px;
+  --r-card: 24px;
+  --r-pill: 9999px;
+  --display-font: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --mono: "SFMono-Regular", "SF Mono", Menlo, Monaco, Consolas, "Liberation Mono", monospace;
   --trans: 0.15s ease;
+  --glass-blur: blur(12px);
+  --glass-blur-sm: blur(4px);
 }
 *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
 html, body { height: 100%; overflow: hidden; }
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
+  font-family: var(--display-font);
   background: var(--bg);
   color: var(--text);
-  font-size: 13px;
+  font-size: 14px;
+  font-weight: 400;
   line-height: 1.5;
+  font-feature-settings: "calt" 1, "rlig" 1;
   display: flex;
   flex-direction: column;
 }
@@ -45,8 +69,10 @@ body {
 /* TOPBAR */
 #topbar {
   height: var(--topbar-h);
-  background: var(--bg-1);
-  border-bottom: 1px solid var(--border);
+  background: rgba(6,13,6,0.88);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border-bottom: 1px solid rgba(74,222,128,0.15);
   display: flex;
   align-items: center;
   padding: 0 20px;
@@ -54,25 +80,34 @@ body {
   flex-shrink: 0;
   z-index: 100;
 }
+/* macOS hiddenInset: push topbar content right to clear traffic-light buttons (~72px) */
+body.mac #topbar { padding-left: 80px; }
 .logo {
-  font-weight: 700;
-  font-size: 15px;
-  letter-spacing: -0.02em;
-  color: var(--text);
+  font-weight: 600;
+  font-size: 14px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--on-primary);
   display: flex;
   align-items: center;
   gap: 8px;
   flex-shrink: 0;
 }
 .logo-icon {
-  width: 24px;
-  height: 24px;
-  background: linear-gradient(135deg, var(--blue), var(--purple));
-  border-radius: 5px;
+  width: 28px;
+  height: 28px;
+  background: var(--primary);
+  border: 1px solid var(--primary);
+  border-radius: var(--r-pill);
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #fff;
+  color: var(--on-primary);
+}
+.logo-icon svg {
+  display: block;
+  width: 16px;
+  height: 16px;
 }
 
 /* Phase stepper in topbar */
@@ -87,8 +122,10 @@ body {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 11px;
-  font-weight: 500;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
   color: var(--text-3);
   cursor: pointer;
   padding: 4px 8px;
@@ -96,7 +133,7 @@ body {
   transition: var(--trans);
 }
 .phase-step:hover { color: var(--text-2); }
-.phase-step.active { color: var(--blue); }
+.phase-step.active { color: var(--text); }
 .phase-step.done { color: var(--green); }
 .phase-dot {
   width: 7px;
@@ -105,7 +142,7 @@ body {
   background: var(--text-3);
   flex-shrink: 0;
 }
-.phase-step.active .phase-dot { background: var(--blue); box-shadow: 0 0 6px var(--blue); }
+.phase-step.active .phase-dot { background: var(--text); box-shadow: none; }
 .phase-step.done .phase-dot { background: var(--green); }
 .phase-arrow {
   color: var(--text-3);
@@ -121,8 +158,8 @@ body {
   font-size: 11px;
   font-weight: 600;
   padding: 4px 10px;
-  border-radius: 20px;
-  background: var(--bg-2);
+  border-radius: 999px;
+  background: var(--bg);
   border: 1px solid var(--border);
   color: var(--text-2);
   flex-shrink: 0;
@@ -149,8 +186,8 @@ body {
 /* SIDEBAR */
 #sidebar {
   width: var(--nav-w);
-  background: var(--bg-1);
-  border-right: 1px solid var(--border);
+  background: rgba(255,255,255,0.02);
+  border-right: 1px solid rgba(255,255,255,0.06);
   display: flex;
   flex-direction: column;
   padding: 12px 8px;
@@ -165,13 +202,16 @@ body {
   border-radius: var(--r);
   cursor: pointer;
   color: var(--text-2);
-  font-size: 13px;
-  font-weight: 500;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 1.1px;
+  text-transform: uppercase;
   transition: var(--trans);
   user-select: none;
+  border-left: 2px solid transparent;
 }
-.nav-item:hover { background: var(--bg-2); color: var(--text); }
-.nav-item.active { background: var(--blue-dim); color: var(--blue); }
+.nav-item:hover { background: rgba(255,255,255,0.05); color: var(--text); }
+.nav-item.active { background: rgba(74,222,128,0.1); color: #4ADE80; border-left: 2px solid #4ADE80; }
 .nav-icon {
   width: 16px;
   height: 16px;
@@ -230,9 +270,10 @@ body {
   flex-shrink: 0;
 }
 .view-title {
-  font-size: 16px;
+  font-size: 24px;
   font-weight: 700;
-  letter-spacing: -0.02em;
+  letter-spacing: 0;
+  text-transform: uppercase;
 }
 .view-subtitle { font-size: 12px; color: var(--text-2); margin-top: 2px; }
 
@@ -241,35 +282,40 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 7px 14px;
-  border-radius: var(--r);
-  border: none;
+  max-width: 100%;
+  min-width: 0;
+  min-height: 40px;
+  padding: 0 18px;
+  border-radius: 0;
+  border: 1px solid var(--text);
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
   cursor: pointer;
   transition: var(--trans);
   text-decoration: none;
   white-space: nowrap;
 }
 .btn:disabled { opacity: 0.4; cursor: not-allowed; }
-.btn-primary { background: var(--blue); color: #fff; }
-.btn-primary:hover:not(:disabled) { background: #2563eb; }
-.btn-secondary { background: var(--bg-3); color: var(--text); border: 1px solid var(--border); }
-.btn-secondary:hover:not(:disabled) { background: var(--border); }
-.btn-danger { background: var(--red-dim); color: var(--red); border: 1px solid var(--red-dim); }
-.btn-danger:hover:not(:disabled) { background: #5c1010; }
+.btn-primary { background: transparent; color: var(--text); }
+.btn-primary:hover:not(:disabled) { background: var(--text); color: var(--canvas); }
+.btn-secondary { background: transparent; color: var(--text); border: 1px solid var(--border); }
+.btn-secondary:hover:not(:disabled) { background: var(--surface-card); border-color: var(--text); }
+.btn-danger { background: transparent; color: var(--red); border: 1px solid var(--red); }
+.btn-danger:hover:not(:disabled) { background: var(--red); color: var(--text); }
 .btn-ghost { background: transparent; color: var(--text-2); border: 1px solid var(--border); }
 .btn-ghost:hover:not(:disabled) { background: var(--bg-2); color: var(--text); }
-.btn-sm { padding: 4px 10px; font-size: 11px; }
-.btn-xs { padding: 3px 8px; font-size: 10px; }
+.btn-sm { min-height: 32px; padding: 0 12px; font-size: 11px; }
+.btn-xs { min-height: 28px; padding: 0 10px; font-size: 10px; }
 .btn-icon { padding: 6px; width: 30px; height: 30px; justify-content: center; }
 .btn svg { flex-shrink: 0; }
 
 /* Cards */
 .card {
-  background: var(--bg-1);
+  background: var(--surface-card);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 0;
   padding: 16px;
 }
 .card-title {
@@ -277,7 +323,7 @@ body {
   font-weight: 600;
   color: var(--text-2);
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: 1.5px;
   margin-bottom: 8px;
 }
 
@@ -321,7 +367,7 @@ body {
 .badge-empty { background: var(--bg-3); color: var(--text-3); }
 .badge-in-progress { background: var(--blue-dim); color: var(--blue); }
 .badge-pr_created { background: var(--green-dim); color: var(--green); }
-.badge-merged { background: rgba(139,92,246,.15); color: #8b5cf6; }
+.badge-merged { background: var(--green-dim); color: var(--primary); }
 .badge-branched { background: var(--blue-dim); color: var(--blue); }
 
 .priority-critical { background: var(--red-dim); color: var(--red); }
@@ -549,7 +595,7 @@ body {
   outline: none;
   padding: 16px;
   color: var(--text);
-  font-family: 'JetBrains Mono', 'Fira Code', 'SF Mono', monospace;
+  font-family: var(--mono);
   font-size: 12px;
   line-height: 1.7;
   resize: none;
@@ -663,7 +709,7 @@ body {
   gap: 0;
 }
 .review-tree {
-  width: 260px;
+  width: 248px;
   flex-shrink: 0;
   border-right: 1px solid var(--border);
   display: flex;
@@ -726,6 +772,7 @@ body {
 .tree-file-dot.empty { background: var(--text-3); }
 
 .review-viewer {
+  min-width: 0;
   flex: 1;
   overflow: hidden;
   display: flex;
@@ -738,6 +785,8 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
   flex-shrink: 0;
 }
 .review-viewer-body {
@@ -799,11 +848,12 @@ body {
 }
 
 .review-panel {
-  width: 280px;
+  width: 312px;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
   overflow-y: auto;
+  overflow-x: hidden;
   padding: 14px;
   gap: 12px;
 }
@@ -834,6 +884,13 @@ body {
   gap: 4px;
 }
 .file-meta-row { display: flex; justify-content: space-between; }
+.file-meta-row span:last-child {
+  min-width: 0;
+  overflow: hidden;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .file-meta-key { color: var(--text-3); }
 #viewer-version-banner {
   display: none;
@@ -879,13 +936,13 @@ body {
   gap: 10px;
   margin-bottom: 8px;
 }
-.build-branch { font-size: 12px; font-weight: 600; font-family: monospace; color: var(--text); }
+.build-branch { font-size: 12px; font-weight: 600; font-family: var(--mono); color: var(--text); }
 .build-date { font-size: 10px; color: var(--text-3); margin-left: auto; }
 .build-log {
   background: var(--bg);
   border-radius: var(--r);
   padding: 10px;
-  font-family: monospace;
+  font-family: var(--mono);
   font-size: 10px;
   color: var(--text-3);
   max-height: 120px;
@@ -930,7 +987,7 @@ body {
   gap: 8px;
 }
 .env-url {
-  font-family: monospace;
+  font-family: var(--mono);
   font-size: 11px;
   color: var(--blue);
   word-break: break-all;
@@ -941,7 +998,7 @@ body {
 }
 .env-field { display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 6px; }
 .env-field-key { color: var(--text-2); }
-.env-field-val { color: var(--text); font-family: monospace; }
+.env-field-val { color: var(--text); font-family: var(--mono); }
 
 /* ===================== ISSUES VIEW ===================== */
 .issues-layout { display: flex; flex-direction: column; gap: 12px; }
@@ -972,7 +1029,7 @@ body {
   align-items: center;
   gap: 10px;
 }
-.issue-id { font-size: 10px; font-weight: 700; font-family: monospace; color: var(--text-3); }
+.issue-id { font-size: 10px; font-weight: 700; font-family: var(--mono); color: var(--text-3); }
 .issue-title { font-size: 13px; font-weight: 600; flex: 1; }
 .issue-body {
   margin-top: 12px;
@@ -1013,7 +1070,7 @@ body {
   color: var(--text);
   font-size: 13px;
   line-height: 1.8;
-  font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
+  font-family: var(--display-font);
   word-break: break-word;
 }
 .md-body > *:first-child { margin-top: 0 !important; }
@@ -1043,7 +1100,7 @@ body {
 
 /* Inline code */
 .md-body :not(pre) > code {
-  font-family: 'JetBrains Mono','Fira Code','SF Mono',monospace;
+  font-family: var(--mono);
   font-size: 0.855em;
   background: var(--bg-3);
   border: 1px solid var(--border);
@@ -1070,7 +1127,7 @@ body {
   border-bottom: 1px solid var(--border);
 }
 .md-code-lang {
-  font-family: 'JetBrains Mono',monospace;
+  font-family: var(--mono);
   font-size: 10px;
   font-weight: 600;
   color: var(--text-3);
@@ -1087,7 +1144,7 @@ body {
   background: none !important;
   border: none !important;
   padding: 0 !important;
-  font-family: 'JetBrains Mono','Fira Code','SF Mono',monospace;
+  font-family: var(--mono);
   font-size: 12px;
   color: #abb2bf;
   border-radius: 0 !important;
@@ -1149,8 +1206,8 @@ body {
 /* Raw mode toggle */
 #viewer-raw-pre {
   display: none;
-  font-family: 'JetBrains Mono','Fira Code','SF Mono',monospace;
-  font-size: 11.5px;
+  font-family: var(--mono);
+  font-size: 12px;
   line-height: 1.7;
   color: var(--text-2);
   white-space: pre-wrap;
@@ -1213,7 +1270,7 @@ body {
   background: var(--bg);
   border-radius: var(--r);
   padding: 10px;
-  font-family: monospace;
+  font-family: var(--mono);
   font-size: 10px;
   margin-top: 8px;
   white-space: pre;
@@ -1242,7 +1299,7 @@ body {
 .secrets-table tr:last-child td { border-bottom: none; }
 .secrets-table tr:hover td { background: var(--bg-2); }
 .secret-name {
-  font-family: monospace;
+  font-family: var(--mono);
   font-size: 11px;
   color: var(--text-1);
   font-weight: 600;
@@ -1265,7 +1322,7 @@ body {
   padding: 5px 8px;
   font-size: 11px;
   color: var(--text-1);
-  font-family: monospace;
+  font-family: var(--mono);
   width: 180px;
   outline: none;
 }
@@ -1288,8 +1345,997 @@ body {
   white-space: nowrap;
   min-width: 72px;
 }
+
+/* ============================================================
+   Projects — VS Code-inspired split layout
+   ============================================================ */
+.projects-shell {
+  flex: 1;
+  display: flex;
+  flex-direction: row;
+  overflow: hidden;
+  background: transparent;
+  position: relative;
+  z-index: 1;
+}
+
+/* ---- Sidebar ---- */
+.projects-sidebar {
+  width: 260px;
+  flex-shrink: 0;
+  background: var(--surface-elevated);
+  border-right: 1px solid var(--hairline-dark);
+  display: flex;
+  flex-direction: column;
+  padding: 24px 18px 20px;
+  overflow-y: auto;
+  gap: 0;
+}
+/* macOS: push sidebar content below traffic lights (hiddenInset titlebar) */
+body.mac .projects-sidebar {
+  padding-top: 52px;
+}
+/* macOS: hide topbar logo on projects page — sidebar carries the brand */
+body.mac.projects-mode #topbar .logo {
+  display: none;
+}
+.proj-sidebar-logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 28px;
+}
+.proj-sidebar-logo-mark {
+  width: 32px;
+  height: 32px;
+  background: var(--primary);
+  border-radius: var(--r-pill);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.proj-sidebar-logo-mark svg {
+  width: 16px;
+  height: 16px;
+  display: block;
+}
+.proj-sidebar-wordmark {
+  font-family: var(--display-font);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: .5px;
+  color: #ffffff;
+}
+.proj-new-btn {
+  width: 100%;
+  background: #4ADE80;
+  border: 1px solid rgba(74,222,128,0.4);
+  color: #000000;
+  border-radius: var(--r-pill);
+  font-size: 13px;
+  font-weight: 600;
+  padding: 12px 18px;
+  cursor: pointer;
+  transition: background var(--trans), border-color var(--trans), box-shadow var(--trans);
+  text-align: center;
+  letter-spacing: .24px;
+}
+.proj-new-btn:hover {
+  background: #6EE79A;
+  border-color: rgba(74,222,128,0.6);
+  box-shadow: 0 0 12px rgba(74,222,128,0.35);
+}
+.proj-name-input {
+  width: 100%;
+  background: var(--surface-deep);
+  border: 1px solid var(--hairline-dark);
+  color: #ffffff;
+  border-radius: var(--r);
+  padding: 10px 12px;
+  font-size: 13px;
+  outline: none;
+  margin-top: 10px;
+  transition: border-color var(--trans);
+}
+.proj-name-input::placeholder {
+  color: rgba(255,255,255,.36);
+}
+.proj-name-input:focus {
+  border-color: #4ADE80;
+  box-shadow: 0 0 0 3px rgba(74,222,128,0.18);
+}
+.proj-sidebar-divider {
+  height: 1px;
+  background: var(--hairline-dark);
+  margin: 22px 0;
+}
+.proj-sidebar-section-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: rgba(255,255,255,.42);
+  margin-bottom: 10px;
+}
+.proj-recent-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+}
+.proj-recent-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: background var(--trans);
+  border-left: 2px solid transparent;
+  position: relative;
+}
+.proj-recent-item:hover {
+  background: rgba(255,255,255,.07);
+}
+.proj-recent-item.is-active {
+  border-left-color: #4ADE80;
+  background: rgba(74,222,128,0.1);
+}
+.proj-recent-item-info {
+  min-width: 0;
+  flex: 1;
+}
+.proj-recent-item-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: #ffffff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.proj-recent-item-slug {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: rgba(255,255,255,.46);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.proj-recent-item-open {
+  opacity: 0;
+  background: var(--primary);
+  border: none;
+  color: #ffffff;
+  border-radius: var(--r-pill);
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: opacity var(--trans);
+  white-space: nowrap;
+}
+.proj-recent-item:hover .proj-recent-item-open {
+  opacity: 1;
+}
+.proj-sidebar-tabs {
+  display: flex;
+  gap: 4px;
+  margin-top: auto;
+  padding-top: 18px;
+  border-top: 1px solid var(--hairline-dark);
+}
+.proj-sidebar-tab {
+  flex: 1;
+  background: transparent;
+  border: 1px solid var(--hairline-dark);
+  color: rgba(255,255,255,.56);
+  border-radius: var(--r-pill);
+  padding: 7px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: center;
+  transition: background var(--trans), color var(--trans), border-color var(--trans);
+}
+.proj-sidebar-tab.active {
+  background: rgba(255,255,255,.1);
+  border-color: rgba(255,255,255,.24);
+  color: #ffffff;
+}
+.proj-sidebar-tab:hover:not(.active) {
+  color: rgba(255,255,255,.8);
+  border-color: rgba(255,255,255,.18);
+}
+
+/* ---- Main area ---- */
+.projects-main {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  padding: 40px 40px 64px;
+  display: flex;
+  flex-direction: column;
+}
+/* macOS: match topbar offset in main content */
+body.mac .projects-main {
+  padding-top: 52px;
+}
+.proj-main-topbar {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 20px;
+  border-bottom: 1px solid var(--hairline-dark);
+  padding-bottom: 20px;
+}
+.proj-main-title {
+  font-family: var(--display-font);
+  font-size: clamp(32px, 4vw, 52px);
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: -.5px;
+  color: #ffffff;
+}
+.proj-main-subtitle {
+  color: rgba(255,255,255,.44);
+  font-size: 13px;
+  margin-top: 6px;
+  max-width: 480px;
+}
+.proj-search-wrap {
+  flex-shrink: 0;
+  padding-top: 8px;
+}
+.projects-search {
+  background: var(--surface-elevated);
+  border: 1px solid var(--hairline-dark);
+  color: #ffffff;
+  border-radius: var(--r-pill);
+  padding: 10px 16px;
+  font-size: 13px;
+  outline: none;
+  width: 220px;
+  transition: border-color var(--trans);
+}
+.projects-search::placeholder {
+  color: rgba(255,255,255,.36);
+}
+.projects-search:focus {
+  border-color: #4ADE80;
+  box-shadow: 0 0 0 3px rgba(74,222,128,0.15);
+}
+.proj-stats-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+.proj-stat-chip {
+  background: var(--surface-elevated);
+  border: 1px solid var(--hairline-dark);
+  border-radius: var(--r-pill);
+  padding: 5px 14px;
+  font-size: 12px;
+  color: rgba(255,255,255,.72);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.proj-stat-chip strong {
+  color: #ffffff;
+  font-weight: 700;
+}
+.proj-stat-chip.active-chip {
+  border-color: rgba(74,222,128,0.4);
+  background: rgba(74,222,128,0.1);
+  color: rgba(255,255,255,.84);
+}
+.projects-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 14px;
+}
+.project-card {
+  background: var(--surface-elevated);
+  border: 1px solid var(--hairline-dark);
+  border-radius: var(--r-card);
+  padding: 18px;
+  min-width: 0;
+  transition: border-color var(--trans);
+}
+.project-card:hover {
+  border-color: rgba(255,255,255,.22);
+}
+.project-card.active {
+  border-color: #4ADE80;
+  background: rgba(74,222,128,0.06);
+}
+.project-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.project-name {
+  font-size: 14px;
+  font-weight: 700;
+  color: #ffffff;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.project-slug {
+  font-family: var(--mono);
+  color: rgba(255,255,255,.46);
+  font-size: 11px;
+  margin-top: 3px;
+}
+.project-meta-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.project-meta-item {
+  background: rgba(0,0,0,.32);
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 10px;
+  padding: 8px 10px;
+  min-width: 0;      /* allow grid cell to shrink below content size */
+}
+.project-meta-label {
+  color: rgba(255,255,255,.42);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+}
+.project-meta-value {
+  color: rgba(255,255,255,.78);
+  font-size: 11px;
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.project-path {
+  color: rgba(255,255,255,.32);
+  font-family: var(--mono);
+  font-size: 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-bottom: 12px;
+}
+.active-pill {
+  font-size: 10px;
+  border: 1px solid rgba(74,222,128,0.5);
+  color: #4ADE80;
+  background: rgba(74,222,128,0.12);
+  padding: 2px 8px;
+  border-radius: var(--r-pill);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.archive-pill {
+  font-size: 10px;
+  border: 1px solid var(--amber-dim);
+  color: var(--amber);
+  background: rgba(245,158,11,.12);
+  padding: 2px 8px;
+  border-radius: var(--r-pill);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.project-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.empty-projects {
+  padding: 64px 24px;
+  text-align: center;
+  color: rgba(255,255,255,.42);
+  border: 1px dashed rgba(255,255,255,.12);
+  border-radius: var(--r-card);
+}
+.empty-projects-title {
+  color: rgba(255,255,255,.72);
+  font-size: 15px;
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+/* panel-title / panel-copy used in other panels — keep generic */
+.panel-title {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+.panel-copy {
+  color: var(--text-2);
+  font-size: 12px;
+  margin-top: 5px;
+}
+/* project-field-label used in settings/create form */
+.project-field-label {
+  display: block;
+  color: var(--text-2);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  margin-bottom: 6px;
+}
+/* legacy project-input preserved for non-projects usage */
+.project-input {
+  width: 100%;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 10px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  outline: none;
+}
+.project-input:focus {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 3px rgba(73,79,223,.12);
+}
+.project-form-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+/* legacy project tabs — archived in sidebar now, but kept for safety */
+.project-tabs {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  border-radius: 6px;
+  padding: 2px;
+}
+.project-tab {
+  border: 0;
+  background: transparent;
+  color: var(--text-2);
+  border-radius: 4px;
+  padding: 6px 9px;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.project-tab.active {
+  background: var(--bg-3);
+  color: var(--text);
+}
+@media (max-width: 860px) {
+  .projects-shell {
+    flex-direction: column;
+  }
+  .projects-sidebar {
+    width: 100%;
+    max-height: 48vh;
+    border-right: none;
+    border-bottom: 1px solid var(--hairline-dark);
+  }
+  .projects-main {
+    padding: 28px 20px 48px;
+  }
+  .proj-main-title {
+    font-size: 40px;
+  }
+  .projects-search {
+    width: 100%;
+  }
+  .proj-main-topbar {
+    flex-direction: column;
+  }
+  .proj-search-wrap {
+    width: 100%;
+  }
+}
+
+/* LaserFlow design contract overrides */
+#topbar,
+#topbar .btn,
+#status-pill {
+  color: #ffffff;
+}
+#topbar-product-name {
+  color: rgba(255,255,255,.68) !important;
+  border-left-color: rgba(74,222,128,0.2) !important;
+}
+#btn-projects-home,
+#topbar .btn-secondary {
+  background: rgba(255,255,255,0.06);
+  border-color: rgba(255,255,255,0.12);
+  color: #ffffff;
+}
+#btn-projects-home:hover,
+#topbar .btn-secondary:hover {
+  background: rgba(255,255,255,0.12);
+  border-color: rgba(255,255,255,0.22);
+  color: #ffffff;
+}
+#status-pill {
+  background: transparent;
+  border-color: var(--hairline-dark);
+}
+.nav-item {
+  color: rgba(255,255,255,.72);
+}
+.nav-item:hover {
+  background: rgba(255,255,255,.05);
+  color: #ffffff;
+}
+.nav-item.active {
+  background: rgba(74,222,128,0.1);
+  color: #4ADE80;
+  border-left: 2px solid #4ADE80;
+}
+.nav-section-label {
+  color: rgba(255,255,255,.46);
+}
+.phase-step {
+  color: rgba(255,255,255,.52);
+}
+.phase-step.active,
+.phase-step.done {
+  color: #4ADE80;
+}
+.phase-step.active .phase-dot,
+.phase-step.done .phase-dot {
+  background: #4ADE80;
+}
+.pill-dot {
+  background: rgba(255,255,255,0.5);
+}
+.phase-arrow {
+  color: rgba(255,255,255,.42);
+}
+#main,
+.view,
+.view-body,
+.view-header {
+  background: var(--canvas-light);
+  color: var(--text);
+}
+.view-header {
+  border-bottom: 1px solid var(--hairline);
+}
+/* projects-shell dark theme is defined in the projects block above */
+/* LaserFlow system-wide surface overrides for non-projects views */
+.project-field-label,
+.project-meta-label,
+.card-title,
+.quick-actions h3,
+.file-folder-header,
+.stage-group-header {
+  letter-spacing: .24px;
+  text-transform: none;
+  font-size: 13px;
+  font-weight: 600;
+}
+.view-title {
+  color: var(--text);
+  font-family: var(--display-font);
+  font-size: clamp(40px, 5vw, 64px);
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: -.64px;
+  text-transform: none;
+}
+.panel-copy,
+.view-subtitle,
+.empty-desc,
+#overview-guidance {
+  color: var(--text-2);
+  font-weight: 400;
+}
+.stat-card,
+.quick-actions,
+.lifecycle-stepper,
+.file-list-panel,
+.file-edit-panel,
+.stage-card,
+.build-history-item,
+.version-item,
+.file-meta-info,
+.toast,
+.settings-card,
+.env-card,
+.issue-form {
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: var(--r-card);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  box-shadow: none;
+  color: var(--text);
+}
+.stat-card:hover,
+.stage-card:hover {
+  border-color: rgba(74,222,128,0.3);
+  box-shadow: 0 0 10px rgba(74,222,128,0.08);
+}
+.tree-file-item.active,
+.file-item.active {
+  border-color: var(--primary);
+  background: rgba(74,222,128,0.08);
+  box-shadow: inset 4px 0 0 var(--primary);
+}
+.form-input,
+.form-select,
+.form-textarea,
+.search-input,
+#critique-textarea,
+#input-editor {
+  min-height: 48px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: var(--r);
+  color: #ffffff;
+  font-weight: 400;
+}
+.text-input,
+.form-input,
+.form-select {
+  min-height: 56px;
+}
+.form-input:focus,
+.form-select:focus,
+.form-textarea:focus,
+.search-input:focus,
+#critique-textarea:focus {
+  border-color: #4ADE80;
+  box-shadow: 0 0 0 3px rgba(74,222,128,0.15);
+}
+.project-tabs,
+.viewer-mode-toggle {
+  border-radius: var(--r-pill);
+  border-color: var(--hairline);
+  background: var(--surface-soft);
+}
+.project-tab,
+.toggle-btn {
+  border-radius: var(--r-pill);
+  letter-spacing: .24px;
+  text-transform: none;
+}
+.project-tab.active,
+.toggle-btn.active {
+  background: rgba(74,222,128,0.15);
+  color: #4ADE80;
+}
+.active-pill,
+.archive-pill,
+.badge {
+  border-radius: var(--r-pill);
+  background: var(--surface-soft);
+  letter-spacing: 0;
+}
+.active-pill,
+.badge-passed,
+.badge-reviewed,
+.badge-pushed {
+  border-color: var(--green);
+  color: var(--green);
+}
+.archive-pill,
+.badge-running,
+.badge-needs-review,
+.badge-open {
+  border-color: var(--amber);
+  color: var(--amber);
+}
+.badge-secret,
+.badge-error,
+.badge-failed {
+  border-color: var(--red);
+  color: var(--red);
+}
+.btn {
+  min-height: 48px;
+  border-radius: var(--r-pill);
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: .24px;
+  text-transform: none;
+  padding: 0 24px;
+}
+.btn-primary {
+  background: #4ADE80;
+  border-color: rgba(74,222,128,0.4);
+  color: #000000;
+}
+.btn-primary:hover:not(:disabled) {
+  background: #6EE79A;
+  border-color: rgba(74,222,128,0.6);
+  color: #000000;
+  box-shadow: 0 0 12px rgba(74,222,128,0.4);
+}
+.projects-shell .btn-primary {
+  background: #4ADE80;
+  border-color: rgba(74,222,128,0.4);
+  color: #000000;
+}
+.projects-shell .btn-primary:hover {
+  background: #6EE79A;
+  border-color: rgba(74,222,128,0.6);
+  color: #000000;
+  box-shadow: 0 0 12px rgba(74,222,128,0.4);
+}
+.projects-shell .btn-secondary {
+  background: rgba(255,255,255,0.06);
+  border-color: rgba(255,255,255,0.12);
+  color: rgba(255,255,255,.84);
+}
+.projects-shell .btn-secondary:hover {
+  background: rgba(255,255,255,.1);
+  border-color: rgba(255,255,255,.22);
+  color: #ffffff;
+}
+.projects-shell .btn-danger {
+  background: rgba(248,113,113,0.1);
+  border-color: rgba(248,113,113,0.3);
+  color: var(--red);
+}
+.projects-shell .btn-danger:hover {
+  background: rgba(248,113,113,0.2);
+  border-color: var(--red);
+  color: #ffffff;
+}
+.btn-secondary,
+.btn-ghost {
+  background: rgba(255,255,255,0.06);
+  border-color: rgba(255,255,255,0.12);
+  color: var(--text);
+}
+.btn-secondary:hover:not(:disabled),
+.btn-ghost:hover:not(:disabled) {
+  background: rgba(255,255,255,0.1);
+  border-color: rgba(255,255,255,0.2);
+  color: var(--text);
+}
+.btn-danger {
+  background: rgba(248,113,113,0.1);
+  border-color: rgba(248,113,113,0.3);
+  color: var(--red);
+}
+.btn-danger:hover:not(:disabled) {
+  background: rgba(248,113,113,0.2);
+  border-color: var(--red);
+  color: #ffffff;
+}
+.btn-sm {
+  min-height: 40px;
+  font-size: 14px;
+  padding: 0 18px;
+}
+.btn-xs {
+  min-height: 36px;
+  font-size: 13px;
+  padding: 0 14px;
+}
+.review-layout,
+.review-tree,
+.review-viewer,
+.review-panel,
+.review-viewer-body {
+  background: var(--canvas-light);
+  color: var(--text);
+}
+.review-tree,
+.review-viewer,
+.review-viewer-header {
+  border-color: var(--hairline);
+}
+.review-tree {
+  width: 248px;
+}
+.review-viewer {
+  min-width: 0;
+}
+.review-viewer-header {
+  gap: 12px;
+  min-width: 0;
+}
+.review-panel {
+  width: 312px;
+  overflow-x: hidden;
+}
+.stage-group-header {
+  background: var(--canvas-light);
+  color: var(--text-3);
+}
+.tree-file-item {
+  color: var(--text-2);
+}
+.tree-file-item:hover {
+  background: rgba(255,255,255,0.04);
+  color: var(--text);
+}
+.tree-file-item.active {
+  color: var(--primary);
+  background: rgba(74,222,128,0.08);
+}
+#viewer-content,
+.md-body p,
+.md-body li,
+.md-body td {
+  color: var(--text-2);
+}
+.md-body h1,
+.md-body h2,
+.md-body h3,
+.md-body h4,
+.md-body strong {
+  color: var(--text);
+}
+.md-code-block,
+#viewer-raw-pre,
+.code-block,
+.build-log {
+  background: rgba(0,0,0,0.4);
+  color: #ffffff;
+}
+.review-panel .btn {
+  height: auto;
+  justify-content: center;
+  line-height: 1.2;
+  min-height: 40px;
+  padding: 8px 14px;
+  text-align: center;
+  white-space: nowrap;
+}
+.review-panel #btn-fix-regenerate {
+  font-size: 13px;
+  letter-spacing: .24px;
+}
+.review-panel .btn svg {
+  flex: 0 0 auto;
+}
+.review-viewer-header #viewer-filename {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.review-viewer-header > div {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+  min-width: 0;
+}
+.review-viewer-header .btn,
+.review-viewer-header .toggle-btn {
+  white-space: nowrap;
+}
+.file-meta-row span:last-child {
+  min-width: 0;
+  overflow: hidden;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.progress-bar,
+.progress-fill {
+  border-radius: var(--r-pill);
+}
+.progress-fill {
+  background: var(--primary);
+}
+.phase-dot,
+.tree-file-dot,
+.pill-dot,
+.step-circle,
+.fix-overlay-spinner {
+  border-radius: var(--r-pill);
+}
+.step-circle {
+  background: rgba(255,255,255,0.06);
+  border: 1px solid var(--hairline);
+}
+.lifecycle-step.active .step-circle {
+  background: rgba(74,222,128,0.15);
+  border-color: #4ADE80;
+  color: #4ADE80;
+  box-shadow: 0 0 10px rgba(74,222,128,0.3);
+}
+.lifecycle-step.done .step-circle {
+  background: rgba(74,222,128,0.1);
+  border-color: var(--green);
+  color: var(--green);
+}
+.stage-name,
+.project-name {
+  letter-spacing: 0;
+  text-transform: none;
+}
+.stage-card.running {
+  border-color: var(--amber);
+  background: rgba(245,158,11,0.05);
+  box-shadow: none;
+}
+.stage-card.reviewed {
+  border-color: rgba(74,222,128,0.4);
+  background: rgba(74,222,128,0.04);
+}
+.stage-card.error {
+  border-color: var(--red);
+  background: rgba(248,113,113,0.04);
+}
+.code-block,
+.code-line,
+.file-path,
+.version-hash,
+.stat-value,
+.project-path,
+.project-meta-value,
+.toast {
+  font-family: var(--mono);
+}
+.stat-value,
+.projects-summary-value {
+  color: var(--text);
+}
+.projects-shell .projects-summary-value {
+  color: #ffffff;
+}
+.project-path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.divider {
+  background: var(--hairline);
+}
+#toast-container {
+  bottom: 24px;
+  right: 24px;
+}
+.toast {
+  font-weight: 400;
+  background: rgba(15,26,15,0.95);
+  border-color: rgba(255,255,255,0.08);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+}
+@media (max-width: 1024px) {
+  #phase-stepper {
+    display: none !important;
+  }
+  .review-layout {
+    grid-template-columns: 1fr;
+  }
+}
+@media (max-width: 768px) {
+  .projects-workspace {
+    padding: 64px 20px 88px;
+  }
+  .projects-title {
+    font-size: 48px;
+  }
+  #topbar {
+    padding: 0 12px;
+    gap: 12px;
+  }
+  .review-panel .btn {
+    white-space: normal;
+  }
+}
+
 </style>
-<script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.52.0/min/vs/loader.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/monaco-editor@0.52.0/min/vs/loader.js"></script>
 </head>
 <body>
 
@@ -1297,8 +2343,14 @@ body {
 <div id="topbar">
   <div class="logo">
     <div class="logo-icon">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-        <path d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z"/>
+      <!-- F mark — matches electron/assets/icon.svg, no background (logo-icon provides it) -->
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+        <rect x="6"   y="4.5" width="3"  height="15"  rx="0.5" fill="currentColor"/>
+        <rect x="6"   y="4.5" width="12" height="2.8"  rx="0.5" fill="currentColor"/>
+        <rect x="6"   y="12"  width="9"  height="2.5"  rx="0.5" fill="currentColor"/>
+        <path transform="translate(18.5,5.1)"
+          d="M0,-1.6 C.22,-.52 .52,-.22 1.6,0 C.52,.22 .22,.52 0,1.6 C-.22,.52 -.52,.22 -1.6,0 C-.52,-.22 -.22,-.52 0,-1.6Z"
+          fill="currentColor" opacity="0.85"/>
       </svg>
     </div>
     Forge OS
@@ -1309,6 +2361,8 @@ body {
     <!-- rendered by JS -->
   </div>
 
+  <button id="btn-projects-home" class="btn btn-secondary btn-sm" onclick="openProjectsHome()">Projects</button>
+
   <div id="status-pill">
     <div class="pill-dot"></div>
     <span id="status-text">Idle</span>
@@ -1316,7 +2370,12 @@ body {
 </div>
 
 
+<!-- WebGL particle field background for Projects page -->
+<canvas id="projects-webgl" style="position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:0;opacity:0;transition:opacity 0.6s ease;" aria-hidden="true"></canvas>
+
 <!-- App layout -->
+<div id="projects-shell" class="projects-shell"></div>
+
 <div id="app">
   <!-- Sidebar -->
   <nav id="sidebar">
@@ -1372,14 +2431,6 @@ body {
         </svg>
       </span>
       <span class="nav-label">Deploy</span>
-    </div>
-    <div class="nav-item" id="nav-knowledge" data-view="knowledge" onclick="switchView('knowledge')" style="display:none">
-      <span class="nav-icon">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0018 18a8.967 8.967 0 00-6 2.292m0-14.25v14.25"/>
-        </svg>
-      </span>
-      <span class="nav-label">Knowledge</span>
     </div>
     <div class="nav-section-label">Manage</div>
     <div class="nav-item" data-view="issues" onclick="switchView('issues')">
@@ -1459,7 +2510,7 @@ body {
             </div>
             <div id="input-editor-container" style="display:none;flex:1;flex-direction:column;height:100%;">
               <div class="file-edit-header">
-                <span id="editing-filename" style="font-size:12px;font-weight:600;font-family:monospace;color:var(--text);">untitled.md</span>
+                <span id="editing-filename" style="font-size:12px;font-weight:600;font-family:var(--mono);color:var(--text);">untitled.md</span>
                 <div style="display:flex;gap:8px;">
                   <button class="btn btn-danger btn-sm" onclick="deleteCurrentFile()">Delete</button>
                   <button class="btn btn-primary btn-sm" onclick="saveCurrentFile()">Save</button>
@@ -1496,7 +2547,6 @@ body {
             <span id="generate-error-text" style="flex:1;"></span>
             <button class="btn btn-ghost btn-sm" onclick="dismissGenerationError()" style="padding:2px 8px;font-size:10px;color:var(--red);border-color:var(--red-dim);">Dismiss</button>
           </div>
-          <div id="org-context-bar" style="display:none;align-items:center;gap:6px;font-size:12px;margin-top:4px;"></div>
         </div>
         <div class="stage-grid" id="stage-grid"></div>
       </div>
@@ -1513,7 +2563,7 @@ body {
         </div>
         <div class="review-viewer">
           <div class="review-viewer-header">
-            <span id="viewer-filename" style="font-size:12px;font-weight:600;font-family:monospace;color:var(--text-2);">Select a file</span>
+            <span id="viewer-filename" style="font-size:12px;font-weight:600;font-family:var(--mono);color:var(--text-2);">Select a file</span>
             <div style="display:flex;gap:8px;align-items:center;">
               <div class="viewer-mode-toggle" id="viewer-mode-toggle" style="display:none;">
                 <button class="toggle-btn active" id="btn-mode-rendered" onclick="setViewerMode('rendered')">Rendered</button>
@@ -1536,10 +2586,10 @@ body {
             <div id="viewer-fix-overlay">
               <div class="fix-overlay-spinner"></div>
               <div style="font-size:12px;color:var(--amber);font-weight:600;">Regenerating</div>
-              <div id="viewer-fix-filename" style="font-size:10px;color:var(--text-3);font-family:monospace;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></div>
+              <div id="viewer-fix-filename" style="font-size:10px;color:var(--text-3);font-family:var(--mono);max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></div>
             </div>
             <div id="viewer-content" class="md-body">Select a file from the tree to review its contents.</div>
-            <pre id="viewer-raw-pre" style="display:none;white-space:pre-wrap;word-break:break-word;font-family:'JetBrains Mono','Fira Code','SF Mono',monospace;font-size:11.5px;line-height:1.7;color:var(--text-2);margin:0;"></pre>
+            <pre id="viewer-raw-pre" style="display:none;white-space:pre-wrap;word-break:break-word;font-family:var(--mono);font-size:12px;line-height:1.7;color:var(--text-2);margin:0;"></pre>
           </div>
         </div>
         <div class="review-panel">
@@ -1566,14 +2616,6 @@ body {
           <div class="review-panel-section">
             <div class="review-panel-label">Gates</div>
             <div id="review-gates-summary"></div>
-          </div>
-          <div id="review-distill-section" style="display:none;">
-            <div class="divider"></div>
-            <div class="review-panel-section">
-              <div class="review-panel-label">Distil to Org KB</div>
-              <div style="font-size:11px;color:var(--text-3);margin-bottom:8px;">Extract reusable patterns from reviewed stages and save them to your org knowledge base.</div>
-              <div id="review-distill-buttons" style="display:flex;flex-direction:column;gap:6px;"></div>
-            </div>
           </div>
           <div class="divider"></div>
           <div class="review-panel-section">
@@ -1654,30 +2696,6 @@ body {
       </div>
     </div>
 
-    <!-- KNOWLEDGE -->
-    <div class="view" id="view-knowledge">
-      <div class="view-header">
-        <div>
-          <div class="view-title">Knowledge Base</div>
-          <div class="view-subtitle" id="knowledge-subtitle">Distilled patterns from reviewed projects</div>
-        </div>
-      </div>
-      <div class="view-body">
-        <div id="knowledge-pr-banner" style="display:none;margin-bottom:14px;padding:12px 16px;border-radius:8px;border:1px solid var(--border);background:var(--bg-1);font-size:12px;"></div>
-        <div id="knowledge-empty" style="display:none;text-align:center;padding:48px 0;color:var(--text-3);font-size:13px;">
-          No knowledge entries yet. Approve a stage in Review and click "Distill to Org KB".
-        </div>
-        <div id="knowledge-list" style="display:grid;gap:10px;"></div>
-        <div id="knowledge-viewer" style="display:none;margin-top:20px;">
-          <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
-            <button class="btn btn-ghost btn-sm" onclick="closeKnowledgeViewer()">← Back</button>
-            <span id="knowledge-viewer-title" style="font-size:12px;font-family:monospace;color:var(--text-2);"></span>
-          </div>
-          <div id="knowledge-viewer-content" class="md-body" style="border:1px solid var(--border);border-radius:8px;padding:20px;"></div>
-        </div>
-      </div>
-    </div>
-
     <!-- ISSUES -->
     <div class="view" id="view-issues">
       <div class="view-header">
@@ -1740,37 +2758,6 @@ body {
         <button class="btn btn-primary btn-sm" onclick="saveSettings()">Save Settings</button>
       </div>
       <div class="view-body">
-        <!-- Profile -->
-        <div style="background:var(--bg-1);border:1px solid var(--border);border-radius:8px;padding:18px;margin-bottom:16px;">
-          <div style="font-size:13px;font-weight:700;margin-bottom:16px;display:flex;align-items:center;gap:8px;color:var(--text);">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-2)" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z"/>
-            </svg>
-            Profile
-          </div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
-            <div class="form-group" style="margin-bottom:0;">
-              <label class="form-label">Role</label>
-              <select class="form-select" id="settings-role">
-                <option value="admin">Admin</option>
-                <option value="member">Member</option>
-              </select>
-            </div>
-            <div class="form-group" style="margin-bottom:0;">
-              <label class="form-label">Department</label>
-              <select class="form-select" id="settings-department">
-                <option value="all">All (no filter)</option>
-                <option value="product">Product</option>
-                <option value="design">Design</option>
-                <option value="engineering">Engineering</option>
-                <option value="operations">Operations</option>
-                <option value="marketing">Marketing</option>
-              </select>
-            </div>
-          </div>
-          <div style="font-size:11px;color:var(--text-3);margin-top:10px;">Members see only their department's stages in Generate and Review. Admins see everything.</div>
-        </div>
-
         <!-- Project -->
         <div style="background:var(--bg-1);border:1px solid var(--border);border-radius:8px;padding:18px;margin-bottom:16px;">
           <div style="font-size:13px;font-weight:700;margin-bottom:16px;display:flex;align-items:center;gap:8px;color:var(--text);">
@@ -1779,25 +2766,9 @@ body {
             </svg>
             Project
           </div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px;">
-            <div class="form-group" style="margin-bottom:0;">
-              <label class="form-label">Product Name</label>
-              <input type="text" class="form-input" id="settings-product-name" placeholder="e.g. Acme SaaS, MyApp, Project Atlas">
-            </div>
-            <div class="form-group" style="margin-bottom:0;">
-              <label class="form-label">Project Type</label>
-              <select class="form-select" id="settings-project-type">
-                <option value="standard">Standard Project</option>
-                <option value="knowledge_base">Knowledge Base</option>
-              </select>
-            </div>
-          </div>
-          <div id="settings-org-context-row" style="display:none;margin-top:0;padding-top:14px;border-top:1px solid var(--border);align-items:center;gap:10px;">
-            <input type="checkbox" id="settings-skip-org-context" style="width:14px;height:14px;cursor:pointer;accent-color:var(--accent);">
-            <div>
-              <div style="font-size:12px;font-weight:600;color:var(--text);">Disable org context for this project</div>
-              <div style="font-size:11px;color:var(--text-3);margin-top:1px;">When checked, knowledge and patterns from the org knowledge base will not be injected into generation prompts.</div>
-            </div>
+          <div class="form-group" style="margin-bottom:0;">
+            <label class="form-label">Product Name</label>
+            <input type="text" class="form-input" id="settings-product-name" placeholder="e.g. Acme SaaS, MyApp, Project Atlas">
           </div>
         </div>
 
@@ -1857,14 +2828,6 @@ body {
               <label class="form-label">Branch Prefix</label>
               <input type="text" class="form-input" id="settings-branch-prefix" placeholder="forge">
             </div>
-            <div class="form-group" style="margin-bottom:0;padding-top:14px;border-top:1px solid var(--border);">
-              <label class="form-label" style="display:flex;align-items:center;gap:6px;">
-                Knowledge Base Repo URL
-                <span style="font-size:10px;color:var(--text-3);font-weight:400;">optional — for distillation PRs</span>
-              </label>
-              <input type="text" class="form-input" id="settings-kb-repo-url" placeholder="https://github.com/org/knowledge-base">
-              <div style="font-size:10px;color:var(--text-3);margin-top:4px;">Distilled patterns will be pushed as PRs to this repo. Branch protection on the KB repo controls who can merge.</div>
-            </div>
           </div>
 
           <!-- Staging -->
@@ -1907,8 +2870,8 @@ body {
         <!-- About -->
         <div style="background:var(--bg-1);border:1px solid var(--border);border-radius:8px;padding:14px 18px;margin-top:8px;display:flex;align-items:center;justify-content:space-between;">
           <div style="display:flex;align-items:center;gap:10px;">
-            <div style="width:28px;height:28px;background:linear-gradient(135deg,var(--blue),var(--purple));border-radius:5px;display:flex;align-items:center;justify-content:center;">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="white"><path d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z"/></svg>
+            <div style="width:28px;height:28px;background:var(--primary);border-radius:var(--r);display:flex;align-items:center;justify-content:center;">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="var(--on-primary)"><path d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z"/></svg>
             </div>
             <div>
               <div style="font-size:13px;font-weight:700;color:var(--text);">Forge OS</div>
@@ -2011,8 +2974,7 @@ body {
 <div id="toast-container"></div>
 
 <!-- inline markdown parser (no external deps) -->
-<script>
-function parseMarkdown(src) {
+<script>function parseMarkdown(src) {
   var e = function(s) {
     return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   };
@@ -2141,10 +3103,18 @@ function parseMarkdown(src) {
   }
   return out;
 }
+
+// Central fetch wrapper — injects X-Forge-Token on all requests
+function apiFetch(url, opts) {
+  opts = opts || {};
+  opts.headers = opts.headers || {};
+  const tok = window.__FORGE_TOKEN__;
+  if (tok) opts.headers['X-Forge-Token'] = tok;
+  return fetch(url, opts);
+}
 </script>
 
-<script>
-// ============================================================
+<script>// ============================================================
 // Icons
 // ============================================================
 const ICONS = {
@@ -2253,6 +3223,12 @@ function renderMarkdown(text) {
 // State
 // ============================================================
 let state = {};
+let projectsState = { projects: [], active_project_id: '', active_project: null };
+let appMode = 'projects';
+let projectSearchTerm = '';
+let projectDraftName = '';
+let projectListMode = 'active';
+let pendingDeleteProjectId = '';
 let currentView = 'overview';
 let currentInputFile = null;
 let currentReviewFile = null;
@@ -2271,28 +3247,6 @@ const PIPELINE_STAGE_ORDER = ['context','requirements','design','analysis','arch
 const PHASES = ['input', 'generate', 'review', 'build', 'deploy'];
 const PHASE_LABELS = { input: 'Input', generate: 'Generate', review: 'Review', build: 'Build', deploy: 'Deploy' };
 
-// Department → stage index mapping (matches server DEPARTMENTS dict)
-const DEPT_STAGES = {
-  all:         [0,1,2,3,4,5,6,7,8,9,10],
-  product:     [0,1],
-  design:      [2,3],
-  engineering: [4,5,6,7],
-  operations:  [8,9],
-  marketing:   [10],
-};
-const STAGE_ORDER = [
-  '00-context','01-requirements','02-design','03-analysis',
-  '04-architecture','05-delivery','06-engineering','07-quality',
-  '08-operations','09-release','10-marketing'
-];
-// Stages where "Distill" is applicable (have an associated gate)
-const DISTILLABLE_STAGES = {
-  'context':'context','requirements':'requirements','design':'design',
-  'analysis':'analysis','architecture':'architecture','delivery':'delivery',
-  'engineering':'engineering','qa':'qa','operations':'operations',
-  'release':'release','marketing':'marketing'
-};
-
 const STAGES = [
   { key: 'context', label: 'Context', dir: '00-context', desc: 'Product vision & market' },
   { key: 'requirements', label: 'Requirements', dir: '01-requirements', desc: 'BRD, PRD, metrics' },
@@ -2307,12 +3261,66 @@ const STAGES = [
   { key: 'marketing', label: 'Marketing', dir: '10-marketing', desc: 'GTM, positioning' },
 ];
 
+const PROJECT_UI_TEXT = {
+  eyebrow: 'Workspace Control Plane',
+  title: 'Projects',
+  subtitle: 'Create, open, and switch generated Forge projects from one top-level orchestrator workspace.',
+  totalProjects: 'Total Projects',
+  activeProject: 'Active Project',
+  createTitle: 'Create Project',
+  createCopy: 'Each project gets its own isolated runtime state under the workspace projects directory.',
+  projectNameLabel: 'Project Name',
+  projectNamePlaceholder: 'Task Flow',
+  createButton: 'Create Project',
+  listTitle: 'Project Directory',
+  listCopy: 'Open active projects or manage archived projects before permanent deletion.',
+  searchPlaceholder: 'Search projects',
+  emptyTitle: 'No projects yet',
+  emptyCopy: 'Create a project from the form on this page to start.',
+  emptyArchivedTitle: 'No archived projects',
+  emptyArchivedCopy: 'Archived projects stay recoverable here until you permanently delete them.',
+  noMatchesTitle: 'No matching projects',
+  noMatchesCopy: 'Clear the search field or create a new project.',
+  active: 'Active',
+  archived: 'Archived',
+  activeTab: 'Active',
+  archivedTab: 'Archived',
+  updated: 'Updated',
+  created: 'Created',
+  archivedAt: 'Archived',
+  openProject: 'Open Project',
+  archiveProject: 'Archive',
+  restoreProject: 'Restore',
+  deleteProject: 'Delete',
+  confirmDeleteProject: 'Confirm Delete',
+  cancelDelete: 'Cancel',
+  unnamed: 'Unnamed Project',
+  never: 'Never',
+  enterName: 'Enter a project name',
+  createFailed: 'Failed to create project',
+  createdToast: 'Project created',
+  openFailed: 'Failed to open project',
+  archiveFailed: 'Failed to archive project',
+  archivedToast: 'Project archived',
+  restoreFailed: 'Failed to restore project',
+  restoredToast: 'Project restored',
+  deleteFailed: 'Failed to delete project',
+  deletedToast: 'Project deleted',
+  projectsButton: 'Projects'
+};
+
 // ============================================================
 // Core
 // ============================================================
 async function loadState() {
   try {
-    const res = await fetch('/api/state');
+    await loadProjectsState();
+    renderProjectsHome();
+    if (appMode === 'projects') {
+      renderTopbar();
+      return;
+    }
+    const res = await apiFetch('/api/state');
     if (!res.ok) return;
     state = await res.json();
     renderAll();
@@ -2321,39 +3329,30 @@ async function loadState() {
   }
 }
 
+async function loadProjectsState() {
+  try {
+    const res = await apiFetch('/api/projects');
+    if (!res.ok) return;
+    projectsState = await res.json();
+  } catch (e) {
+    console.warn('Projects state fetch failed', e);
+  }
+}
+
 function renderAll() {
+  document.getElementById('projects-shell').style.display = 'none';
+  document.getElementById('app').style.display = 'flex';
   renderTopbar();
-  updateNavVisibility();
   renderOverview();
   renderInput();
   renderGenerate();
   renderReview();
   renderBuild();
   renderDeploy();
-  renderKnowledge();
   renderIssues();
   if (!runtimeInitialized) {
     renderSettings();
     runtimeInitialized = true;
-  }
-}
-
-function updateNavVisibility() {
-  const user = state.user || { role: 'admin', department: 'all' };
-  const projectType = state.project_type || 'standard';
-  const isKB = projectType === 'knowledge_base';
-
-  // Build/Deploy: hide for knowledge_base projects
-  document.querySelector('.nav-item[data-view="build"]').style.display = isKB ? 'none' : '';
-  document.querySelector('.nav-item[data-view="deploy"]').style.display = isKB ? 'none' : '';
-
-  // Knowledge: only show for knowledge_base projects
-  const navKnowledge = document.getElementById('nav-knowledge');
-  if (navKnowledge) navKnowledge.style.display = isKB ? '' : 'none';
-
-  // If we were on build/deploy and switched to KB, redirect to overview
-  if (isKB && (currentView === 'build' || currentView === 'deploy')) {
-    switchView('overview');
   }
 }
 
@@ -2362,14 +3361,361 @@ function startPolling() {
   pollInterval = setInterval(loadState, 3000);
 }
 
+function renderProjectsHome() {
+  const shell = document.getElementById('projects-shell');
+  if (!shell) return;
+  const projects = projectsState.projects || [];
+  const activeProjects = projects.filter((p) => (p.status || 'active') === 'active');
+  const archivedProjects = projects.filter((p) => p.status === 'archived');
+  const sourceProjects = projectListMode === 'archived' ? archivedProjects : activeProjects;
+  const normalizedSearch = projectSearchTerm.trim().toLowerCase();
+  const visibleProjects = normalizedSearch
+    ? sourceProjects.filter((p) => `${p.name || ''} ${p.slug || ''} ${p.path || ''}`.toLowerCase().includes(normalizedSearch))
+    : sourceProjects;
+  const activeId = projectsState.active_project_id || '';
+  const activeProject = activeProjects.find((p) => p.id === activeId);
+  const summaryActiveName = activeProject?.name || '';
+
+  // Sidebar recent list — show up to 8 rows from sourceProjects (no search filter)
+  const sidebarList = (projectListMode === 'archived' ? archivedProjects : activeProjects)
+    .slice(0, 8)
+    .map((p) => {
+      const isActive = p.id === activeId;
+      const isArchived = (p.status || 'active') === 'archived';
+      return `
+        <div class="proj-recent-item ${isActive ? 'is-active' : ''}" onclick="openProject('${escHtmlJs(p.id)}')">
+          <div class="proj-recent-item-info">
+            <div class="proj-recent-item-name" title="${escHtmlJs(p.name || PROJECT_UI_TEXT.unnamed)}">${escHtmlJs(p.name || PROJECT_UI_TEXT.unnamed)}</div>
+            <div class="proj-recent-item-slug">${escHtmlJs(p.slug || '')}</div>
+          </div>
+          ${!isArchived ? `<button class="proj-recent-item-open" onclick="event.stopPropagation();openProject('${escHtmlJs(p.id)}')">${PROJECT_UI_TEXT.openProject}</button>` : ''}
+        </div>
+      `;
+    }).join('');
+
+  // Main grid cards
+  const projectCards = visibleProjects.map((p) => {
+    const isActive = p.id === activeId;
+    const updated = formatProjectDate(p.updated_at);
+    const created = formatProjectDate(p.created_at);
+    const archivedAt = formatProjectDate(p.archived_at);
+    const isArchived = (p.status || 'active') === 'archived';
+    const isDeletePending = pendingDeleteProjectId === p.id;
+    return `
+      <div class="project-card ${isActive ? 'active' : ''}">
+        <div class="project-card-head">
+          <div style="min-width:0;">
+            <div class="project-name" title="${escHtmlJs(p.name || PROJECT_UI_TEXT.unnamed)}">${escHtmlJs(p.name || PROJECT_UI_TEXT.unnamed)}</div>
+            <div class="project-slug">${escHtmlJs(p.slug || '')}</div>
+          </div>
+          ${isActive ? `<span class="active-pill">${PROJECT_UI_TEXT.active}</span>` : ''}
+          ${isArchived ? `<span class="archive-pill">${PROJECT_UI_TEXT.archived}</span>` : ''}
+        </div>
+        <div class="project-meta-grid">
+          <div class="project-meta-item">
+            <div class="project-meta-label">${PROJECT_UI_TEXT.updated}</div>
+            <div class="project-meta-value" title="${escHtmlJs(updated)}">${escHtmlJs(updated)}</div>
+          </div>
+          <div class="project-meta-item">
+            <div class="project-meta-label">${PROJECT_UI_TEXT.created}</div>
+            <div class="project-meta-value" title="${escHtmlJs(created)}">${escHtmlJs(created)}</div>
+          </div>
+          ${isArchived ? `
+          <div class="project-meta-item">
+            <div class="project-meta-label">${PROJECT_UI_TEXT.archivedAt}</div>
+            <div class="project-meta-value" title="${escHtmlJs(archivedAt)}">${escHtmlJs(archivedAt)}</div>
+          </div>
+          ` : ''}
+        </div>
+        <div class="project-path" title="${escHtmlJs(p.path || '')}">${escHtmlJs(p.path || '')}</div>
+        <div class="project-card-actions">
+          ${isArchived ? `
+            <button class="btn btn-secondary btn-sm" onclick="restoreProject('${escHtmlJs(p.id)}')">${PROJECT_UI_TEXT.restoreProject}</button>
+            ${isDeletePending ? `
+              <button class="btn btn-danger btn-sm" onclick="deleteArchivedProject('${escHtmlJs(p.id)}')">${PROJECT_UI_TEXT.confirmDeleteProject}</button>
+              <button class="btn btn-secondary btn-sm" onclick="cancelDeleteProject()">${PROJECT_UI_TEXT.cancelDelete}</button>
+            ` : `
+              <button class="btn btn-danger btn-sm" onclick="requestDeleteProject('${escHtmlJs(p.id)}')">${PROJECT_UI_TEXT.deleteProject}</button>
+            `}
+          ` : `
+            <button class="btn btn-primary btn-sm" onclick="openProject('${escHtmlJs(p.id)}')">${PROJECT_UI_TEXT.openProject}</button>
+            <button class="btn btn-secondary btn-sm" onclick="archiveProject('${escHtmlJs(p.id)}')">${PROJECT_UI_TEXT.archiveProject}</button>
+          `}
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  const emptyState = sourceProjects.length
+    ? renderProjectsEmpty(PROJECT_UI_TEXT.noMatchesTitle, PROJECT_UI_TEXT.noMatchesCopy)
+    : projectListMode === 'archived'
+      ? renderProjectsEmpty(PROJECT_UI_TEXT.emptyArchivedTitle, PROJECT_UI_TEXT.emptyArchivedCopy)
+      : renderProjectsEmpty(PROJECT_UI_TEXT.emptyTitle, PROJECT_UI_TEXT.emptyCopy);
+
+  const statsActiveChip = activeProject
+    ? `<div class="proj-stat-chip active-chip"><strong>${escHtmlJs(activeProject.name)}</strong> &mdash; active</div>`
+    : '';
+
+  shell.innerHTML = `
+    <aside class="projects-sidebar">
+      <div class="proj-sidebar-logo">
+        <div class="proj-sidebar-logo-mark">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+            <path d="M2 17l10 5 10-5"/>
+            <path d="M2 12l10 5 10-5"/>
+          </svg>
+        </div>
+        <span class="proj-sidebar-wordmark">Forge OS</span>
+      </div>
+
+      <button class="proj-new-btn" onclick="(document.getElementById('project-create-name')?.value?.trim() ? createProjectFromHome() : document.getElementById('project-create-name')?.focus())">${PROJECT_UI_TEXT.createButton}</button>
+      <input
+        id="project-create-name"
+        class="proj-name-input"
+        value="${escHtmlJs(projectDraftName)}"
+        placeholder="${PROJECT_UI_TEXT.projectNamePlaceholder}"
+        oninput="onProjectDraftChange(this.value)"
+      />
+
+      <div class="proj-sidebar-divider"></div>
+      <div class="proj-sidebar-section-label">${projectListMode === 'archived' ? PROJECT_UI_TEXT.archivedTab : 'Recent Projects'}</div>
+
+      <div class="proj-recent-list">
+        ${sidebarList || `<div style="color:rgba(255,255,255,.36);font-size:12px;padding:8px 0;">${PROJECT_UI_TEXT.emptyTitle}</div>`}
+      </div>
+
+      <div class="proj-sidebar-tabs">
+        <button class="proj-sidebar-tab ${projectListMode === 'active' ? 'active' : ''}" onclick="setProjectListMode('active')">${PROJECT_UI_TEXT.activeTab} (${activeProjects.length})</button>
+        <button class="proj-sidebar-tab ${projectListMode === 'archived' ? 'active' : ''}" onclick="setProjectListMode('archived')">${PROJECT_UI_TEXT.archivedTab} (${archivedProjects.length})</button>
+      </div>
+    </aside>
+
+    <main class="projects-main">
+      <div class="proj-main-topbar">
+        <div>
+          <div class="proj-main-title">Projects</div>
+          <div class="proj-main-subtitle">${PROJECT_UI_TEXT.subtitle}</div>
+        </div>
+        <div class="proj-search-wrap">
+          <input id="project-search" class="projects-search" value="${escHtmlJs(projectSearchTerm)}" placeholder="${PROJECT_UI_TEXT.searchPlaceholder}" oninput="onProjectSearch(this.value)" />
+        </div>
+      </div>
+
+      <div class="proj-stats-row">
+        <div class="proj-stat-chip"><strong>${activeProjects.length}</strong>&nbsp;${activeProjects.length === 1 ? 'project' : 'projects'}</div>
+        ${statsActiveChip}
+        ${archivedProjects.length ? `<div class="proj-stat-chip">${archivedProjects.length} archived</div>` : ''}
+      </div>
+
+      ${visibleProjects.length ? `<div class="projects-grid">${projectCards}</div>` : emptyState}
+    </main>
+  `;
+  bindProjectHomeEvents();
+}
+
+function openProjectsHome() {
+  appMode = 'projects';
+  renderTopbar();
+  renderProjectsHome();
+}
+
+function renderProjectsEmpty(title, copy) {
+  return `
+    <div class="empty-projects">
+      <div class="empty-projects-title">${title}</div>
+      <div>${copy}</div>
+    </div>
+  `;
+}
+
+function bindProjectHomeEvents() {
+  document.getElementById('project-create-name')?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') createProjectFromHome();
+  });
+}
+
+function onProjectDraftChange(value) {
+  projectDraftName = value || '';
+}
+
+function onProjectSearch(value) {
+  projectSearchTerm = value || '';
+  renderProjectsHome();
+  const input = document.getElementById('project-search');
+  if (input) {
+    input.focus();
+    input.setSelectionRange(input.value.length, input.value.length);
+  }
+}
+
+function setProjectListMode(mode) {
+  projectListMode = mode === 'archived' ? 'archived' : 'active';
+  pendingDeleteProjectId = '';
+  renderProjectsHome();
+}
+
+function formatProjectDate(value) {
+  if (!value) return PROJECT_UI_TEXT.never;
+  try {
+    const d = new Date(value);
+    if (isNaN(d.getTime())) return PROJECT_UI_TEXT.never;
+    // Compact format: "16 May '26  01:49" — fits in narrow meta cells
+    const date = d.toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: '2-digit' });
+    const time = d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false });
+    return `${date}  ${time}`;
+  } catch (e) {
+    return PROJECT_UI_TEXT.never;
+  }
+}
+
+async function createProjectFromHome() {
+  const input = document.getElementById('project-create-name');
+  const name = (input?.value || '').trim();
+  if (!name) {
+    showToast(PROJECT_UI_TEXT.enterName, 'error');
+    return;
+  }
+  try {
+    const res = await apiFetch('/api/projects', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name })
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      showToast(data.error || PROJECT_UI_TEXT.createFailed, 'error');
+      return;
+    }
+    if (input) input.value = '';
+    projectDraftName = '';
+    await loadProjectsState();
+    renderProjectsHome();
+    showToast(PROJECT_UI_TEXT.createdToast, 'success');
+  } catch (e) {
+    showToast(PROJECT_UI_TEXT.createFailed, 'error');
+  }
+}
+
+async function openProject(projectId) {
+  try {
+    const res = await apiFetch('/api/projects/select', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ project_id: projectId })
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      showToast(data.error || PROJECT_UI_TEXT.openFailed, 'error');
+      return;
+    }
+    appMode = 'dashboard';
+    runtimeInitialized = false;
+    await loadState();
+  } catch (e) {
+    showToast(PROJECT_UI_TEXT.openFailed, 'error');
+  }
+}
+
+async function archiveProject(projectId) {
+  try {
+    const res = await apiFetch('/api/projects/archive', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ project_id: projectId })
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      showToast(data.error || PROJECT_UI_TEXT.archiveFailed, 'error');
+      return;
+    }
+    await loadProjectsState();
+    renderProjectsHome();
+    showToast(PROJECT_UI_TEXT.archivedToast, 'success');
+  } catch (e) {
+    showToast(PROJECT_UI_TEXT.archiveFailed, 'error');
+  }
+}
+
+async function restoreProject(projectId) {
+  try {
+    const res = await apiFetch('/api/projects/restore', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ project_id: projectId })
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      showToast(data.error || PROJECT_UI_TEXT.restoreFailed, 'error');
+      return;
+    }
+    pendingDeleteProjectId = '';
+    await loadProjectsState();
+    renderProjectsHome();
+    showToast(PROJECT_UI_TEXT.restoredToast, 'success');
+  } catch (e) {
+    showToast(PROJECT_UI_TEXT.restoreFailed, 'error');
+  }
+}
+
+function requestDeleteProject(projectId) {
+  pendingDeleteProjectId = projectId;
+  renderProjectsHome();
+}
+
+function cancelDeleteProject() {
+  pendingDeleteProjectId = '';
+  renderProjectsHome();
+}
+
+async function deleteArchivedProject(projectId) {
+  try {
+    const res = await apiFetch('/api/projects', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ project_id: projectId })
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      showToast(data.error || PROJECT_UI_TEXT.deleteFailed, 'error');
+      return;
+    }
+    pendingDeleteProjectId = '';
+    await loadProjectsState();
+    renderProjectsHome();
+    showToast(PROJECT_UI_TEXT.deletedToast, 'success');
+  } catch (e) {
+    showToast(PROJECT_UI_TEXT.deleteFailed, 'error');
+  }
+}
+
 // ============================================================
 // Topbar
 // ============================================================
 function renderTopbar() {
+  const stepper = document.getElementById('phase-stepper');
+  const pill = document.getElementById('status-pill');
+  const projectsBtn = document.getElementById('btn-projects-home');
+
+  if (appMode === 'projects') {
+    document.getElementById('projects-shell').style.display = 'flex';
+    document.getElementById('app').style.display = 'none';
+    stepper.style.display = 'none';
+    pill.style.display = 'none';
+    projectsBtn.style.display = 'none';
+    document.body.classList.add('projects-mode');
+    if (window.__webglControl) window.__webglControl.start();
+    return;
+  }
+
+  if (window.__webglControl) window.__webglControl.stop();
+  document.body.classList.remove('projects-mode');
+  stepper.style.display = 'flex';
+  pill.style.display = 'flex';
+  projectsBtn.style.display = 'inline-flex';
+
   const phase = state.phase || 'input';
   const phaseIdx = PHASES.indexOf(phase);
-
-  const stepper = document.getElementById('phase-stepper');
   stepper.innerHTML = PHASES.map((p, i) => {
     const cls = i < phaseIdx ? 'done' : (i === phaseIdx ? 'active' : '');
     const arrow = i < PHASES.length - 1 ? '<span class="phase-arrow">›</span>' : '';
@@ -2379,7 +3725,6 @@ function renderTopbar() {
       </span>${arrow}`;
   }).join('');
 
-  const pill = document.getElementById('status-pill');
   const statusText = document.getElementById('status-text');
   const processing = state.processing || {};
   const processingStatus = processing.status || 'idle';
@@ -2441,6 +3786,7 @@ function renderTopbar() {
   } else {
     badge.style.display = 'none';
   }
+
 }
 
 // ============================================================
@@ -2613,7 +3959,7 @@ async function openInputFile(name) {
   renderInput(); // re-render to update active highlight
 
   try {
-    const res = await fetch(`/api/raw-input?name=${encodeURIComponent(name)}`);
+    const res = await apiFetch(`/api/raw-input?name=${encodeURIComponent(name)}`);
     const text = await res.text();
     document.getElementById('input-editor').value = text;
   } catch (e) {
@@ -2625,7 +3971,7 @@ async function saveCurrentFile() {
   if (!currentInputFile) return;
   const content = document.getElementById('input-editor').value;
   try {
-    await fetch('/api/raw-input', {
+    await apiFetch('/api/raw-input', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: currentInputFile, content })
@@ -2641,7 +3987,7 @@ async function deleteCurrentFile() {
   if (!currentInputFile) return;
   if (!confirm(`Delete ${currentInputFile}?`)) return;
   try {
-    await fetch('/api/raw-input', {
+    await apiFetch('/api/raw-input', {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: currentInputFile })
@@ -2679,7 +4025,7 @@ async function createNewFile() {
     ? `# ${title.charAt(0).toUpperCase() + title.slice(1)}\n\nDescribe your ${newFileCat} details here...\n`
     : `# ${title.charAt(0).toUpperCase() + title.slice(1)}\n\nDescribe your product idea here...\n`;
   try {
-    await fetch('/api/raw-input', {
+    await apiFetch('/api/raw-input', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: fullPath, content: placeholder })
@@ -2730,16 +4076,6 @@ function renderGenerate() {
     errBar.style.display = 'none';
   }
 
-  // Org context indicator
-  const orgCtx = state.orgContext || {};
-  const orgBar = document.getElementById('org-context-bar');
-  if (orgCtx.active) {
-    orgBar.style.display = 'flex';
-    orgBar.innerHTML = `${icon('building-office', 12)} <span style="color:var(--green);font-weight:600;">Org context active</span><span style="color:var(--text-3);">&ensp;${orgCtx.fileCount} file${orgCtx.fileCount !== 1 ? 's' : ''} from <code style="font-size:11px;background:var(--surface-2);padding:1px 4px;border-radius:3px;">${orgCtx.org}</code> injected into prompts</span>`;
-  } else {
-    orgBar.style.display = 'none';
-  }
-
   // Determine which stages are "done" (have generated content)
   const runningIdx = PIPELINE_STAGE_ORDER.indexOf(processing.stage);
 
@@ -2762,12 +4098,7 @@ function renderGenerate() {
   const grid = document.getElementById('stage-grid');
   grid.innerHTML = '';
 
-  // Dept filtering: admin/all sees everything; members see only their dept stages
-  const _user = state.user || { role: 'admin', department: 'all' };
-  const _allowedIdxs = _user.role === 'admin' ? DEPT_STAGES['all'] : (DEPT_STAGES[_user.department] || DEPT_STAGES['all']);
-
   STAGES.forEach((s, idx) => {
-    if (!_allowedIdxs.includes(idx)) return;
     const stageSummary = summary[s.dir] || { generated: 0, reviewed: 0, total: 0 };
     const { generated, reviewed, total } = stageSummary;
     const pct = total > 0 ? Math.round((generated / total) * 100) : 0;
@@ -2850,7 +4181,7 @@ async function generate(stage) {
   renderGenerate();
 
   try {
-    await fetch('/api/generate', {
+    await apiFetch('/api/generate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ stage })
@@ -2871,19 +4202,11 @@ function renderReview() {
   const tree = state.tree || {};
   const gates = state.gates || {};
 
-  // Dept filtering for review tree
-  const _rUser = state.user || { role: 'admin', department: 'all' };
-  const _rAllowed = _rUser.role === 'admin' ? DEPT_STAGES['all'] : (DEPT_STAGES[_rUser.department] || DEPT_STAGES['all']);
-
   const treeEl = document.getElementById('review-tree-body');
   const searchVal = document.getElementById('review-search').value.toLowerCase();
   treeEl.innerHTML = '';
 
   Object.entries(tree).forEach(([dir, files]) => {
-    // Filter by department
-    const stageIdx = STAGE_ORDER.indexOf(dir);
-    if (stageIdx !== -1 && !_rAllowed.includes(stageIdx)) return;
-
     const filtered = searchVal
       ? files.filter(f => f.name.toLowerCase().includes(searchVal))
       : files;
@@ -2919,33 +4242,6 @@ function renderReview() {
       <span class="badge badge-${status.toLowerCase()}">${status}</span>
     </div>
   `).join('');
-
-  // Distill section: only for admins when FORGE_ORG is set
-  const _dUser = state.user || { role: 'admin', department: 'all' };
-  const _distillSection = document.getElementById('review-distill-section');
-  const _orgActive = (state.orgContext || {}).active;
-  if (_dUser.role === 'admin' && _orgActive) {
-    _distillSection.style.display = '';
-    const _distillBtns = document.getElementById('review-distill-buttons');
-    // Find stages that have reviewed files
-    const _reviewedStages = Object.entries(state.stageReviewSummary || {})
-      .filter(([,s]) => s.reviewed > 0)
-      .map(([dir]) => {
-        const idx = STAGE_ORDER.indexOf(dir);
-        const stageKey = ['context','requirements','design','analysis','architecture','delivery','engineering','qa','operations','release','marketing'][idx];
-        return { dir, stageKey, label: dir.replace(/^\d+-/,'') };
-      })
-      .filter(s => s.stageKey);
-    _distillBtns.innerHTML = _reviewedStages.length === 0
-      ? '<span style="font-size:11px;color:var(--text-3);">Mark files as reviewed first.</span>'
-      : _reviewedStages.map(s => `
-          <button class="btn btn-ghost btn-sm" style="justify-content:flex-start;font-size:11px;" onclick="distillStage('${s.stageKey}')">
-            ${icon('sparkles',11)} Distil ${s.label}
-          </button>
-        `).join('');
-  } else {
-    _distillSection.style.display = 'none';
-  }
 
   // Overlay: show when the currently-viewed file is being fixed
   const isViewerBeingFixed = !!(fixingFile && fixingFile === currentReviewFile);
@@ -2986,7 +4282,7 @@ async function openReviewFile(path, status, size, modifiedAt) {
   document.getElementById('meta-modified').textContent = modifiedAt ? new Date(modifiedAt * 1000).toLocaleString() : '—';
 
   try {
-    const res = await fetch(`/api/file?path=${encodeURIComponent(path)}`);
+    const res = await apiFetch(`/api/file?path=${encodeURIComponent(path)}`);
     if (res.ok) {
       const text = await res.text();
       const raw = text || '(empty file)';
@@ -3010,7 +4306,7 @@ async function openReviewFile(path, status, size, modifiedAt) {
 async function markFile(status) {
   if (!currentReviewFile) return;
   try {
-    await fetch('/api/review', {
+    await apiFetch('/api/review', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ path: currentReviewFile, status })
@@ -3039,7 +4335,7 @@ async function fetchVersions(path) {
   const labelEl = document.getElementById('versions-label');
   listEl.innerHTML = '<span style="font-size:10px;color:var(--text-3)">Loading...</span>';
   try {
-    const res = await fetch(`/api/versions?path=${encodeURIComponent(path)}`);
+    const res = await apiFetch(`/api/versions?path=${encodeURIComponent(path)}`);
     const data = await res.json();
     const versions = data.versions || [];
     labelEl.textContent = versions.length ? `Version History (${versions.length})` : 'Version History';
@@ -3064,7 +4360,7 @@ async function fetchVersions(path) {
 async function openVersion(id, timestamp) {
   if (!currentReviewFile) return;
   try {
-    const res = await fetch(`/api/version?path=${encodeURIComponent(currentReviewFile)}&id=${encodeURIComponent(id)}`);
+    const res = await apiFetch(`/api/version?path=${encodeURIComponent(currentReviewFile)}&id=${encodeURIComponent(id)}`);
     if (!res.ok) { showToast('Version not found', 'error'); return; }
     const text = await res.text();
     viewingVersion = { id, timestamp };
@@ -3104,7 +4400,7 @@ function closeVersion() {
 async function restoreVersion() {
   if (!currentReviewFile || !viewingVersion) return;
   try {
-    const res = await fetch('/api/version/restore', {
+    const res = await apiFetch('/api/version/restore', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ path: currentReviewFile, id: viewingVersion.id })
@@ -3121,7 +4417,7 @@ async function restoreVersion() {
 async function reloadCurrentFile() {
   if (!currentReviewFile) return;
   try {
-    const res = await fetch(`/api/file?path=${encodeURIComponent(currentReviewFile)}`);
+    const res = await apiFetch(`/api/file?path=${encodeURIComponent(currentReviewFile)}`);
     if (res.ok) {
       const text = await res.text();
       const raw = text || '(empty file)';
@@ -3149,7 +4445,7 @@ async function submitFix() {
   document.getElementById('meta-status').innerHTML = `<span class="badge badge-needs-review">regenerating</span>`;
 
   try {
-    await fetch('/api/fix', {
+    await apiFetch('/api/fix', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ path: currentReviewFile, critique })
@@ -3182,7 +4478,7 @@ let buildCodePanelStep = null;
 
 async function fetchBuildSteps() {
   try {
-    const res = await fetch('/api/build-system');
+    const res = await apiFetch('/api/build-system');
     if (res.ok) {
       const data = await res.json();
       buildStepsState = data.steps || {};
@@ -3239,7 +4535,7 @@ async function runBuildStep(step) {
   try {
     optimisticRunning = { stage: step, startTime: Date.now() };
     renderBuildSteps();
-    const res = await fetch('/api/build-system', {
+    const res = await apiFetch('/api/build-system', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ step })
@@ -3282,7 +4578,7 @@ async function openBuildCodePanel(step) {
 
 async function loadBuildFile(step, path) {
   try {
-    const res = await fetch('/api/build-file?step=' + encodeURIComponent(step) + '&path=' + encodeURIComponent(path));
+    const res = await apiFetch('/api/build-file?step=' + encodeURIComponent(step) + '&path=' + encodeURIComponent(path));
     if (res.ok) {
       const data = await res.json();
       document.getElementById('build-file-content').textContent = data.content;
@@ -3424,7 +4720,7 @@ async function checkAllPrStatuses() {
 
 async function checkPrStatus(prUrl) {
   try {
-    const res = await fetch('/api/pr-status?pr_url=' + encodeURIComponent(prUrl));
+    const res = await apiFetch('/api/pr-status?pr_url=' + encodeURIComponent(prUrl));
     const d = await res.json();
     if (d.merged) {
       // Remove from checked cache so the badge re-renders on next loadState()
@@ -3439,7 +4735,7 @@ let _reviewPollTimer = null;
 async function syncReviewStatus() {
   // Called on every renderBuild() — re-attaches polling and panel after refresh/tab switch
   try {
-    const res = await fetch('/api/build-review');
+    const res = await apiFetch('/api/build-review');
     const d = await res.json();
     if (!d || d.status === 'idle') return;
     // Show panel regardless of how we got here
@@ -3460,7 +4756,7 @@ async function startReviewAndPush() {
   btn.innerHTML = `<span style="opacity:.6">Starting review…</span>`;
 
   try {
-    const res = await fetch('/api/build-review', {
+    const res = await apiFetch('/api/build-review', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({})
@@ -3485,7 +4781,7 @@ function pollReview() {
   if (_reviewPollTimer) clearInterval(_reviewPollTimer);
   _reviewPollTimer = setInterval(async () => {
     try {
-      const res = await fetch('/api/build-review');
+      const res = await apiFetch('/api/build-review');
       const d = await res.json();
       showReviewPanel(d);
       if (d.status !== 'reviewing') {
@@ -3627,7 +4923,7 @@ async function proceedWithPush() {
   if (panel) panel.innerHTML = `<div class="card" style="border-color:var(--blue)"><div style="font-size:13px;color:var(--blue);">${icon('cloudUp',14)} Pushing to GitHub…</div></div>`;
 
   try {
-    const res = await fetch('/api/build', {
+    const res = await apiFetch('/api/build', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ reviewed: true })
@@ -3635,7 +4931,7 @@ async function proceedWithPush() {
     const d = await res.json();
     showToast(`Build started: ${d.branch || ''}`, 'info');
     // Clear review file
-    await fetch('/api/build-review', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'clear' }) });
+    await apiFetch('/api/build-review', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'clear' }) });
     if (panel) panel.style.display = 'none';
     loadState();
   } catch (e) {
@@ -3648,12 +4944,12 @@ async function cancelReview() {
   // If done/cancelled/idle → just clear the panel
   let action = 'clear';
   try {
-    const r = await fetch('/api/build-review');
+    const r = await apiFetch('/api/build-review');
     const d = await r.json();
     if (d.status === 'reviewing') action = 'cancel';
   } catch (e) { /* use clear */ }
 
-  await fetch('/api/build-review', {
+  await apiFetch('/api/build-review', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ action })
@@ -3677,10 +4973,10 @@ async function cancelReview() {
 async function skipReviewAndPush() {
   // Cancel any running review first, then push directly
   try {
-    const r = await fetch('/api/build-review');
+    const r = await apiFetch('/api/build-review');
     const d = await r.json();
     if (d.status === 'reviewing') {
-      await fetch('/api/build-review', {
+      await apiFetch('/api/build-review', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'cancel' })
@@ -3696,14 +4992,14 @@ async function skipReviewAndPush() {
   if (panel) panel.innerHTML = `<div class="card" style="border-color:var(--blue)"><div style="font-size:13px;color:var(--blue);">Pushing to GitHub…</div></div>`;
 
   try {
-    const res = await fetch('/api/build', {
+    const res = await apiFetch('/api/build', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({})
     });
     const d = await res.json();
     showToast(`Build started: ${d.branch || ''}`, 'info');
-    await fetch('/api/build-review', {
+    await apiFetch('/api/build-review', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'clear' })
@@ -3768,7 +5064,7 @@ async function refreshSecrets() {
   const container = document.getElementById('secrets-container');
   if (!container) return;
   try {
-    const res = await fetch('/api/secrets');
+    const res = await apiFetch('/api/secrets');
     _secretsData = await res.json();
     renderSecretsTable(_secretsData);
   } catch (e) {
@@ -3904,7 +5200,7 @@ async function pushSecret(name) {
   btn.innerHTML = `<span style="opacity:.6">Pushing…</span>`;
 
   try {
-    const res = await fetch('/api/secrets', {
+    const res = await apiFetch('/api/secrets', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name, value, protected: protEl ? protEl.checked : true }),
@@ -3933,121 +5229,6 @@ async function pushAllSecrets() {
   }
   for (const s of toPush) {
     await pushSecret(s.name);
-  }
-}
-
-// ============================================================
-// Knowledge
-// ============================================================
-let knowledgeEntries = [];
-let selectedKnowledgePath = null;
-
-let _lastDistillSeen = null;
-
-function renderKnowledge() {
-  const orgCtx = state.orgContext || {};
-  const sub = document.getElementById('knowledge-subtitle');
-  if (sub) sub.textContent = orgCtx.org ? `Distilled patterns for org: ${orgCtx.org}` : 'Distilled patterns from reviewed projects';
-
-  // PR result banner
-  const distillResult = state.lastDistill;
-  const banner = document.getElementById('knowledge-pr-banner');
-  if (banner && distillResult && distillResult.timestamp !== _lastDistillSeen) {
-    if (distillResult.prUrl) {
-      banner.style.display = '';
-      banner.innerHTML = `${icon('check',13)} <span style="color:var(--green);font-weight:600;">PR created for <code style="font-size:11px">${distillResult.stage}</code></span> <a href="${distillResult.prUrl}" target="_blank" style="color:var(--blue);margin-left:8px;text-decoration:underline;">Review PR →</a>`;
-    } else if (distillResult.prError) {
-      banner.style.display = '';
-      banner.innerHTML = `${icon('exclamationCircle',13)} <span style="color:var(--amber);font-weight:600;">Distillation saved locally</span> <span style="color:var(--text-3);margin-left:6px;">PR push failed: ${distillResult.prError.slice(0,120)}</span>`;
-    } else if (distillResult.success) {
-      banner.style.display = '';
-      banner.innerHTML = `${icon('check',13)} <span style="color:var(--green);font-weight:600;">${distillResult.stage} patterns saved to org cache</span> <span style="color:var(--text-3);margin-left:6px;">(configure KB Repo URL in Settings to push a PR)</span>`;
-    }
-  } else if (banner && !distillResult) {
-    banner.style.display = 'none';
-  }
-
-  if (!orgCtx.active && !(knowledgeEntries.length > 0)) {
-    if (document.getElementById('knowledge-empty')) {
-      document.getElementById('knowledge-empty').style.display = '';
-      document.getElementById('knowledge-list').style.display = 'none';
-    }
-    return;
-  }
-
-  loadKnowledgeEntries();
-}
-
-async function loadKnowledgeEntries() {
-  try {
-    const res = await fetch('/api/knowledge');
-    const data = await res.json();
-    knowledgeEntries = data.entries || [];
-    renderKnowledgeList();
-  } catch (e) {}
-}
-
-function renderKnowledgeList() {
-  const listEl = document.getElementById('knowledge-list');
-  const emptyEl = document.getElementById('knowledge-empty');
-  const viewerEl = document.getElementById('knowledge-viewer');
-  if (!listEl) return;
-
-  if (knowledgeEntries.length === 0) {
-    emptyEl.style.display = '';
-    listEl.style.display = 'none';
-    return;
-  }
-  emptyEl.style.display = 'none';
-  listEl.style.display = '';
-  viewerEl.style.display = 'none';
-
-  listEl.innerHTML = knowledgeEntries.map(e => `
-    <div style="background:var(--bg-1);border:1px solid var(--border);border-radius:8px;padding:14px;display:flex;align-items:center;justify-content:space-between;gap:12px;cursor:pointer;" onclick="openKnowledgeEntry('${e.absPath.replace(/'/g,"\\'")}','${e.name}')">
-      <div style="display:flex;align-items:center;gap:10px;min-width:0;">
-        <span style="font-size:10px;padding:2px 7px;border-radius:4px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;flex-shrink:0;background:${e.type==='patterns'?'var(--purple-dim)':'var(--blue-dim)'};color:${e.type==='patterns'?'var(--purple)':'var(--blue)'};">${e.type}</span>
-        <span style="font-size:12px;font-family:monospace;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${e.name}</span>
-      </div>
-      <span style="font-size:11px;color:var(--text-3);flex-shrink:0;">${(e.size/1024).toFixed(1)} KB</span>
-    </div>
-  `).join('');
-}
-
-async function openKnowledgeEntry(absPath, name) {
-  try {
-    const res = await fetch(`/api/knowledge?path=${encodeURIComponent(absPath)}`);
-    const data = await res.json();
-    document.getElementById('knowledge-list').style.display = 'none';
-    document.getElementById('knowledge-empty').style.display = 'none';
-    const viewerEl = document.getElementById('knowledge-viewer');
-    viewerEl.style.display = '';
-    document.getElementById('knowledge-viewer-title').textContent = name;
-    document.getElementById('knowledge-viewer-content').innerHTML = renderMarkdown(data.content || '');
-  } catch (e) {
-    showToast('Failed to load entry', 'error');
-  }
-}
-
-function closeKnowledgeViewer() {
-  document.getElementById('knowledge-viewer').style.display = 'none';
-  renderKnowledgeList();
-}
-
-async function distillStage(stage) {
-  try {
-    const res = await fetch('/api/distill', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ stage })
-    });
-    const data = await res.json();
-    if (data.error) {
-      showToast(data.error, 'error');
-    } else {
-      showToast(`Distilling ${stage}… patterns will appear in Knowledge Base`, 'info');
-    }
-  } catch (e) {
-    showToast('Distillation request failed', 'error');
   }
 }
 
@@ -4116,7 +5297,7 @@ async function createIssue() {
   if (!title) { showToast('Title is required', 'error'); return; }
 
   try {
-    await fetch('/api/issue', {
+    await apiFetch('/api/issue', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ type, priority, title, description })
@@ -4133,7 +5314,7 @@ async function createIssue() {
 
 async function updateIssue(id, data) {
   try {
-    await fetch('/api/issue', {
+    await apiFetch('/api/issue', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id, ...data })
@@ -4152,7 +5333,7 @@ let detectedTools = null;  // populated from /api/tools on settings open
 
 async function fetchDetectedTools() {
   try {
-    const res = await fetch('/api/tools');
+    const res = await apiFetch('/api/tools');
     detectedTools = await res.json();
     // Rebuild tool dropdown to show only installed tools (with badge for uninstalled)
     const toolSel = document.getElementById('settings-tool');
@@ -4187,21 +5368,8 @@ function populateModelDropdown(tool, currentModel) {
 function renderSettings() {
   const git = state.git || {};
   const envs = state.environments || {};
-  const user = state.user || { role: 'admin', department: 'all' };
 
-  setValue('settings-role', user.role || 'admin');
-  setValue('settings-department', user.department || 'all');
   setValue('settings-product-name', state.project_name || '');
-  setValue('settings-project-type', state.project_type || 'standard');
-
-  // Org context toggle — only show when org context is active
-  const orgRow = document.getElementById('settings-org-context-row');
-  if ((state.orgContext || {}).active) {
-    orgRow.style.display = 'flex';
-    document.getElementById('settings-skip-org-context').checked = !!(state.skip_org_context);
-  } else {
-    orgRow.style.display = 'none';
-  }
   const vl = document.getElementById('settings-version-label');
   if (vl) vl.textContent = state.version ? `v${state.version}` : 'v—';
   setValue('settings-tool', state.tool || 'gemini');
@@ -4213,7 +5381,6 @@ function renderSettings() {
   setValue('settings-token', git.token || '');
   setValue('settings-default-branch', git.default_branch || 'main');
   setValue('settings-branch-prefix', git.branch_prefix || 'forge');
-  setValue('settings-kb-repo-url', git.kb_repo_url || '');
   setValue('settings-staging-url', (envs.staging || {}).url || '');
   setValue('settings-staging-branch', (envs.staging || {}).branch || 'staging');
   setValue('settings-production-url', (envs.production || {}).url || '');
@@ -4223,8 +5390,6 @@ function renderSettings() {
 async function saveSettings() {
   const data = {
     project_name: getValue('settings-product-name'),
-    project_type: getValue('settings-project-type'),
-    skip_org_context: document.getElementById('settings-skip-org-context')?.checked || false,
     tool: getValue('settings-tool'),
     model: getValue('settings-model'),
     git: {
@@ -4234,7 +5399,6 @@ async function saveSettings() {
       token: getValue('settings-token'),
       default_branch: getValue('settings-default-branch'),
       branch_prefix: getValue('settings-branch-prefix'),
-      kb_repo_url: getValue('settings-kb-repo-url'),
     },
     environments: {
       staging: {
@@ -4247,16 +5411,13 @@ async function saveSettings() {
       }
     }
   };
-  const userData = {
-    role: getValue('settings-role'),
-    department: getValue('settings-department'),
-  };
 
   try {
-    await Promise.all([
-      fetch('/api/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) }),
-      fetch('/api/user', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(userData) }),
-    ]);
+    await apiFetch('/api/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
     showToast('Settings saved', 'success');
     runtimeInitialized = false;
     loadState();
@@ -4325,7 +5486,7 @@ function closeResetDialog() {
 async function resetPipeline() {
   closeResetDialog();
   try {
-    const res = await fetch('/api/reset', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+    const res = await apiFetch('/api/reset', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
     const data = await res.json();
     showToast(`Pipeline reset — ${data.cleared} files cleared`, 'success');
     currentReviewFile = null;
@@ -4344,8 +5505,9 @@ async function resetPipeline() {
 // ============================================================
 // Keyboard shortcuts
 // ============================================================
-const viewKeys = ['overview','input','generate','review','build','deploy','knowledge','issues','settings'];
+const viewKeys = ['overview','input','generate','review','build','deploy','issues','settings'];
 document.addEventListener('keydown', e => {
+  if (appMode === 'projects') return;
   if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
   const n = parseInt(e.key);
   if (n >= 1 && n <= viewKeys.length) {
@@ -4356,52 +5518,13 @@ document.addEventListener('keydown', e => {
 // ============================================================
 // Init
 // ============================================================
+document.getElementById('project-create-name')?.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') createProjectFromHome();
+});
 startPolling();
 </script>
 
-<!-- Monaco Code Editor Modal -->
-<div id="code-editor-modal" style="display:none;position:fixed;inset:0;z-index:9000;flex-direction:column;background:#1e1e1e;">
-
-  <!-- Titlebar -->
-  <div style="display:flex;align-items:center;height:40px;min-height:40px;background:#2d2d2d;border-bottom:1px solid #404040;padding:0 12px;gap:8px;font-family:monospace;">
-    <span id="cem-step-label" style="font-size:11px;color:#858585;"></span>
-    <span style="color:#555;">/</span>
-    <span id="cem-file-label" style="font-size:12px;color:#cccccc;font-weight:500;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></span>
-    <span id="cem-lang-badge" style="font-size:10px;color:#858585;background:#3a3a3a;padding:2px 7px;border-radius:3px;"></span>
-    <button onclick="closeCodeEditor()" style="background:none;border:none;cursor:pointer;color:#858585;font-size:20px;line-height:1;padding:2px 6px;border-radius:4px;" title="Close" onmouseover="this.style.color='#fff'" onmouseout="this.style.color='#858585'">&#x2715;</button>
-  </div>
-
-  <!-- Body -->
-  <div style="display:flex;flex:1;min-height:0;overflow:hidden;">
-
-    <!-- Sidebar -->
-    <div style="width:240px;min-width:240px;background:#252526;border-right:1px solid #3a3a3a;display:flex;flex-direction:column;overflow:hidden;">
-      <div style="padding:6px 10px;font-size:10px;font-weight:600;color:#858585;text-transform:uppercase;letter-spacing:0.08em;border-bottom:1px solid #3a3a3a;">Explorer</div>
-      <div id="cem-step-tabs" style="display:flex;flex-wrap:wrap;gap:4px;padding:8px;border-bottom:1px solid #3a3a3a;"></div>
-      <div id="cem-file-tree" style="flex:1;overflow-y:auto;padding:4px 0;"></div>
-    </div>
-
-    <!-- Editor -->
-    <div style="flex:1;min-width:0;position:relative;">
-      <div id="cem-monaco-container" style="width:100%;height:100%;"></div>
-      <div id="cem-loading" style="display:none;position:absolute;inset:0;background:#1e1e1e;align-items:center;justify-content:center;flex-direction:column;gap:8px;color:#858585;font-size:13px;">
-        <div style="width:20px;height:20px;border:2px solid #444;border-top-color:#007acc;border-radius:50%;animation:spin 0.8s linear infinite;"></div>
-        Loading…
-      </div>
-    </div>
-
-  </div>
-
-  <!-- Status bar -->
-  <div style="height:22px;min-height:22px;background:#007acc;display:flex;align-items:center;padding:0 12px;gap:16px;font-size:11px;color:rgba(255,255,255,0.9);font-family:monospace;">
-    <span id="cem-status-step"></span>
-    <span id="cem-status-file" style="opacity:0.8;"></span>
-    <span id="cem-status-lines" style="margin-left:auto;"></span>
-  </div>
-</div>
-
-<script>
-// Monaco Editor
+<script>// Monaco Editor
 let monacoLoaded = false;
 let monacoEditor = null;
 let cemCurrentStep = null;
@@ -4414,9 +5537,9 @@ const LANG_MAP = {
   env:'ini', txt:'plaintext', dockerfile:'dockerfile', makefile:'makefile',
 };
 const FILE_ICONS = {
-  py:'🐍', ts:'⬡', tsx:'⬡', js:'⬡', jsx:'⬡', json:'{}', md:'≡',
-  yml:'⚙', yaml:'⚙', sh:'$', css:'◑', html:'◈', tf:'◆', sql:'⊞',
-  dockerfile:'🐳', makefile:'⚒',
+  py:'PY', ts:'TS', tsx:'TSX', js:'JS', jsx:'JSX', json:'{}', md:'MD',
+  yml:'YML', yaml:'YML', sh:'SH', css:'CSS', html:'HTML', tf:'TF', sql:'SQL',
+  dockerfile:'DOCKER', makefile:'MAKE',
 };
 
 function detectLang(name) {
@@ -4524,7 +5647,7 @@ async function loadCemFile(step, path, displayName) {
   const loading = document.getElementById('cem-loading');
   loading.style.display = 'flex';
   try {
-    const res = await fetch('/api/build-file?step=' + encodeURIComponent(step) + '&path=' + encodeURIComponent(path));
+    const res = await apiFetch('/api/build-file?step=' + encodeURIComponent(step) + '&path=' + encodeURIComponent(path));
     const data = await res.json();
     const content = data.content || '';
     if (monacoEditor) {
@@ -4549,6 +5672,157 @@ async function loadCemFile(step, path, displayName) {
 function openBuildCodePanel(step) {
   fetchBuildSteps().then(() => openCodeEditor(step));
 }
+</script>
+
+<!-- Monaco Code Editor Modal -->
+<div id="code-editor-modal" style="display:none;position:fixed;inset:0;z-index:9000;flex-direction:column;background:#1e1e1e;">
+
+  <!-- Titlebar -->
+  <div style="display:flex;align-items:center;height:40px;min-height:40px;background:#2d2d2d;border-bottom:1px solid #404040;padding:0 12px;gap:8px;font-family:var(--mono);">
+    <span id="cem-step-label" style="font-size:11px;color:#858585;"></span>
+    <span style="color:#555;">/</span>
+    <span id="cem-file-label" style="font-size:12px;color:#cccccc;font-weight:500;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></span>
+    <span id="cem-lang-badge" style="font-size:10px;color:#858585;background:#3a3a3a;padding:2px 7px;border-radius:3px;"></span>
+    <button onclick="closeCodeEditor()" style="background:none;border:none;cursor:pointer;color:#858585;font-size:20px;line-height:1;padding:2px 6px;border-radius:4px;" title="Close" onmouseover="this.style.color='#fff'" onmouseout="this.style.color='#858585'">&#x2715;</button>
+  </div>
+
+  <!-- Body -->
+  <div style="display:flex;flex:1;min-height:0;overflow:hidden;">
+
+    <!-- Sidebar -->
+    <div style="width:240px;min-width:240px;background:#252526;border-right:1px solid #3a3a3a;display:flex;flex-direction:column;overflow:hidden;">
+      <div style="padding:6px 10px;font-size:10px;font-weight:600;color:#858585;text-transform:uppercase;letter-spacing:0.08em;border-bottom:1px solid #3a3a3a;">Explorer</div>
+      <div id="cem-step-tabs" style="display:flex;flex-wrap:wrap;gap:4px;padding:8px;border-bottom:1px solid #3a3a3a;"></div>
+      <div id="cem-file-tree" style="flex:1;overflow-y:auto;padding:4px 0;"></div>
+    </div>
+
+    <!-- Editor -->
+    <div style="flex:1;min-width:0;position:relative;">
+      <div id="cem-monaco-container" style="width:100%;height:100%;"></div>
+      <div id="cem-loading" style="display:none;position:absolute;inset:0;background:#1e1e1e;align-items:center;justify-content:center;flex-direction:column;gap:8px;color:#858585;font-size:13px;">
+        <div style="width:20px;height:20px;border:2px solid #444;border-top-color:#007acc;border-radius:50%;animation:spin 0.8s linear infinite;"></div>
+        Loading…
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Status bar -->
+  <div style="height:22px;min-height:22px;background:#007acc;display:flex;align-items:center;padding:0 12px;gap:16px;font-size:11px;color:rgba(255,255,255,0.9);font-family:var(--mono);">
+    <span id="cem-status-step"></span>
+    <span id="cem-status-file" style="opacity:0.8;"></span>
+    <span id="cem-status-lines" style="margin-left:auto;"></span>
+  </div>
+</div>
+
+<script>
+  // macOS hiddenInset: traffic lights float over content — add padding to clear them
+  if (navigator.userAgent.includes('Macintosh')) document.body.classList.add('mac')
+</script>
+
+<script>
+// LaserFlow WebGL dot-matrix particle field
+(function() {
+  const canvas = document.getElementById('projects-webgl');
+  if (!canvas) return;
+  const gl = canvas.getContext('webgl', { alpha: true, antialias: false, premultipliedAlpha: false });
+  if (!gl) return;
+
+  const VERT = `
+    attribute vec2 a_pos;
+    uniform vec2 u_resolution;
+    uniform float u_time;
+    uniform vec2 u_mouse;
+    void main() {
+      vec2 drift = (u_mouse - 0.5) * 0.015;
+      vec2 pos = a_pos + drift;
+      vec2 clip = (pos / u_resolution) * 2.0 - 1.0;
+      gl_Position = vec4(clip * vec2(1,-1), 0, 1);
+      float pulse = 0.5 + 0.5 * sin(u_time * 0.6 + a_pos.x * 0.003 + a_pos.y * 0.003);
+      gl_PointSize = 1.5 + pulse * 1.2;
+    }
+  `;
+  const FRAG = `
+    precision mediump float;
+    uniform float u_time;
+    void main() {
+      vec2 c = gl_PointCoord - 0.5;
+      float d = length(c);
+      if (d > 0.5) discard;
+      float alpha = 0.12 + 0.18 * (0.5 + 0.5 * sin(u_time * 0.4));
+      alpha *= smoothstep(0.5, 0.1, d) * 0.9;
+      gl_FragColor = vec4(0.29, 0.87, 0.50, alpha);
+    }
+  `;
+
+  function compile(type, src) {
+    const sh = gl.createShader(type);
+    gl.shaderSource(sh, src); gl.compileShader(sh); return sh;
+  }
+  const prog = gl.createProgram();
+  gl.attachShader(prog, compile(gl.VERTEX_SHADER, VERT));
+  gl.attachShader(prog, compile(gl.FRAGMENT_SHADER, FRAG));
+  gl.linkProgram(prog);
+  gl.useProgram(prog);
+
+  const uRes = gl.getUniformLocation(prog, 'u_resolution');
+  const uTime = gl.getUniformLocation(prog, 'u_time');
+  const uMouse = gl.getUniformLocation(prog, 'u_mouse');
+  const aPos = gl.getAttribLocation(prog, 'a_pos');
+
+  let pts = [], mouse = { x: 0.5, y: 0.5 };
+  const buf = gl.createBuffer();
+
+  function buildGrid(w, h) {
+    pts = [];
+    const gap = 28;
+    for (let x = gap; x < w; x += gap)
+      for (let y = gap; y < h; y += gap)
+        pts.push(x, y);
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(pts), gl.STATIC_DRAW);
+  }
+
+  function resize() {
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = window.innerWidth * dpr;
+    canvas.height = window.innerHeight * dpr;
+    canvas.style.width = window.innerWidth + 'px';
+    canvas.style.height = window.innerHeight + 'px';
+    gl.viewport(0, 0, canvas.width, canvas.height);
+    buildGrid(canvas.width, canvas.height);
+  }
+  resize();
+  window.addEventListener('resize', resize);
+  window.addEventListener('mousemove', e => {
+    mouse.x = e.clientX / window.innerWidth;
+    mouse.y = e.clientY / window.innerHeight;
+  });
+
+  let raf = null;
+  function draw(t) {
+    raf = requestAnimationFrame(draw);
+    gl.clearColor(0, 0, 0, 0);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+    gl.uniform2f(uRes, canvas.width, canvas.height);
+    gl.uniform1f(uTime, t * 0.001);
+    gl.uniform2f(uMouse, mouse.x, mouse.y);
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+    gl.enableVertexAttribArray(aPos);
+    gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 0, 0);
+    gl.drawArrays(gl.POINTS, 0, pts.length / 2);
+  }
+
+  function startWebGL() { if (!raf) draw(0); canvas.style.opacity = '1'; }
+  function stopWebGL() {
+    if (raf) { cancelAnimationFrame(raf); raf = null; }
+    canvas.style.opacity = '0';
+  }
+
+  window.__webglControl = { start: startWebGL, stop: stopWebGL };
+})();
 </script>
 </body>
 </html>
