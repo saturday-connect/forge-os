@@ -28,8 +28,8 @@
       --radius-sm: 8px;
     }
 
-    /* macOS hiddenInset: push sidebar content below traffic-light buttons */
-    html.mac .sidebar { padding-top: 44px; }
+    /* macOS hiddenInset: push sidebar content below traffic-light buttons (~52px clearance) */
+    html.mac .sidebar { padding-top: 52px; }
 
     html, body {
       height: 100%;
@@ -70,28 +70,21 @@
     .sidebar-logo-mark {
       width: 28px;
       height: 28px;
-      border-radius: 6px;
+      border-radius: 8px;
       flex-shrink: 0;
-      background: linear-gradient(160deg, #4ADE80 0%, #22C55E 100%);
+      background: #4ADE80;
       display: flex;
       align-items: center;
       justify-content: center;
+      color: #060D06;
     }
     .sidebar-logo-text {
-      display: flex;
-      flex-direction: column;
-      line-height: 1.2;
-    }
-    .sidebar-logo-text span:first-child {
       font-size: 13px;
-      font-weight: 700;
+      font-weight: 600;
+      letter-spacing: 1.2px;
+      text-transform: uppercase;
       color: #ffffff;
-      letter-spacing: -0.01em;
-    }
-    .sidebar-logo-text span:last-child {
-      font-size: 10px;
-      color: rgba(255,255,255,0.45);
-      letter-spacing: 0.02em;
+      line-height: 1;
     }
 
     .step-item {
@@ -431,10 +424,7 @@
             fill="white" opacity="0.85"/>
         </svg>
       </div>
-      <div class="sidebar-logo-text">
-        <span>Forge</span>
-        <span>OS</span>
-      </div>
+      <div class="sidebar-logo-text">Forge OS</div>
     </div>
 
     <div class="step-item" id="nav-0">
