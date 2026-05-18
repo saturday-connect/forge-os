@@ -1,6 +1,6 @@
 {
   "name": "forge-os",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Forge OS — Documentation-first PDLC automation desktop app",
   "main": "main.js",
   "scripts": {
@@ -41,7 +41,8 @@
       "entitlements": "assets/entitlements.mac.plist",
       "entitlementsInherit": "assets/entitlements.mac.plist",
       "target": [
-        { "target": "dmg", "arch": ["arm64", "x64"] }
+        { "target": "dmg", "arch": ["arm64", "x64"] },
+        { "target": "zip", "arch": ["arm64", "x64"] }
       ]
     },
     "win": {

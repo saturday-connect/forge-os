@@ -1005,6 +1005,12 @@ function buildTrayMenu() {
 
 // ─── Auto-updater ─────────────────────────────────────────────────────────────
 
+// In dev mode, allow update checks against the real GitHub release feed.
+// dev-app-update.yml must exist in the app directory for this to work.
+if (!app.isPackaged) {
+  autoUpdater.forceDevUpdateConfig = true
+}
+
 // Track whether the current check was triggered manually (tray menu click)
 // so we can show "You're up to date" — background checks are silent on no-update.
 let _updateCheckManual = false
@@ -1103,16 +1109,14 @@ function setupAutoUpdater() {
     _updateChecking = false
   })
 
-  // Background check on startup — silent unless an update is found
-  autoUpdater.checkForUpdates().catch(err => {
-    console.warn('[updater] Startup check failed:', err.message)
-  })
+  // Background check on startup — silent unless an update is found.
+  // The 'error' event handles user-facing errors; .catch() here only suppresses
+  // the unhandled-rejection warning when the error event already fired.
+  autoUpdater.checkForUpdates().catch(() => {})
 
   // Periodic background check every 4 hours — keeps long-running sessions current
   setInterval(() => {
-    autoUpdater.checkForUpdates().catch(err => {
-      console.warn('[updater] Periodic check failed:', err.message)
-    })
+    autoUpdater.checkForUpdates().catch(() => {})
   }, 4 * 60 * 60 * 1000)
 }
 
@@ -1128,12 +1132,8 @@ function checkForUpdatesManual() {
   _updateCheckManual = true
   _updateChecking = true
   if (tray) tray.setToolTip('Forge OS — Checking for updates…')
-  autoUpdater.checkForUpdates().catch(err => {
-    console.warn('[updater] Manual check failed:', err.message)
-    _updateCheckManual = false
-    _updateChecking = false
-    if (tray) tray.setToolTip('Forge OS')
-  })
+  // 'error' event handles user-facing dialog; .catch() suppresses unhandled rejection
+  autoUpdater.checkForUpdates().catch(() => {})
 }
 
 // ─── App lifecycle ────────────────────────────────────────────────────────────
