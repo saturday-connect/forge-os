@@ -1,7 +1,7 @@
 import os
 from pprint import pformat
 
-FORGE_VERSION = "0.3.3"
+FORGE_VERSION = "0.3.4"
 
 # Agents mapped to their definition blocks
 AGENTS = {

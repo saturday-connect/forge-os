@@ -1011,32 +1011,22 @@ if (!app.isPackaged) {
   autoUpdater.forceDevUpdateConfig = true
 }
 
-// Track whether the current check was triggered manually (tray menu click)
-// so we can show "You're up to date" — background checks are silent on no-update.
-let _updateCheckManual = false
-let _updateReady = false          // true once update-downloaded fires
-let _updateChecking = false       // debounce rapid tray clicks
+// ── State ──────────────────────────────────────────────────────────────────
+// _updateCheckManual   true when user clicked "Check for Updates" — shows
+//                      progress window + "up to date" dialog
+// _updateReady         true once update-downloaded fires; controls tray menu
+// _updateChecking      debounce flag to prevent rapid tray-click spam
+// _updateReadyVersion  version string of staged update ("0.3.3")
+// _downloadRetries     current retry attempt count (reset on success/cancel)
+let _updateCheckManual  = false
+let _updateReady        = false
+let _updateChecking     = false
+let _updateReadyVersion = null
+let _downloadRetries    = 0
+const _MAX_RETRIES      = 3
+const _RETRY_DELAYS_MS  = [10000, 30000, 60000]  // 10s → 30s → 60s
 
-// ─── Update progress window ───────────────────────────────────────────────────
-
-const PROGRESS_WIN_STYLES = `
-  *{box-sizing:border-box;margin:0;padding:0}
-  html,body{height:100%;overflow:hidden}
-  body{
-    font-family:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
-    background:#111;color:#e5e5e5;
-    display:flex;flex-direction:column;justify-content:center;
-    padding:22px 26px 18px;
-    -webkit-app-region:drag;
-  }
-  .title{font-size:13px;font-weight:600;margin-bottom:2px;letter-spacing:-.1px}
-  .sub{font-size:11px;color:#666;margin-bottom:15px}
-  .bar-track{background:#1f1f1f;border-radius:4px;height:5px;overflow:hidden;margin-bottom:10px}
-  .bar-fill{background:#494fdf;height:100%;border-radius:4px;width:0%;transition:width .25s ease}
-  .meta{display:flex;justify-content:space-between;font-size:11px;color:#555}
-`
-
-let _progressWin = null
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function _formatBytes(bytes) {
   if (bytes >= 1024 * 1024) return (bytes / 1024 / 1024).toFixed(1) + ' MB'
@@ -1044,46 +1034,142 @@ function _formatBytes(bytes) {
   return bytes + ' B'
 }
 
+/** Strip HTML tags and collapse whitespace — safe for dialog detail text. */
+function _stripHtml(str) {
+  if (!str) return ''
+  return str.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
+}
+
+/** Truncate to maxLen chars, appending ellipsis if cut. */
+function _truncate(str, maxLen) {
+  if (!str || str.length <= maxLen) return str
+  return str.slice(0, maxLen).replace(/\s+\S*$/, '') + '…'
+}
+
+// ─── Update progress window ───────────────────────────────────────────────────
+//
+// The progress window is ONLY shown during a manual "Check for Updates" trigger.
+// Background auto-checks download silently; the tray tooltip and menu are the
+// only ambient signal until the download completes.
+
+const PROGRESS_WIN_STYLES = `
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%;overflow:hidden}
+  body{
+    font-family:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+    background:#fff;color:#111;
+    display:flex;flex-direction:column;justify-content:center;
+    padding:28px 28px 22px;
+  }
+  body.mac{padding-top:48px}
+  .title{font-size:14px;font-weight:600;margin-bottom:3px;letter-spacing:-.1px}
+  .sub{font-size:12px;color:#888;margin-bottom:18px}
+  .sub.error{color:#c0392b}
+  .bar-track{background:#ebebeb;border-radius:4px;height:5px;overflow:hidden;margin-bottom:10px}
+  .bar-fill{background:#494fdf;height:100%;border-radius:4px;width:0%;transition:width .25s ease}
+  .bar-fill.error{background:#e74c3c}
+  .meta{display:flex;justify-content:space-between;align-items:center;font-size:11px;color:#aaa}
+  .actions{margin-top:16px;display:none;gap:8px}
+  .actions.visible{display:flex}
+  .btn{padding:7px 18px;border-radius:6px;border:none;cursor:pointer;font-size:12px;font-weight:600;font-family:inherit}
+  .btn-primary{background:#494fdf;color:#fff}
+  .btn-primary:hover{background:#5a60e8}
+  .btn-ghost{background:transparent;border:1px solid #ddd;color:#666}
+  .btn-ghost:hover{border-color:#bbb;color:#333}
+`
+
+let _progressWin = null
+
 function showProgressWindow(version) {
   if (_progressWin && !_progressWin.isDestroyed()) return
-  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>${PROGRESS_WIN_STYLES}</style></head><body>
+
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
+  <style>${PROGRESS_WIN_STYLES}</style></head><body>
     <div class="title">Downloading Forge OS ${version || ''}</div>
     <div class="sub" id="sub">Starting download…</div>
     <div class="bar-track"><div class="bar-fill" id="bar"></div></div>
     <div class="meta"><span id="pct">0%</span><span id="speed"></span></div>
+    <div class="actions" id="actions">
+      <button class="btn btn-primary" id="btn-retry"
+        onclick="require('electron').ipcRenderer.send('updater-retry')">Try Again</button>
+      <button class="btn btn-ghost"
+        onclick="window.close()">Close</button>
+    </div>
+    <script>
+      if (navigator.userAgent.includes('Macintosh')) document.body.classList.add('mac')
+    </script>
   </body></html>`
 
+  const parentWin = (win && !win.isDestroyed()) ? win : null
   _progressWin = new BrowserWindow({
     width: 380,
-    height: 108,
+    height: 180,
     resizable: false,
     minimizable: false,
     maximizable: false,
     fullscreenable: false,
-    frame: false,
-    alwaysOnTop: true,
-    webPreferences: { nodeIntegration: false, contextIsolation: true }
+    titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
+    title: 'Downloading Update',
+    modal: !!parentWin,
+    parent: parentWin || undefined,
+    webPreferences: {
+      nodeIntegration: true,   // needed for ipcRenderer in inline script (internal window only)
+      contextIsolation: false
+    }
   })
   _progressWin.setMenuBarVisibility(false)
   _progressWin.loadFile(writeTempHtml('update-progress', html))
   _progressWin.once('ready-to-show', () => {
-    if (_progressWin && !_progressWin.isDestroyed()) _progressWin.show()
+    if (!_progressWin || _progressWin.isDestroyed()) return
+    // Centre relative to parent window
+    if (parentWin && !parentWin.isDestroyed()) {
+      const [px, py] = parentWin.getPosition()
+      const [pw, ph] = parentWin.getSize()
+      _progressWin.setPosition(
+        Math.round(px + (pw - 380) / 2),
+        Math.round(py + (ph - 180) / 2)
+      )
+    }
+    _progressWin.show()
   })
   _progressWin.on('closed', () => { _progressWin = null })
 }
 
+function _progressExec(js) {
+  if (_progressWin && !_progressWin.isDestroyed()) {
+    _progressWin.webContents.executeJavaScript(js).catch(() => {})
+  }
+}
+
 function updateProgressWindow(pct, speedBps) {
-  if (!_progressWin || _progressWin.isDestroyed()) return
   const speedStr = speedBps > 0 ? _formatBytes(speedBps) + '/s' : ''
-  const subText = pct < 5 ? 'Starting download…' : 'Downloading update…'
-  _progressWin.webContents.executeJavaScript(`
-    (function(){
-      var b=document.getElementById('bar');   if(b) b.style.width=${JSON.stringify(pct+'%')};
-      var p=document.getElementById('pct');   if(p) p.textContent=${JSON.stringify(pct+'%')};
-      var s=document.getElementById('speed'); if(s) s.textContent=${JSON.stringify(speedStr)};
-      var u=document.getElementById('sub');   if(u) u.textContent=${JSON.stringify(subText)};
-    })()
-  `).catch(() => {})
+  const subText  = pct < 5 ? 'Starting download…' : 'Downloading update…'
+  _progressExec(`(function(){
+    var b=document.getElementById('bar');   if(b) b.style.width=${JSON.stringify(pct+'%')};
+    var p=document.getElementById('pct');   if(p) p.textContent=${JSON.stringify(pct+'%')};
+    var s=document.getElementById('speed'); if(s) s.textContent=${JSON.stringify(speedStr)};
+    var u=document.getElementById('sub');   if(u) u.textContent=${JSON.stringify(subText)};
+  })()`)
+}
+
+function errorProgressWindow(canRetry) {
+  const msg = canRetry
+    ? 'Download failed — check your connection.'
+    : 'Download failed after multiple attempts.'
+  const retryLabel = canRetry ? 'Try Again' : null
+  _progressExec(`(function(){
+    var b=document.getElementById('bar');
+    if(b){b.style.width='100%';b.classList.add('error')}
+    var u=document.getElementById('sub');
+    if(u){u.textContent=${JSON.stringify(msg)};u.classList.add('error')}
+    var p=document.getElementById('pct');   if(p) p.textContent='';
+    var s=document.getElementById('speed'); if(s) s.textContent='';
+    var a=document.getElementById('actions'); if(a) a.classList.add('visible');
+    var r=document.getElementById('btn-retry');
+    if(r){
+      ${retryLabel ? `r.textContent=${JSON.stringify(retryLabel)}` : 'r.style.display="none"'};
+    }
+  })()`)
 }
 
 function closeProgressWindow() {
@@ -1099,39 +1185,70 @@ function _applyUpdateNow() {
   isQuitting = true
   killServer()
   if (!app.isPackaged) {
-    // quitAndInstall() is a no-op in dev mode (no installer to run).
-    // Relaunch the process directly so the flow is testable end-to-end.
+    // quitAndInstall() is a no-op in dev mode (bundle ID mismatch with Squirrel.Mac).
+    // Relaunch directly so the flow is fully testable end-to-end in dev.
     app.relaunch()
     app.exit(0)
   } else {
-    // isSilent=false  forceRunAfter=true — quit, run installer, restart app
+    // isSilent=false  forceRunAfter=true — quit, run installer, relaunch app
     autoUpdater.quitAndInstall(false, true)
   }
 }
 
-function _notifyUpdateReady() {
-  // Update tray tooltip + menu so the user always has a visible signal
+function _notifyUpdateReady(version, releaseNotes) {
+  const ver = version || _updateReadyVersion || ''
+
+  // Always update tray so there's a persistent ambient signal
   if (tray) {
-    tray.setToolTip('Forge OS — Update ready to install')
-    buildTrayMenu()   // re-renders menu with "Restart to Update" item
+    tray.setToolTip(`Forge OS — Update ${ver} ready to install`)
+    buildTrayMenu()
   }
+
+  // Build release-notes excerpt for the dialog detail line
+  const notes = _truncate(_stripHtml(releaseNotes || ''), 280)
+  const detail = notes
+    ? `What's new in ${ver}:\n${notes}\n\nRestart now to apply, or it will install the next time you quit.`
+    : 'Restart now to apply it, or it will install automatically the next time you quit.'
 
   dialog.showMessageBox({ icon: appDialogIcon,
     type: 'info',
-    title: 'Update Ready to Install',
-    message: 'A Forge OS update has downloaded and is ready.',
-    detail: 'Restart now to apply it, or it will install automatically the next time you quit.',
+    title: `Forge OS ${ver} Ready`,
+    message: `Forge OS ${ver} has downloaded and is ready to install.`,
+    detail,
     buttons: ['Restart Now', 'Later'],
     defaultId: 0
   }).then(({ response }) => {
     if (response === 0) _applyUpdateNow()
+  }).catch(err => {
+    // Squirrel.Mac may throw if it races with the background install — safe to ignore
+    console.warn('[updater] Restart dialog error (harmless in dev):', err.message)
+  })
+}
+
+function _startDownload() {
+  autoUpdater.downloadUpdate().catch(err => {
+    // 'error' event also fires — this .catch() only prevents unhandled-rejection warning
+    console.error('[updater] downloadUpdate() rejected:', err.message)
   })
 }
 
 function setupAutoUpdater() {
   autoUpdater.logger = console
-  autoUpdater.autoDownload = false      // manual download so we own the promise and can catch it
-  autoUpdater.autoInstallOnAppQuit = true
+  autoUpdater.autoDownload = false      // we own the download promise; avoids detached rejections
+  // In dev mode, Squirrel.Mac auto-install fails (bundle ID mismatch). Packaged builds
+  // auto-install on quit so users who click "Later" still get the update eventually.
+  autoUpdater.autoInstallOnAppQuit = app.isPackaged
+
+  // "Try Again" button in the progress window sends this IPC message
+  ipcMain.on('updater-retry', () => {
+    _progressExec(`(function(){
+      var b=document.getElementById('bar');   if(b){b.style.width='0%';b.classList.remove('error')}
+      var u=document.getElementById('sub');   if(u){u.textContent='Retrying download…';u.classList.remove('error')}
+      var p=document.getElementById('pct');   if(p) p.textContent='0%';
+      var a=document.getElementById('actions'); if(a) a.classList.remove('visible');
+    })()`)
+    _startDownload()
+  })
 
   autoUpdater.on('checking-for-update', () => {
     console.log('[updater] Checking for updates…')
@@ -1139,23 +1256,26 @@ function setupAutoUpdater() {
 
   autoUpdater.on('update-available', info => {
     console.log(`[updater] Update available: ${info.version}`)
+
+    const wasManual = _updateCheckManual
     _updateCheckManual = false
-    _updateChecking = false
-    // Show progress window immediately so the user sees something happening
-    showProgressWindow(info.version)
-    // Start download manually — we own the promise so unhandled rejections are impossible.
-    // The 'error' event fires on failure; this .catch() is just the safety net.
-    autoUpdater.downloadUpdate().catch(err => {
-      console.error('[updater] Download failed:', err.message)
-      closeProgressWindow()
-      if (tray) tray.setToolTip('Forge OS')
-    })
+    _updateChecking    = false
+    _downloadRetries   = 0
+
+    if (wasManual) {
+      // User explicitly asked — show the progress window so they can watch the download
+      showProgressWindow(info.version)
+    } else {
+      // Background auto-check — download silently; only the tray tooltip signals activity
+      if (tray) tray.setToolTip(`Forge OS — Downloading update ${info.version}…`)
+    }
+
+    _startDownload()
   })
 
   autoUpdater.on('update-not-available', () => {
     console.log('[updater] Already up to date.')
     if (_updateCheckManual) {
-      // Only show dialog when user explicitly asked — background checks stay silent
       dialog.showMessageBox({ icon: appDialogIcon,
         type: 'info',
         title: 'You\'re up to date',
@@ -1164,33 +1284,67 @@ function setupAutoUpdater() {
       })
     }
     _updateCheckManual = false
-    _updateChecking = false
+    _updateChecking    = false
   })
 
   autoUpdater.on('update-downloaded', info => {
     console.log(`[updater] Update downloaded: ${info.version}`)
-    _updateReady = true
-    _updateChecking = false
-    // Fill bar to 100% briefly, then close and prompt restart
-    updateProgressWindow(100, 0)
-    setTimeout(() => {
-      closeProgressWindow()
-      _notifyUpdateReady()
-    }, 600)
+    _updateReady        = true
+    _updateReadyVersion = info.version
+    _updateChecking     = false
+    _downloadRetries    = 0
+
+    if (_progressWin && !_progressWin.isDestroyed()) {
+      // Manual flow: fill bar to 100%, close the window, then show restart dialog
+      updateProgressWindow(100, 0)
+      setTimeout(() => {
+        closeProgressWindow()
+        _notifyUpdateReady(info.version, info.releaseNotes)
+      }, 600)
+    } else {
+      // Background flow: no progress window — go straight to restart dialog
+      _notifyUpdateReady(info.version, info.releaseNotes)
+    }
   })
 
   autoUpdater.on('download-progress', progress => {
     const pct = Math.round(progress.percent)
+    const bps = Math.round(progress.bytesPerSecond || 0)
     if (tray) tray.setToolTip(`Forge OS — Downloading update ${pct}%`)
-    updateProgressWindow(pct, Math.round(progress.bytesPerSecond || 0))
-    console.log(`[updater] Download ${pct}% — ${_formatBytes(Math.round(progress.bytesPerSecond || 0))}/s`)
+    updateProgressWindow(pct, bps)
+    console.log(`[updater] Download ${pct}% — ${_formatBytes(bps)}/s`)
   })
 
   autoUpdater.on('error', err => {
     console.error('[updater]', err.message)
-    closeProgressWindow()
     if (tray) tray.setToolTip('Forge OS')
-    if (_updateCheckManual) {
+
+    // Retry on likely transient failures (network, timeout, server error)
+    const isTransient = /ENOTFOUND|ETIMEDOUT|ECONNRESET|ECONNREFUSED|socket|network|503|502|429/i.test(err.message)
+
+    if (isTransient && _downloadRetries < _MAX_RETRIES) {
+      const delay = _RETRY_DELAYS_MS[_downloadRetries] || 60000
+      _downloadRetries++
+      console.log(`[updater] Transient error — retry ${_downloadRetries}/${_MAX_RETRIES} in ${delay / 1000}s`)
+      if (_progressWin && !_progressWin.isDestroyed()) {
+        _progressExec(`(function(){
+          var u=document.getElementById('sub');
+          if(u) u.textContent='Connection error — retrying in ${Math.round(delay/1000)}s…';
+        })()`)
+      }
+      setTimeout(() => _startDownload(), delay)
+      return
+    }
+
+    // Retries exhausted or non-transient error
+    const canRetry = _downloadRetries < _MAX_RETRIES  // still has attempts left for manual retry
+    _downloadRetries = 0
+
+    if (_progressWin && !_progressWin.isDestroyed()) {
+      // Progress window is visible — show inline error with retry button
+      errorProgressWindow(canRetry)
+    } else if (_updateCheckManual) {
+      // Failed during the check phase itself (no progress window yet)
       dialog.showMessageBox({ icon: appDialogIcon,
         type: 'warning',
         title: 'Update Check Failed',
@@ -1199,8 +1353,9 @@ function setupAutoUpdater() {
         buttons: ['OK']
       })
     }
+    // Background failures after retries: silent — don't interrupt the user
     _updateCheckManual = false
-    _updateChecking = false
+    _updateChecking    = false
   })
 
   // Background check on startup — silent unless an update is found.
@@ -1218,13 +1373,14 @@ function setupAutoUpdater() {
 // dialog is shown, then fires the check.
 function checkForUpdatesManual() {
   if (_updateReady) {
-    // Update already downloaded — skip network round-trip, go straight to install prompt
-    _notifyUpdateReady()
+    // Update already staged — skip the network round-trip, go straight to install prompt
+    _notifyUpdateReady(_updateReadyVersion)
     return
   }
   if (_updateChecking) return   // debounce rapid clicks
   _updateCheckManual = true
-  _updateChecking = true
+  _updateChecking    = true
+  _downloadRetries   = 0
   if (tray) tray.setToolTip('Forge OS — Checking for updates…')
   // 'error' event handles user-facing dialog; .catch() suppresses unhandled rejection
   autoUpdater.checkForUpdates().catch(() => {})

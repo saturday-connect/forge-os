@@ -1,6 +1,6 @@
 {
   "name": "forge-os",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "description": "Forge OS — Documentation-first PDLC automation desktop app",
   "main": "main.js",
   "scripts": {
