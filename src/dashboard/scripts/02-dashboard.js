@@ -198,7 +198,7 @@ const PROJECT_UI_TEXT = {
   deleteProject: 'Delete',
   confirmDeleteProject: 'Confirm Delete',
   cancelDelete: 'Cancel',
-  unnamed: 'Unnamed Project',
+  unnamed: 'My Project',
   never: 'Never',
   enterName: 'Enter a project name',
   createFailed: 'Failed to create project',
@@ -711,7 +711,7 @@ function renderOverview() {
   const rawInputs = state.rawInputs || [];
   const builds = state.builds || [];
 
-  const pname = state.project_name || 'Unnamed Project';
+  const pname = state.project_name || 'My Project';
   document.getElementById('overview-project-name').textContent = pname;
   document.getElementById('overview-subtitle').textContent = 'Product Lifecycle';
 

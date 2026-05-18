@@ -810,6 +810,15 @@ def compute_full_state():
     proj = load_project_state()
     reviews = load_reviews()
 
+    # Resolve project_name: state file → active project index entry → directory basename
+    if not proj.get("project_name"):
+        _idx = load_projects_index()
+        _active = get_active_project(_idx)
+        if _active and _active.get("name"):
+            proj["project_name"] = _active["name"]
+        else:
+            proj["project_name"] = os.path.basename(REPO_ROOT)
+
     # Gates
     gates = {}
     gates_dir = os.path.join(FORGE_DIR, "12-gates")
