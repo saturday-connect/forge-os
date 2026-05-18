@@ -344,10 +344,13 @@ function renderProjectsHome() {
     <aside class="projects-sidebar">
       <div class="proj-sidebar-logo">
         <div class="proj-sidebar-logo-mark">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M12 2L2 7l10 5 10-5-10-5z"/>
-            <path d="M2 17l10 5 10-5"/>
-            <path d="M2 12l10 5 10-5"/>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+            <rect x="6"   y="4.5" width="3"  height="15"  rx="0.5" fill="currentColor"/>
+            <rect x="6"   y="4.5" width="12" height="2.8"  rx="0.5" fill="currentColor"/>
+            <rect x="6"   y="12"  width="9"  height="2.5"  rx="0.5" fill="currentColor"/>
+            <path transform="translate(18.5,5.1)"
+              d="M0,-1.6 C.22,-.52 .52,-.22 1.6,0 C.52,.22 .22,.52 0,1.6 C-.22,.52 -.52,.22 -1.6,0 C-.52,-.22 -.22,-.52 0,-1.6Z"
+              fill="currentColor" opacity="0.85"/>
           </svg>
         </div>
         <span class="proj-sidebar-wordmark">Forge OS</span>
