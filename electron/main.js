@@ -143,41 +143,60 @@ function createSetupWindow() {
     // org's forge-knowledge repo using the unauthenticated GitHub Contents API
     // (works for public repos; private repos require auth, handled post-setup).
     ipcMain.handle('setup-fetch-org-config', async (_e, orgName) => {
-      const url = `https://api.github.com/repos/${orgName}/forge-knowledge/contents/forge.config.json`
-      return new Promise(res => {
-        const https = require('https')
-        const req = https.get(url, {
-          headers: { 'User-Agent': 'forge-os-desktop', Accept: 'application/vnd.github+json' }
-        }, response => {
-          let raw = ''
-          response.on('data', c => { raw += c })
-          response.on('end', () => {
-            if (response.statusCode === 404) {
-              return res({ error: `No forge-knowledge repo found in "${orgName}". Ask your admin to set up Forge OS first.` })
-            }
-            if (response.statusCode === 403 || response.statusCode === 401) {
-              // Private repo — we can't fetch without auth yet; store org name and proceed.
-              // The Client ID will be pulled after the user authenticates.
-              return res({ orgName, private: true })
-            }
-            if (response.statusCode !== 200) {
-              return res({ error: `GitHub returned status ${response.statusCode}. Check the organization name and try again.` })
-            }
-            try {
-              const data = JSON.parse(raw)
-              const content = JSON.parse(Buffer.from(data.content.replace(/\n/g, ''), 'base64').toString('utf8'))
-              if (!content.githubClientId) {
-                return res({ error: 'forge.config.json exists but has no githubClientId. Ask your admin to complete setup.' })
-              }
-              return res({ orgName, githubClientId: content.githubClientId })
-            } catch (_) {
-              return res({ error: 'Could not parse forge.config.json from the organization repo.' })
-            }
+      const https = require('https')
+
+      // Helper: fire a GET and resolve with { statusCode, body }
+      function httpGet(url) {
+        return new Promise(res => {
+          const req = https.get(url, {
+            headers: { 'User-Agent': 'forge-os-desktop', Accept: 'application/vnd.github+json' }
+          }, response => {
+            let raw = ''
+            response.on('data', c => { raw += c })
+            response.on('end', () => res({ statusCode: response.statusCode, body: raw }))
           })
+          req.on('error', err => res({ statusCode: 0, body: '', error: err.message }))
+          req.setTimeout(10000, () => { req.destroy(); res({ statusCode: 0, body: '', error: 'Request timed out.' }) })
         })
-        req.on('error', err => res({ error: `Network error: ${err.message}` }))
-        req.setTimeout(10000, () => { req.destroy(); res({ error: 'Request timed out.' }) })
-      })
+      }
+
+      // Step 1: fetch forge.config.json from the knowledge repo
+      const configUrl = `https://api.github.com/repos/${orgName}/forge-knowledge/contents/forge.config.json`
+      const configRes = await httpGet(configUrl)
+
+      if (configRes.error) return { error: `Network error: ${configRes.error}` }
+
+      if (configRes.statusCode === 200) {
+        try {
+          const data    = JSON.parse(configRes.body)
+          const content = JSON.parse(Buffer.from(data.content.replace(/\n/g, ''), 'base64').toString('utf8'))
+          if (!content.githubClientId) {
+            return { error: 'forge.config.json exists but has no githubClientId. Ask your admin to complete setup.' }
+          }
+          return { orgName, githubClientId: content.githubClientId }
+        } catch (_) {
+          return { error: 'Could not parse forge.config.json from the organization repo.' }
+        }
+      }
+
+      if (configRes.statusCode === 403 || configRes.statusCode === 401) {
+        // Authenticated private repo — proceed to manual Client ID entry
+        return { orgName, private: true }
+      }
+
+      if (configRes.statusCode === 404) {
+        // GitHub returns 404 for both missing repos AND private repos (to avoid leaking
+        // their existence). Check if the org itself exists to distinguish the two cases.
+        const orgRes = await httpGet(`https://api.github.com/orgs/${orgName}`)
+        if (orgRes.statusCode === 200) {
+          // Org exists — the repo is private (GitHub hides it as 404 when unauthenticated)
+          return { orgName, private: true }
+        }
+        // Org not found or network error — give an actionable error
+        return { error: `Organization "${orgName}" not found on GitHub. Check the name and try again.` }
+      }
+
+      return { error: `GitHub returned status ${configRes.statusCode}. Check the organization name and try again.` }
     })
 
     // IPC: copy text to clipboard (used by SSH key copy button)
