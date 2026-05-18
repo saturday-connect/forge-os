@@ -1044,15 +1044,18 @@ if (!app.isPackaged) {
 // ── State ──────────────────────────────────────────────────────────────────
 // _updateCheckManual   true when user clicked "Check for Updates" — shows
 //                      progress window + "up to date" dialog
-// _updateReady         true once update-downloaded fires; controls tray menu
-// _updateChecking      debounce flag to prevent rapid tray-click spam
-// _updateReadyVersion  version string of staged update ("0.3.3")
-// _downloadRetries     current retry attempt count (reset on success/cancel)
+// _updateReady           true once update-downloaded fires; controls tray menu
+// _updateChecking        debounce flag to prevent rapid tray-click spam
+// _updateReadyVersion    version string of staged update ("0.3.3")
+// _downloadRetries       current retry attempt count (reset on success/cancel)
+// _manualCheckPending    true when user explicitly triggered a check; cleared only
+//                        after we've shown them a result (up-to-date / error / update)
 let _updateCheckManual  = false
 let _updateReady        = false
 let _updateChecking     = false
 let _updateReadyVersion = null
 let _downloadRetries    = 0
+let _manualCheckPending = false
 const _MAX_RETRIES      = 3
 const _RETRY_DELAYS_MS  = [10000, 30000, 60000]  // 10s → 30s → 60s
 
@@ -1317,16 +1320,21 @@ function setupAutoUpdater() {
 
   autoUpdater.on('update-not-available', () => {
     console.log('[updater] Already up to date.')
-    if (_updateCheckManual) {
+    if (tray) tray.setToolTip('Forge OS')
+    _updateChecking = false
+    if (_manualCheckPending) {
+      _manualCheckPending = false
+      _updateCheckManual  = false
       dialog.showMessageBox({ icon: appDialogIcon,
         type: 'info',
         title: 'You\'re up to date',
-        message: `Forge OS ${FORGE_VERSION} is the latest version.`,
+        message: `Forge OS ${app.getVersion()} is the latest version.`,
+        detail: 'No updates are currently available.',
         buttons: ['OK']
-      })
+      }).catch(() => {})
+    } else {
+      _updateCheckManual = false
     }
-    _updateCheckManual = false
-    _updateChecking    = false
   })
 
   autoUpdater.on('update-downloaded', info => {
@@ -1346,6 +1354,19 @@ function setupAutoUpdater() {
       _updateReady        = false
       _updateReadyVersion = null
       if (tray) { tray.setToolTip('Forge OS'); buildTrayMenu() }
+      // If this was a manual check, let the user know they're up to date
+      if (_manualCheckPending) {
+        _manualCheckPending = false
+        _updateCheckManual  = false
+        _updateChecking     = false
+        dialog.showMessageBox({ icon: appDialogIcon,
+          type: 'info',
+          title: 'You\'re up to date',
+          message: `Forge OS ${app.getVersion()} is the latest version.`,
+          detail: 'No updates are currently available.',
+          buttons: ['OK']
+        }).catch(() => {})
+      }
       return
     }
 
@@ -1442,12 +1463,28 @@ function checkForUpdatesManual() {
     return
   }
   if (_updateChecking) return   // debounce rapid clicks
-  _updateCheckManual = true
-  _updateChecking    = true
-  _downloadRetries   = 0
+  _updateCheckManual  = true
+  _manualCheckPending = true
+  _updateChecking     = true
+  _downloadRetries    = 0
   if (tray) tray.setToolTip('Forge OS — Checking for updates…')
-  // 'error' event handles user-facing dialog; .catch() suppresses unhandled rejection
-  autoUpdater.checkForUpdates().catch(() => {})
+  autoUpdater.checkForUpdates().catch(err => {
+    // If the check rejects without firing the 'error' event (can happen in dev/offline),
+    // fall through to the error handler manually so the user gets feedback.
+    if (_manualCheckPending) {
+      _manualCheckPending = false
+      _updateCheckManual  = false
+      _updateChecking     = false
+      if (tray) tray.setToolTip('Forge OS')
+      dialog.showMessageBox({ icon: appDialogIcon,
+        type: 'warning',
+        title: 'Update Check Failed',
+        message: 'Could not check for updates.',
+        detail: `${err.message || 'Unknown error'}\n\nCheck your internet connection and try again.`,
+        buttons: ['OK']
+      }).catch(() => {})
+    }
+  })
 }
 
 // ─── App lifecycle ────────────────────────────────────────────────────────────

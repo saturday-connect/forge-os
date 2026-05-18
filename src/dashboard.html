@@ -87,7 +87,7 @@ body.mac #topbar { padding-left: 80px; }
   font-size: 14px;
   letter-spacing: 1.5px;
   text-transform: uppercase;
-  color: var(--on-primary);
+  color: var(--text);
   display: flex;
   align-items: center;
   gap: 8px;
@@ -97,17 +97,60 @@ body.mac #topbar { padding-left: 80px; }
   width: 28px;
   height: 28px;
   background: var(--primary);
-  border: 1px solid var(--primary);
-  border-radius: var(--r-pill);
+  border-radius: 8px;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--on-primary);
+  color: #060D06;
+  flex-shrink: 0;
 }
 .logo-icon svg {
   display: block;
   width: 16px;
   height: 16px;
+}
+/* macOS: traffic lights live top-left of the topbar row.
+   Hide the topbar logo and carry the brand in the sidebar instead,
+   positioned below the traffic-light buttons. */
+body.mac #topbar .logo { display: none; }
+/* Sidebar logo — shown only on macOS (traffic-light layout) */
+#sidebar-logo {
+  display: none;
+}
+body.mac #sidebar-logo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 16px 16px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+body.mac #sidebar {
+  padding-top: 52px;
+}
+#sidebar-logo-mark {
+  width: 28px;
+  height: 28px;
+  background: var(--primary);
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #060D06;
+  flex-shrink: 0;
+}
+#sidebar-logo-mark svg {
+  display: block;
+  width: 16px;
+  height: 16px;
+}
+#sidebar-logo-text {
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--text);
 }
 
 /* Phase stepper in topbar */
@@ -1386,13 +1429,14 @@ body.mac.projects-mode #topbar .logo {
   margin-bottom: 28px;
 }
 .proj-sidebar-logo-mark {
-  width: 32px;
-  height: 32px;
+  width: 28px;
+  height: 28px;
   background: var(--primary);
-  border-radius: var(--r-pill);
+  border-radius: 8px;
   display: flex;
   align-items: center;
   justify-content: center;
+  color: #060D06;
   flex-shrink: 0;
 }
 .proj-sidebar-logo-mark svg {
@@ -1402,10 +1446,11 @@ body.mac.projects-mode #topbar .logo {
 }
 .proj-sidebar-wordmark {
   font-family: var(--display-font);
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 600;
-  letter-spacing: .5px;
-  color: #ffffff;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--text);
 }
 .proj-new-btn {
   width: 100%;
@@ -2379,6 +2424,21 @@ body.mac .projects-main {
 <div id="app">
   <!-- Sidebar -->
   <nav id="sidebar">
+    <!-- Logo: macOS only — sits below traffic-light buttons; topbar logo hidden via CSS on mac -->
+    <div id="sidebar-logo">
+      <div id="sidebar-logo-mark">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+          <rect x="6"   y="4.5" width="3"  height="15"  rx="0.5" fill="currentColor"/>
+          <rect x="6"   y="4.5" width="12" height="2.8"  rx="0.5" fill="currentColor"/>
+          <rect x="6"   y="12"  width="9"  height="2.5"  rx="0.5" fill="currentColor"/>
+          <path transform="translate(18.5,5.1)"
+            d="M0,-1.6 C.22,-.52 .52,-.22 1.6,0 C.52,.22 .22,.52 0,1.6 C-.22,.52 -.52,.22 -1.6,0 C-.52,-.22 -.22,-.52 0,-1.6Z"
+            fill="currentColor" opacity="0.85"/>
+        </svg>
+      </div>
+      <span id="sidebar-logo-text">Forge OS</span>
+    </div>
+
     <div class="nav-item active" data-view="overview" onclick="switchView('overview')">
       <span class="nav-icon">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
@@ -3460,10 +3520,13 @@ function renderProjectsHome() {
     <aside class="projects-sidebar">
       <div class="proj-sidebar-logo">
         <div class="proj-sidebar-logo-mark">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M12 2L2 7l10 5 10-5-10-5z"/>
-            <path d="M2 17l10 5 10-5"/>
-            <path d="M2 12l10 5 10-5"/>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+            <rect x="6"   y="4.5" width="3"  height="15"  rx="0.5" fill="currentColor"/>
+            <rect x="6"   y="4.5" width="12" height="2.8"  rx="0.5" fill="currentColor"/>
+            <rect x="6"   y="12"  width="9"  height="2.5"  rx="0.5" fill="currentColor"/>
+            <path transform="translate(18.5,5.1)"
+              d="M0,-1.6 C.22,-.52 .52,-.22 1.6,0 C.52,.22 .22,.52 0,1.6 C-.22,.52 -.52,.22 -1.6,0 C-.52,-.22 -.22,-.52 0,-1.6Z"
+              fill="currentColor" opacity="0.85"/>
           </svg>
         </div>
         <span class="proj-sidebar-wordmark">Forge OS</span>
