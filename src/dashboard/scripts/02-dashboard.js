@@ -15,6 +15,14 @@ const ICONS = {
   questionCircle: `<path d="M9.879 7.519c1.171-1.025 3.071-1.025 4.242 0 1.172 1.025 1.172 2.687 0 3.712-.203.179-.43.326-.67.442-.745.361-1.45.999-1.45 1.827v.75M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9 5.25h.008v.008H12v-.008z"/>`,
   server: `<path d="M21.75 17.25v.75a3 3 0 01-3 3h-13.5a3 3 0 01-3-3v-.75m19.5 0a3 3 0 00-3-3H5.25a3 3 0 00-3 3m19.5 0v.75M2.25 11.25h19.5M2.25 6.75h19.5M5.25 6.75V3.75m13.5 3V3.75M5.25 11.25V8.25m13.5 3V8.25"/>`,
   beaker: `<path d="M9.75 3.104v5.714a2.25 2.25 0 01-.659 1.591L5 14.5M9.75 3.104c-.251.023-.501.05-.75.082m.75-.082a24.301 24.301 0 014.5 0m0 0v5.714c0 .597.237 1.17.659 1.591L19.8 15.3M14.25 3.104c.251.023.501.05.75.082M19.8 15.3l-1.57.393A9.065 9.065 0 0112 15a9.065 9.065 0 00-6.23-.693L5 14.5m14.8.8l1.402 1.402c1.232 1.232.65 3.318-1.067 3.611A48.309 48.309 0 0112 21c-2.773 0-5.491-.235-8.135-.687-1.718-.293-2.3-2.379-1.067-3.61L5 14.5"/>`,
+  lock: `<path d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z"/>`,
+  bolt: `<path d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z"/>`,
+  cog: `<path d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.431l-1.003.827c-.293.24-.438.613-.431.992a6.759 6.759 0 010 .255c-.007.378.138.75.43.99l1.005.828c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.57 6.57 0 01-.22.128c-.331.183-.581.495-.644.869l-.213 1.28c-.09.543-.56.941-1.11.941h-2.594c-.55 0-1.02-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 01-1.369-.49l-1.297-2.247a1.125 1.125 0 01.26-1.431l1.004-.827c.292-.24.437-.613.43-.992a6.932 6.932 0 010-.255c.007-.378-.138-.75-.43-.99l-1.004-.828a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.087.22-.128.332-.183.582-.495.644-.869l.214-1.281z"/><path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>`,
+  arrowUp: `<path d="M4.5 10.5L12 3m0 0l7.5 7.5M12 3v18"/>`,
+  download: `<path d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"/>`,
+  clipboard: `<path d="M15.666 3.888A2.25 2.25 0 0013.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 01-.75.75H9a.75.75 0 01-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 01-2.25 2.25H6.75A2.25 2.25 0 014.5 19.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 011.927-.184"/>`,
+  codeSquare: `<path d="M14.25 9.75L16.5 12l-2.25 2.25m-4.5 0L7.5 12l2.25-2.25M6 20.25h12A2.25 2.25 0 0020.25 18V6A2.25 2.25 0 0018 3.75H6A2.25 2.25 0 003.75 6v12A2.25 2.25 0 006 20.25z"/>`,
+  warning: `<path d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"/>`,
 };
 
 function icon(name, size = 14) {
@@ -128,6 +136,18 @@ let viewingVersion = null;  // {id, timestamp} when viewing a historic version, 
 
 const PIPELINE_STAGE_ORDER = ['context','requirements','design','analysis','architecture','delivery','engineering','qa','operations','release','marketing'];
 
+const VIEWER_DEFAULT_HTML = `
+  <div class="viewer-empty-state viewer-empty-state--default">
+    <div class="viewer-empty-icon">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z"/>
+        <path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+      </svg>
+    </div>
+    <div class="viewer-empty-title">Select a document</div>
+    <div class="viewer-empty-desc">Choose a file from the left panel to read its contents and mark it as reviewed.</div>
+  </div>`;
+
 const PHASES = ['input', 'generate', 'review', 'build', 'deploy'];
 const PHASE_LABELS = { input: 'Input', generate: 'Generate', review: 'Review', build: 'Build', deploy: 'Deploy' };
 
@@ -232,6 +252,7 @@ function renderAll() {
   renderGenerate();
   renderReview();
   renderBuild();
+  renderPhases();
   renderDeploy();
   renderIssues();
   if (!runtimeInitialized) {
@@ -685,70 +706,276 @@ function renderOverview() {
   const summary = state.stageReviewSummary || {};
   const gates = state.gates || {};
   const issues = state.issues || [];
+  const git = state.git || {};
+  const processing = state.processing || {};
+  const rawInputs = state.rawInputs || [];
+  const builds = state.builds || [];
 
   const pname = state.project_name || 'Unnamed Project';
-  document.getElementById('overview-subtitle').textContent = pname;
+  document.getElementById('overview-project-name').textContent = pname;
+  document.getElementById('overview-subtitle').textContent = 'Product Lifecycle';
 
-  // Lifecycle stepper
-  const stepperEl = document.getElementById('lifecycle-stepper');
-  stepperEl.innerHTML = '';
-  PHASES.forEach((p, i) => {
-    const cls = i < phaseIdx ? 'done' : (i === phaseIdx ? 'active' : '');
-    const num = i + 1;
-    const circleContent = i < phaseIdx
-      ? `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 12.75l6 6 9-13.5"/></svg>`
-      : num;
-    stepperEl.insertAdjacentHTML('beforeend', `
-      <div class="lifecycle-step ${cls}" onclick="switchView('${p}')">
-        <div class="step-circle">${circleContent}</div>
-        <div class="step-label">${PHASE_LABELS[p]}</div>
-      </div>
-      ${i < PHASES.length - 1 ? `<div class="step-connector ${i < phaseIdx ? 'done' : ''}"></div>` : ''}
-    `);
+  // Phase badge
+  const phaseBadgeColors = { input: 'var(--text-3)', generate: 'var(--accent)', review: 'var(--amber)', build: 'var(--blue)', deploy: 'var(--green)' };
+  document.getElementById('overview-phase-badge').innerHTML =
+    `<span style="font-size:10px;font-weight:700;padding:3px 10px;border-radius:20px;background:var(--bg-2);border:1px solid var(--border);color:${phaseBadgeColors[phase] || 'var(--text-2)'};">${(phase || '').toUpperCase()}</span>`;
+
+  // Quick action (header CTA)
+  const quickActions = {
+    input:    `<button class="btn btn-primary btn-sm" onclick="switchView('input');openNewFileDialog()">${icon('sparkles',12)} Create Input</button>`,
+    generate: `<button class="btn btn-primary btn-sm" onclick="switchView('generate');generate('all')">${icon('sparkles',12)} Generate All</button>`,
+    review:   `<button class="btn btn-primary btn-sm" onclick="switchView('review')">${icon('eye',12)} Review Docs</button>`,
+    build:    `<button class="btn btn-primary btn-sm" onclick="switchView('build')">${icon('gitBranch',12)} Go to Build</button>`,
+    deploy:   `<button class="btn btn-primary btn-sm" onclick="switchView('deploy')">${icon('cloudUp',12)} Go to Deploy</button>`,
+  };
+  document.getElementById('overview-quick-action').innerHTML = quickActions[phase] || '';
+
+  // ── Phase progress strip ──────────────────────────────────────────────────
+  const totalDocs = STAGES.reduce((n, s) => n + ((summary[s.dir] || {}).total || 0), 0);
+  const totalGenerated = STAGES.reduce((n, s) => n + ((summary[s.dir] || {}).generated || 0), 0);
+  const totalReviewed = STAGES.reduce((n, s) => n + ((summary[s.dir] || {}).reviewed || 0), 0);
+  const gatesPassed = Object.values(gates).filter(v => v === 'PASSED').length;
+  const gatesTotal = Object.keys(gates).length || 8;
+
+  const phasePcts = {
+    input:    rawInputs.length > 0 ? 100 : 0,
+    generate: totalDocs > 0 ? Math.round((totalGenerated / totalDocs) * 100) : 0,
+    review:   totalGenerated > 0 ? Math.round((totalReviewed / totalGenerated) * 100) : 0,
+    build:    (() => { const hasBuildFiles = Object.values(buildStepsState).some(s => s.status === 'complete'); return hasBuildFiles ? 100 : 0; })(),
+    deploy:   (() => { const envs = state.environments || {}; return ((envs.staging || {}).url || (envs.production || {}).url) ? 100 : 0; })(),
+  };
+
+  const phaseStates = PHASES.map((p, i) => {
+    if (i < phaseIdx) return 'done';
+    if (i === phaseIdx) return 'active';
+    return 'pending';
   });
 
-  // Stats
-  const totalGenerated = Object.values(summary).reduce((a, s) => a + s.generated, 0);
-  const totalReviewed = Object.values(summary).reduce((a, s) => a + s.reviewed, 0);
-  const gatesPassed = Object.values(gates).filter(v => v === 'PASSED').length;
+  const stripEl = document.getElementById('overview-phase-strip');
+  stripEl.innerHTML = PHASES.map((p, i) => {
+    const st = phaseStates[i];
+    const pct = phasePcts[p];
+    const checkSvg = `<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 12.75l6 6 9-13.5"/></svg>`;
+    return `
+      <div class="overview-phase-tile overview-phase-tile--${st}" onclick="switchView('${p}')">
+        <div class="overview-phase-name overview-phase-name--${st}">
+          ${st === 'done' ? checkSvg : ''}
+          ${PHASE_LABELS[p]}
+        </div>
+        <div class="overview-phase-pct overview-phase-pct--${st}">${pct}%</div>
+        <div class="overview-phase-bar">
+          <div class="overview-phase-bar-fill overview-phase-bar-fill--${st}" style="width:${pct}%"></div>
+        </div>
+      </div>`;
+  }).join('');
+
+  // ── Attention card ────────────────────────────────────────────────────────
+  const attentionEl = document.getElementById('overview-attention');
+  const isRunning = processing.status === 'running';
+
+  if (isRunning) {
+    const stageLabel = (STAGES.find(s => s.key === processing.stage) || {}).label || processing.stage || 'pipeline';
+    attentionEl.innerHTML = `
+      <div class="overview-attention-card overview-attention-card--info">
+        <div class="overview-attention-icon overview-attention-icon--info">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="animation:spin 1.2s linear infinite"><path d="M21 12a9 9 0 11-6.219-8.56"/></svg>
+        </div>
+        <div class="overview-attention-body">
+          <div class="overview-attention-title">Generating ${escapeHtml(stageLabel)}</div>
+          <div class="overview-attention-desc">AI pipeline is running. ${processing.file_index && processing.file_total ? `File ${processing.file_index} of ${processing.file_total}.` : 'This may take a minute.'}</div>
+        </div>
+      </div>`;
+  } else if (phase === 'input') {
+    attentionEl.innerHTML = `
+      <div class="overview-attention-card overview-attention-card--warn">
+        <div class="overview-attention-icon overview-attention-icon--warn">${icon('warning', 15)}</div>
+        <div class="overview-attention-body">
+          <div class="overview-attention-title">No input documents yet</div>
+          <div class="overview-attention-desc">Add at least one product brief, requirements doc, or idea sketch to start the AI pipeline. The quality of your inputs directly determines the quality of everything generated downstream.</div>
+          <div class="overview-attention-actions">
+            <button class="btn btn-primary btn-sm" onclick="switchView('input');openNewFileDialog()">${icon('sparkles',12)} Create Input File</button>
+          </div>
+        </div>
+      </div>`;
+  } else if (phase === 'generate') {
+    const notGenerated = STAGES.filter(s => ((summary[s.dir] || {}).generated || 0) === 0);
+    const items = notGenerated.slice(0, 5).map(s => `<div class="overview-attention-item"><span class="overview-attention-dot"></span>${s.label}</div>`).join('');
+    attentionEl.innerHTML = `
+      <div class="overview-attention-card overview-attention-card--warn">
+        <div class="overview-attention-icon overview-attention-icon--warn">${icon('sparkles', 15)}</div>
+        <div class="overview-attention-body">
+          <div class="overview-attention-title">${notGenerated.length} stage${notGenerated.length !== 1 ? 's' : ''} not yet generated</div>
+          <div class="overview-attention-desc">Run the AI pipeline to generate documentation for all stages. Each stage builds on the previous — run them in order or use Generate All.</div>
+          ${items ? `<div class="overview-attention-items">${items}${notGenerated.length > 5 ? `<div class="overview-attention-item"><span class="overview-attention-dot"></span>…and ${notGenerated.length - 5} more</div>` : ''}</div>` : ''}
+          <div class="overview-attention-actions">
+            <button class="btn btn-primary btn-sm" onclick="switchView('generate');generate('all')">${icon('sparkles',12)} Generate All Stages</button>
+            <button class="btn btn-ghost btn-sm" onclick="switchView('generate')">${icon('eye',12)} View Pipeline</button>
+          </div>
+        </div>
+      </div>`;
+  } else if (phase === 'review') {
+    const needsReview = STAGES.filter(s => {
+      const st = summary[s.dir] || {};
+      return st.generated > 0 && st.reviewed < st.generated;
+    });
+    const remaining = needsReview.reduce((n, s) => n + ((summary[s.dir] || {}).generated || 0) - ((summary[s.dir] || {}).reviewed || 0), 0);
+    const items = needsReview.slice(0, 4).map(s => {
+      const st = summary[s.dir] || {};
+      return `<div class="overview-attention-item"><span class="overview-attention-dot" style="background:var(--amber)"></span>${s.label} — ${(st.generated||0) - (st.reviewed||0)} file${(st.generated||0)-(st.reviewed||0)!==1?'s':''}</div>`;
+    }).join('');
+    attentionEl.innerHTML = `
+      <div class="overview-attention-card overview-attention-card--warn">
+        <div class="overview-attention-icon overview-attention-icon--warn">${icon('eye', 15)}</div>
+        <div class="overview-attention-body">
+          <div class="overview-attention-title">${remaining} document${remaining !== 1 ? 's' : ''} awaiting review</div>
+          <div class="overview-attention-desc">Review each generated document and mark it as approved. Gates only pass once all documents in a stage are reviewed. This unlocks Build.</div>
+          ${items ? `<div class="overview-attention-items">${items}</div>` : ''}
+          <div class="overview-attention-actions">
+            <button class="btn btn-primary btn-sm" onclick="switchView('review')">${icon('eye',12)} Open Review</button>
+          </div>
+        </div>
+      </div>`;
+  } else if (phase === 'build') {
+    const hasGit = !!(git.repo_url);
+    const hasBuildFiles = Object.values(buildStepsState).some(s => s.status === 'complete');
+    if (!hasGit) {
+      attentionEl.innerHTML = `
+        <div class="overview-attention-card overview-attention-card--warn">
+          <div class="overview-attention-icon overview-attention-icon--warn">${icon('gitBranch', 15)}</div>
+          <div class="overview-attention-body">
+            <div class="overview-attention-title">Git repository not configured</div>
+            <div class="overview-attention-desc">Connect a GitHub repository in Settings to enable the build and PR workflow.</div>
+            <div class="overview-attention-actions">
+              <button class="btn btn-primary btn-sm" onclick="switchView('settings')">${icon('cog',12)} Open Settings</button>
+            </div>
+          </div>
+        </div>`;
+    } else if (!hasBuildFiles) {
+      attentionEl.innerHTML = `
+        <div class="overview-attention-card overview-attention-card--info">
+          <div class="overview-attention-icon overview-attention-icon--info">${icon('codeSquare', 15)}</div>
+          <div class="overview-attention-body">
+            <div class="overview-attention-title">Build system not yet generated</div>
+            <div class="overview-attention-desc">Generate your build system files — backend, frontend, tests, and infra — from your reviewed specification documents.</div>
+            <div class="overview-attention-actions">
+              <button class="btn btn-primary btn-sm" onclick="switchView('build')">${icon('bolt',12)} Go to Build</button>
+            </div>
+          </div>
+        </div>`;
+    } else {
+      attentionEl.innerHTML = `
+        <div class="overview-attention-card overview-attention-card--success">
+          <div class="overview-attention-icon overview-attention-icon--success">${icon('check', 15)}</div>
+          <div class="overview-attention-body">
+            <div class="overview-attention-title">Build complete — ready to push</div>
+            <div class="overview-attention-desc">Build files generated. Review and push to GitHub when ready.</div>
+            <div class="overview-attention-actions">
+              <button class="btn btn-primary btn-sm" onclick="switchView('build')">${icon('gitBranch',12)} Review &amp; Push</button>
+            </div>
+          </div>
+        </div>`;
+    }
+  } else {
+    const stagingLive = !!((state.environments || {}).staging || {}).url;
+    attentionEl.innerHTML = `
+      <div class="overview-attention-card overview-attention-card--success">
+        <div class="overview-attention-icon overview-attention-icon--success">${icon('cloudUp', 15)}</div>
+        <div class="overview-attention-body">
+          <div class="overview-attention-title">${stagingLive ? 'Staging is live' : 'Ready to deploy'}</div>
+          <div class="overview-attention-desc">${stagingLive ? 'Your staging environment is live. Promote to production when validated.' : 'Configure your deployment platform and push the first release.'}</div>
+          <div class="overview-attention-actions">
+            <button class="btn btn-primary btn-sm" onclick="switchView('deploy')">${icon('cloudUp',12)} Open Deploy</button>
+          </div>
+        </div>
+      </div>`;
+  }
+
+  // ── Stage matrix ──────────────────────────────────────────────────────────
+  const matrixEl = document.getElementById('overview-stage-matrix');
+  const runningStage = isRunning ? processing.stage : null;
+  matrixEl.innerHTML = `
+    <div class="overview-matrix-header">
+      <span>Documentation Pipeline</span>
+      <span style="font-weight:400;color:var(--text-3)">${totalGenerated}/${totalDocs} docs</span>
+    </div>
+    ${STAGES.map(s => {
+      const st = summary[s.dir] || { generated: 0, reviewed: 0, total: 0 };
+      const isThisRunning = runningStage === s.key;
+      const isEmpty = st.generated === 0 && !isThisRunning;
+      const allReviewed = st.generated > 0 && st.reviewed === st.generated && st.total > 0;
+      const needsReview = st.generated > 0 && st.reviewed < st.generated;
+
+      let iconCls, iconContent, nameCls, dotCls;
+      if (isThisRunning) {
+        iconCls = 'overview-stage-icon--running';
+        iconContent = `<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="animation:spin 1.2s linear infinite"><path d="M21 12a9 9 0 11-6.219-8.56"/></svg>`;
+        nameCls = ''; dotCls = 'overview-stage-status-dot--partial';
+      } else if (allReviewed) {
+        iconCls = 'overview-stage-icon--done';
+        iconContent = `<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 12.75l6 6 9-13.5"/></svg>`;
+        nameCls = ''; dotCls = 'overview-stage-status-dot--done';
+      } else if (needsReview) {
+        iconCls = 'overview-stage-icon--partial';
+        iconContent = `<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z"/><path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>`;
+        nameCls = ''; dotCls = 'overview-stage-status-dot--needs-review';
+      } else {
+        iconCls = 'overview-stage-icon--empty';
+        iconContent = `<span style="font-size:9px;font-weight:700;opacity:.4">${s.dir.split('-')[0]}</span>`;
+        nameCls = 'overview-stage-name--empty'; dotCls = 'overview-stage-status-dot--empty';
+      }
+
+      const metaText = isEmpty ? s.desc
+        : isThisRunning ? `${processing.file_index || 0}/${processing.file_total || st.total}`
+        : allReviewed ? 'reviewed'
+        : `${st.reviewed}/${st.generated} reviewed`;
+
+      return `
+        <div class="overview-stage-row" onclick="switchView('${needsReview || allReviewed ? 'review' : 'generate'}')">
+          <div class="overview-stage-icon ${iconCls}">${iconContent}</div>
+          <span class="overview-stage-name ${nameCls}">${s.label}</span>
+          <span class="overview-stage-meta">${escapeHtml(metaText)}</span>
+          <span class="overview-stage-status-dot ${dotCls}"></span>
+        </div>`;
+    }).join('')}`;
+
+  // ── Sidebar stats ─────────────────────────────────────────────────────────
   const openIssues = issues.filter(i => i.status === 'open').length;
+  const hasBuildFiles = Object.values(buildStepsState).some(s => s.status === 'complete');
+  const statsEl = document.getElementById('overview-stats-col');
+  statsEl.innerHTML = [
+    { num: rawInputs.length, label: 'Input Files', sub: rawInputs.length === 0 ? 'None added yet' : `${rawInputs.length} file${rawInputs.length!==1?'s':''} ready`, color: rawInputs.length > 0 ? 'var(--text)' : 'var(--text-3)' },
+    { num: totalGenerated, label: 'Docs Generated', sub: totalDocs > 0 ? `${totalDocs - totalGenerated} remaining` : 'Run Generate', color: totalGenerated > 0 ? 'var(--accent)' : 'var(--text-3)' },
+    { num: totalReviewed, label: 'Docs Reviewed', sub: totalGenerated > 0 ? `${Math.round((totalReviewed/totalGenerated)*100)}% complete` : '—', color: totalReviewed > 0 ? 'var(--green)' : 'var(--text-3)' },
+    { num: openIssues, label: 'Open Issues', sub: openIssues > 0 ? 'Action needed' : 'All clear', color: openIssues > 0 ? 'var(--amber)' : 'var(--text-3)' },
+  ].map(s => `
+    <div class="overview-stat-tile">
+      <div class="overview-stat-num" style="color:${s.color}">${s.num}</div>
+      <div class="overview-stat-info">
+        <div class="overview-stat-label">${s.label}</div>
+        <div class="overview-stat-sub">${s.sub}</div>
+      </div>
+    </div>`).join('');
 
-  document.getElementById('overview-stats').innerHTML = `
-    <div class="stat-card">
-      <div class="stat-value" style="color:var(--blue)">${totalGenerated}</div>
-      <div class="stat-label">Docs Generated</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-value" style="color:var(--green)">${totalReviewed}</div>
-      <div class="stat-label">Docs Reviewed</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-value" style="color:var(--purple)">${gatesPassed}</div>
-      <div class="stat-label">Gates Passed</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-value" style="color:${openIssues > 0 ? 'var(--amber)' : 'var(--text-3)'}">${openIssues}</div>
-      <div class="stat-label">Open Issues</div>
-    </div>
-  `;
-
-  const guidance = {
-    input: 'Create your first input file describing your product idea. Go to <b>Input</b> and click "New File".',
-    generate: 'You have input files ready. Go to <b>Generate</b> and click "Generate All Stages" to start the AI pipeline.',
-    review: 'Documents have been generated. Go to <b>Review</b>, read each document, and mark them as reviewed.',
-    build: 'All documents are reviewed. Go to <b>Build</b> to create a git branch and commit your docs.',
-    deploy: 'Build is complete. Go to <b>Deploy</b> to see your environments and set up CI/CD.',
+  // ── Gates sidebar ─────────────────────────────────────────────────────────
+  const GATE_LABELS = {
+    'context-gate': 'Context', 'prd-gate': 'PRD', 'design-gate': 'Design',
+    'architecture-gate': 'Architecture', 'engineering-gate': 'Engineering',
+    'qa-gate': 'Quality', 'release-gate': 'Release', 'marketing-gate': 'Marketing',
   };
-  document.getElementById('overview-guidance').innerHTML = guidance[phase] || 'Continue to the next phase.';
-
-  const actions = {
-    input: `<button class="btn btn-primary btn-sm" onclick="switchView('input');openNewFileDialog()">${icon('sparkles',12)} Create Input File</button>`,
-    generate: `<button class="btn btn-primary btn-sm" onclick="switchView('generate');generate('all')">${icon('sparkles',12)} Generate All</button>`,
-    review: `<button class="btn btn-primary btn-sm" onclick="switchView('review')">${icon('eye',12)} Start Review</button>`,
-    build: `<button class="btn btn-primary btn-sm" onclick="switchView('build');startBuild()">${icon('gitBranch',12)} Start Build</button>`,
-    deploy: `<button class="btn btn-primary btn-sm" onclick="switchView('deploy')">${icon('cloudUp',12)} View Deploy</button>`,
-  };
-  document.getElementById('overview-quick-action').innerHTML = actions[phase] || '';
+  const gateEntries = Object.entries(GATE_LABELS);
+  const passedCount = gateEntries.filter(([k]) => gates[k] === 'PASSED').length;
+  const gatesEl = document.getElementById('overview-gates-col');
+  gatesEl.innerHTML = `
+    <div class="overview-gates-card">
+      <div class="overview-gates-header">Gates &nbsp;<span style="font-weight:400;color:var(--text-3)">${passedCount}/${gateEntries.length}</span></div>
+      ${gateEntries.map(([key, label]) => {
+        const passed = gates[key] === 'PASSED';
+        return `<div class="overview-gate-row">
+          <span class="overview-gate-name">${label}</span>
+          <span class="overview-gate-badge overview-gate-badge--${passed ? 'pass' : 'fail'}">${passed ? 'Pass' : 'Pending'}</span>
+        </div>`;
+      }).join('')}
+    </div>`;
 }
 
 // ============================================================
@@ -948,8 +1175,44 @@ function renderGenerate() {
 
   const isRunning = serverRunning || !!optimisticRunning;
   const summary = state.stageReviewSummary || {};
+  const hasInputs = (state.rawInputs || []).length > 0;
 
-  document.getElementById('btn-generate-all').disabled = isRunning;
+  // ── Input gate ────────────────────────────────────────────────────────────
+  const gateEl = document.getElementById('generate-gate');
+  const generateTopEl = document.querySelector('.generate-top');
+  const stageGridEl = document.getElementById('stage-grid');
+
+  if (!hasInputs) {
+    gateEl.style.display = '';
+    gateEl.innerHTML = `
+      <div class="generate-gate-card">
+        <div class="generate-gate-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+            <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+          </svg>
+        </div>
+        <div class="generate-gate-body">
+          <div class="generate-gate-title">Input documents required</div>
+          <div class="generate-gate-desc">Add at least one input document — a product brief, requirements doc, or any raw specification — before running the AI pipeline. Generation needs source material to work from.</div>
+          <button class="btn btn-primary btn-sm" onclick="switchView('input')" style="margin-top:10px;width:fit-content;">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+            Add input document
+          </button>
+        </div>
+      </div>`;
+    generateTopEl.style.display = 'none';
+    document.getElementById('btn-generate-all').disabled = true;
+    // Render locked stage cards to show the user what they're about to unlock
+    stageGridEl.style.opacity = '0.35';
+    stageGridEl.style.pointerEvents = 'none';
+  } else {
+    gateEl.style.display = 'none';
+    generateTopEl.style.display = '';
+    stageGridEl.style.opacity = '';
+    stageGridEl.style.pointerEvents = '';
+    document.getElementById('btn-generate-all').disabled = isRunning;
+  }
 
   // Error bar — show when there's an unacknowledged error from the last run
   const errBar = document.getElementById('generate-error-bar');
@@ -1052,7 +1315,7 @@ function renderGenerate() {
         <div class="progress-bar">
           <div class="progress-fill ${progressColor}" style="width:${Math.max(filePct, pct)}%;${isThisRunning ? 'animation:progress-pulse 1.5s ease-in-out infinite;' : ''}"></div>
         </div>
-        <button class="btn btn-secondary btn-sm" ${isRunning ? 'disabled' : ''} onclick="generate('${s.key}')">
+        <button class="btn btn-secondary btn-sm" ${(isRunning || !hasInputs) ? 'disabled' : ''} onclick="generate('${s.key}')">
           ${icon('sparkles', 12)}
           ${isThisRunning ? 'Generating...' : 'Regenerate'}
         </button>
@@ -1201,7 +1464,33 @@ function renderReview() {
   });
 
   if (totalVisible === 0) {
-    treeEl.innerHTML = `<div style="padding:24px 16px;text-align:center;color:var(--text-3);font-size:11px;">No files match the current filter.</div>`;
+    // Distinguish: tree has files but filters hide them vs. nothing generated at all
+    const totalInTree = Object.values(tree).reduce((n, files) => n + files.length, 0);
+    if (totalInTree === 0) {
+      treeEl.innerHTML = `
+        <div class="review-tree-empty">
+          <div class="review-tree-empty-icon">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z"/>
+            </svg>
+          </div>
+          <div class="review-tree-empty-title">Nothing generated yet</div>
+          <div class="review-tree-empty-desc">Run the AI pipeline first. Documents will appear here for review once generated.</div>
+          <button class="btn btn-primary btn-sm" onclick="switchView('generate')" style="margin-top:10px;">Go to Generate</button>
+        </div>`;
+    } else {
+      treeEl.innerHTML = `
+        <div class="review-tree-empty">
+          <div class="review-tree-empty-icon">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+            </svg>
+          </div>
+          <div class="review-tree-empty-title">No files match</div>
+          <div class="review-tree-empty-desc">Try a different role view or status filter.</div>
+          <button class="btn btn-ghost btn-sm" onclick="resetReviewFilters()" style="margin-top:8px;">Clear filters</button>
+        </div>`;
+    }
   }
 
   const gatesEl = document.getElementById('review-gates-summary');
@@ -1223,6 +1512,15 @@ function renderReview() {
   }
   const fixBtn = document.getElementById('btn-fix-regenerate');
   if (fixBtn) fixBtn.disabled = !!fixingFile;
+}
+
+function resetReviewFilters() {
+  reviewViewFilter = 'all';
+  reviewStatusFilter = 'all';
+  localStorage.setItem('review-view', 'all');
+  localStorage.setItem('review-status', 'all');
+  document.getElementById('review-search').value = '';
+  renderReview();
 }
 
 function filterReviewTree(val) {
@@ -1254,16 +1552,48 @@ async function openReviewFile(path, status, size, modifiedAt) {
     const res = await apiFetch(`/api/file?path=${encodeURIComponent(path)}`);
     if (res.ok) {
       const text = await res.text();
-      const raw = text || '(empty file)';
-      document.getElementById('viewer-content').innerHTML = renderMarkdown(raw);
-      document.getElementById('viewer-raw-pre').textContent = raw;
+      if (!text || !text.trim()) {
+        document.getElementById('viewer-content').innerHTML = `
+          <div class="viewer-empty-state">
+            <div class="viewer-empty-icon">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
+              </svg>
+            </div>
+            <div class="viewer-empty-title">Empty document</div>
+            <div class="viewer-empty-desc">This file has no content yet. Run this stage in Generate to produce output.</div>
+            <button class="btn btn-primary btn-sm" onclick="switchView('generate')" style="margin-top:12px;">Go to Generate</button>
+          </div>`;
+        document.getElementById('viewer-raw-pre').textContent = '';
+      } else {
+        document.getElementById('viewer-content').innerHTML = renderMarkdown(text);
+        document.getElementById('viewer-raw-pre').textContent = text;
+      }
     } else {
-      document.getElementById('viewer-content').innerHTML = '<p style="color:var(--text-3)">(file not found)</p>';
-      document.getElementById('viewer-raw-pre').textContent = '(file not found)';
+      document.getElementById('viewer-content').innerHTML = `
+        <div class="viewer-empty-state viewer-empty-state--warn">
+          <div class="viewer-empty-icon">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+            </svg>
+          </div>
+          <div class="viewer-empty-title">File not found</div>
+          <div class="viewer-empty-desc">This file may have been moved or deleted. Try regenerating this stage.</div>
+        </div>`;
+      document.getElementById('viewer-raw-pre').textContent = '';
     }
   } catch (e) {
-    document.getElementById('viewer-content').innerHTML = '<p style="color:var(--red)">(error loading file)</p>';
-    document.getElementById('viewer-raw-pre').textContent = '(error loading file)';
+    document.getElementById('viewer-content').innerHTML = `
+      <div class="viewer-empty-state viewer-empty-state--error">
+        <div class="viewer-empty-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+          </svg>
+        </div>
+        <div class="viewer-empty-title">Failed to load</div>
+        <div class="viewer-empty-desc">Could not read this file. Check that the server is running and try again.</div>
+      </div>`;
+    document.getElementById('viewer-raw-pre').textContent = '';
   }
   // Always open in rendered mode for a fresh file
   setViewerMode('rendered');
@@ -1588,22 +1918,139 @@ function renderBuild() {
   const git = state.git || {};
   const builds = state.builds || [];
 
-  const gitSummary = document.getElementById('build-git-summary');
-  if (git.repo_url) {
-    gitSummary.innerHTML = `
-      <div style="display:flex;flex-direction:column;gap:4px;">
-        <div><span style="color:var(--text-3)">Repo:</span> <code style="font-size:11px">${escapeHtml(git.repo_url)}</code></div>
-        <div><span style="color:var(--text-3)">Branch prefix:</span> <code style="font-size:11px">${escapeHtml(git.branch_prefix || 'forge')}</code></div>
-        <div><span style="color:var(--text-3)">Default branch:</span> <code style="font-size:11px">${escapeHtml(git.default_branch || 'main')}</code></div>
-      </div>
-    `;
+  // ── Compute gate conditions ───────────────────────────────────────────────
+  const hasGit      = !!(git.repo_url);
+  const hasGenDocs  = Object.values(state.stageReviewSummary || {}).some(s => (s.generated || 0) > 0);
+  const hasBuildFiles = Object.values(buildStepsState).some(s => s.status === 'complete');
+
+  // ── Build System section gate (requires generated docs) ──────────────────
+  const buildSysEl = document.getElementById('build-steps-grid');
+  const buildAllBtn = document.getElementById('btn-build-all');
+  let buildSysGate = document.getElementById('build-system-gate');
+  if (!buildSysGate) {
+    buildSysGate = document.createElement('div');
+    buildSysGate.id = 'build-system-gate';
+    buildSysEl.parentNode.insertBefore(buildSysGate, buildSysEl);
+  }
+
+  if (!hasGenDocs) {
+    buildSysGate.innerHTML = `
+      <div class="build-gate-card" style="margin-bottom:16px;">
+        <div class="build-gate-icon">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z"/>
+          </svg>
+        </div>
+        <div class="build-gate-body">
+          <div class="build-gate-title">Generate documentation first</div>
+          <div class="build-gate-desc">The build system generates code from your specs. Add inputs and run the AI pipeline before building.</div>
+          <div class="build-gate-actions">
+            <button class="btn btn-primary btn-sm" onclick="switchView('generate')">Go to Generate</button>
+          </div>
+        </div>
+      </div>`;
+    buildSysEl.style.opacity = '0.3';
+    buildSysEl.style.pointerEvents = 'none';
+    if (buildAllBtn) buildAllBtn.disabled = true;
   } else {
-    gitSummary.innerHTML = `<span style="color:var(--text-3)">No git repository configured. <a href="#" onclick="switchView('settings')" style="color:var(--blue)">Configure in Settings</a></span>`;
+    buildSysGate.innerHTML = '';
+    buildSysEl.style.opacity = '';
+    buildSysEl.style.pointerEvents = '';
+    if (buildAllBtn) buildAllBtn.disabled = false;
+  }
+
+  // ── Git & PR section ──────────────────────────────────────────────────────
+  const gitPrEl = document.getElementById('git-pr-section');
+
+  if (!hasGit && !hasBuildFiles) {
+    // Both missing — show a checklist-style gate (GitHub Actions / Vercel pattern)
+    gitPrEl.innerHTML = `
+      <div class="build-gate-card build-gate-card--checklist" style="margin-bottom:16px;">
+        <div class="build-gate-checklist">
+          <div class="build-gate-check-item build-gate-check--missing">
+            <div class="build-gate-check-icon">
+              <svg width="11" height="11" viewBox="0 0 12 12" fill="none"><path d="M1 1l10 10M11 1L1 11" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/></svg>
+            </div>
+            <div class="build-gate-check-body">
+              <div class="build-gate-check-label">Git repository not configured</div>
+              <div class="build-gate-check-hint">Set a repo URL, default branch, and optional PAT in Settings.</div>
+            </div>
+            <button class="btn btn-ghost btn-xs" onclick="switchView('settings')">Configure</button>
+          </div>
+          <div class="build-gate-check-item build-gate-check--missing">
+            <div class="build-gate-check-icon">
+              <svg width="11" height="11" viewBox="0 0 12 12" fill="none"><path d="M1 1l10 10M11 1L1 11" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/></svg>
+            </div>
+            <div class="build-gate-check-body">
+              <div class="build-gate-check-label">No build files generated yet</div>
+              <div class="build-gate-check-hint">Run at least one build step above to produce code files.</div>
+            </div>
+          </div>
+        </div>
+        <div class="build-gate-footer">
+          <div class="build-gate-footer-text">Both are required before you can review and push to GitHub.</div>
+        </div>
+      </div>`;
+  } else if (!hasGit) {
+    gitPrEl.innerHTML = `
+      <div class="build-gate-card" style="margin-bottom:16px;">
+        <div class="build-gate-icon build-gate-icon--warn">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"/>
+          </svg>
+        </div>
+        <div class="build-gate-body">
+          <div class="build-gate-title">Git repository not configured</div>
+          <div class="build-gate-desc">A repository URL and default branch are needed to commit and open a pull request. Add them in Settings.</div>
+          <div class="build-gate-actions">
+            <button class="btn btn-primary btn-sm" onclick="switchView('settings')">Open Settings</button>
+          </div>
+        </div>
+      </div>`;
+  } else if (!hasBuildFiles) {
+    gitPrEl.innerHTML = `
+      <div class="build-gate-card" style="margin-bottom:16px;">
+        <div class="build-gate-icon">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/>
+          </svg>
+        </div>
+        <div class="build-gate-body">
+          <div class="build-gate-title">No build files to push yet</div>
+          <div class="build-gate-desc">Run at least one build step above to generate code files. Once files are ready, Review &amp; Push will commit them to your repository.</div>
+        </div>
+        <div class="build-gate-git-info">
+          <span style="color:var(--text-3);font-size:11px;">Repo:</span>
+          <code style="font-size:11px;color:var(--text-2);">${escapeHtml(git.repo_url)}</code>
+          <span style="color:var(--text-3);font-size:11px;margin-left:8px;">→</span>
+          <code style="font-size:11px;color:var(--text-2);">${escapeHtml(git.default_branch || 'main')}</code>
+        </div>
+      </div>`;
+  } else {
+    // Both conditions met — show normal git summary + enabled button
+    gitPrEl.innerHTML = `
+      <div class="card" style="margin-bottom:12px;">
+        <div class="card-title" style="display:flex;align-items:center;justify-content:space-between;">
+          <span>Git Configuration</span>
+          <button class="btn btn-ghost btn-xs" onclick="switchView('settings')">Edit</button>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--text-2);">
+          <div><span style="color:var(--text-3)">Repo:</span> <code style="font-size:11px">${escapeHtml(git.repo_url)}</code></div>
+          <div><span style="color:var(--text-3)">Branch prefix:</span> <code style="font-size:11px">${escapeHtml(git.branch_prefix || 'forge')}</code></div>
+          <div><span style="color:var(--text-3)">Default branch:</span> <code style="font-size:11px">${escapeHtml(git.default_branch || 'main')}</code></div>
+        </div>
+      </div>
+      <button class="btn btn-secondary" onclick="startReviewAndPush()" id="btn-start-build" style="margin-bottom:16px;">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>
+        Review &amp; Push
+      </button>`;
+    // Re-attach review status after the button is freshly rendered
+    syncReviewStatus();
   }
 
   const historyEl = document.getElementById('build-history');
   if (builds.length === 0) {
-    historyEl.innerHTML = `<div style="font-size:12px;color:var(--text-3);padding:20px;text-align:center;">No builds yet. Click "Review &amp; Push" to create your first build.</div>`;
+    historyEl.innerHTML = `<div style="font-size:12px;color:var(--text-3);padding:20px 0;text-align:center;">No builds yet. Configure git and run a build step to create your first build.</div>`;
     return;
   }
 
@@ -1989,39 +2436,411 @@ async function startBuild() {
 // ============================================================
 // Deploy
 // ============================================================
+
+let _deployPlatform = 'vercel'; // selected platform for workflow generator
+
 function renderDeploy() {
+  const hasBuildFiles = Object.values(buildStepsState).some(s => s.status === 'complete');
+  const git = state.git || {};
   const envs = state.environments || {};
+
+  const gateEl = document.getElementById('deploy-gate');
+  const bodyEl = document.getElementById('deploy-body');
+
+  if (!hasBuildFiles) {
+    gateEl.style.display = '';
+    gateEl.innerHTML = `
+      <div class="deploy-gate-card">
+        <div class="deploy-gate-icon">${icon('lock', 18)}</div>
+        <div class="deploy-gate-body">
+          <div class="deploy-gate-title">Build required before deploy</div>
+          <div class="deploy-gate-desc">Generate your build system files first, then deploy to staging or production. This section unlocks once at least one build step has completed.</div>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-primary btn-sm" onclick="switchView('build')">${icon('bolt',12)} Go to Build</button>
+          </div>
+        </div>
+      </div>`;
+    bodyEl.style.display = 'none';
+    return;
+  }
+
+  gateEl.style.display = 'none';
+  bodyEl.style.display = '';
+
+  _renderDeployPipeline(envs, git, hasBuildFiles);
+  _renderDeployEnvCards(envs, git);
+  _renderWorkflowSection(envs);
+  refreshSecrets();
+}
+
+function _deployPipelineStep(label, state) {
+  const cls = `deploy-pipeline-step-icon--${state}`;
+  const lblCls = `deploy-pipeline-step-label--${state}`;
+  const iconStr = state === 'done'
+    ? `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`
+    : state === 'active'
+    ? `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>`
+    : `<span style="font-size:10px;font-weight:700;opacity:.5">•••</span>`;
+  return `
+    <div class="deploy-pipeline-step">
+      <div class="deploy-pipeline-step-icon ${cls}">${iconStr}</div>
+      <span class="deploy-pipeline-step-label ${lblCls}">${label}</span>
+    </div>`;
+}
+
+function _renderDeployPipeline(envs, git, hasBuildFiles) {
+  const pipelineEl = document.getElementById('deploy-pipeline');
+  if (!pipelineEl) return;
+
+  const hasGit = !!(git.repo_url);
+  const stagingLive = (envs.staging || {}).status === 'deployed' || !!((envs.staging || {}).url);
+  const productionLive = (envs.production || {}).status === 'deployed' || !!((envs.production || {}).url);
+
+  const steps = [
+    { label: 'Build Generated', state: hasBuildFiles ? 'done' : 'pending' },
+    { label: 'Git Configured', state: hasGit ? 'done' : (hasBuildFiles ? 'active' : 'pending') },
+    { label: 'Staging Live', state: stagingLive ? 'done' : (hasGit ? 'active' : 'pending') },
+    { label: 'Production Live', state: productionLive ? 'done' : (stagingLive ? 'active' : 'pending') },
+  ];
+
+  pipelineEl.innerHTML = steps.map((s, i) =>
+    `${_deployPipelineStep(s.label, s.state)}${i < steps.length - 1 ? '<span class="deploy-pipeline-arrow">→</span>' : ''}`
+  ).join('');
+}
+
+function _renderDeployEnvCards(envs, git) {
   const envsEl = document.getElementById('deploy-envs');
+  if (!envsEl) return;
+
+  const platforms = [
+    { value: 'vercel',  label: 'Vercel' },
+    { value: 'railway', label: 'Railway' },
+    { value: 'render',  label: 'Render' },
+    { value: 'custom',  label: 'Custom' },
+  ];
 
   const envDefs = [
-    { key: 'staging', label: 'Staging', iconName: 'beaker' },
-    { key: 'production', label: 'Production', iconName: 'server' },
+    {
+      key: 'staging',
+      label: 'Staging',
+      triggerLabel: 'Auto-deploy',
+      triggerCls: 'env-trigger-badge--auto',
+      desc: 'Pushes to your staging branch deploy automatically via CI/CD.',
+      extraClass: '',
+    },
+    {
+      key: 'production',
+      label: 'Production',
+      triggerLabel: 'Manual promote',
+      triggerCls: 'env-trigger-badge--manual',
+      desc: 'Forge never manages production secrets. You control the platform directly.',
+      extraClass: 'env-card--production',
+    },
   ];
 
   envsEl.innerHTML = envDefs.map(def => {
     const env = envs[def.key] || {};
     const url = env.url || '';
-    const branch = env.branch || '—';
+    const branch = env.branch || (def.key === 'staging' ? 'staging' : 'main');
     const status = env.status || 'not_deployed';
     const deployedAt = env.deployed_at ? new Date(env.deployed_at).toLocaleString() : 'Never';
-    const statusBadge = status === 'deployed'
-      ? '<span class="badge badge-pushed">Deployed</span>'
+    const sha = env.sha || '';
+    const platform = env.platform || '';
+    const isLive = status === 'deployed' || !!url;
+
+    const healthDot = isLive
+      ? '<span class="env-health-dot env-health-dot--live"></span>'
+      : '<span class="env-health-dot env-health-dot--idle"></span>';
+
+    const urlRow = url
+      ? `<a href="${escapeHtml(url)}" target="_blank" class="env-url-text">${escapeHtml(url)}</a>`
+      : `<span class="env-url-text env-url-text--empty">No URL — configure in Settings</span>`;
+
+    const platformOptions = platforms.map(p =>
+      `<option value="${p.value}" ${platform === p.value ? 'selected' : ''}>${p.label}</option>`
+    ).join('');
+
+    const statusBadge = isLive
+      ? '<span class="badge badge-pushed">Live</span>'
       : '<span class="badge badge-pending">Not Deployed</span>';
 
-    return `
-      <div class="env-card">
-        <div class="env-name">${icon(def.iconName, 16)} ${def.label}</div>
-        ${url ? `<div class="env-url"><a href="${url}" target="_blank" style="color:var(--blue);text-decoration:none">${url}</a></div>` : '<div class="env-url" style="color:var(--text-3)">No URL configured</div>'}
-        <div class="env-field"><span class="env-field-key">Status</span><span>${statusBadge}</span></div>
-        <div class="env-field"><span class="env-field-key">Branch</span><span class="env-field-val">${branch}</span></div>
-        <div class="env-field"><span class="env-field-key">Last Deploy</span><span class="env-field-val">${deployedAt}</span></div>
-        ${url ? `<a href="${url}" target="_blank" class="btn btn-ghost btn-sm" style="margin-top:8px;display:inline-flex">${icon('externalLink',12)} Open</a>` : ''}
-      </div>
-    `;
-  }).join('');
+    let actions = '';
+    if (def.key === 'staging') {
+      actions = `
+        ${url ? `<a href="${escapeHtml(url)}" target="_blank" class="btn btn-ghost btn-sm">${icon('externalLink',12)} Open</a>` : ''}
+        <button class="btn btn-ghost btn-sm" onclick="switchView('settings')">${icon('cog',12)} Configure</button>`;
+    } else {
+      const stagingEnv = envs.staging || {};
+      const stagingReady = (stagingEnv.status === 'deployed' || !!stagingEnv.url);
+      actions = `
+        <button class="btn btn-primary btn-sm" onclick="openPromoteModal()"
+          ${!stagingReady ? 'disabled title="Staging must be live before promoting to production"' : ''}>
+          ${icon('arrowUp', 12)} Promote from Staging
+        </button>
+        ${url ? `<a href="${escapeHtml(url)}" target="_blank" class="btn btn-ghost btn-sm">${icon('externalLink',12)} Open</a>` : ''}`;
+    }
 
-  // Load secrets panel
-  refreshSecrets();
+    return `
+      <div class="env-card ${def.extraClass}">
+        <div class="env-header">
+          <div class="env-name">${healthDot} ${def.label}</div>
+          <span class="env-trigger-badge ${def.triggerCls}">${def.triggerLabel}</span>
+        </div>
+        <div class="env-url-row">
+          ${urlRow}
+          ${url ? `<a href="${escapeHtml(url)}" target="_blank" style="color:var(--text-3);flex-shrink:0">${icon('externalLink',11)}</a>` : ''}
+        </div>
+        <div class="env-field">
+          <span class="env-field-key">Status</span>
+          <span>${statusBadge}</span>
+        </div>
+        <div class="env-field">
+          <span class="env-field-key">Branch</span>
+          <span class="env-field-val">${escapeHtml(branch)}</span>
+        </div>
+        <div class="env-field">
+          <span class="env-field-key">Last Deploy</span>
+          <span class="env-field-val">${escapeHtml(deployedAt)}</span>
+        </div>
+        ${sha ? `<div class="env-field"><span class="env-field-key">SHA</span><span class="env-sha">${escapeHtml(sha.slice(0,8))}</span></div>` : ''}
+        <div class="env-platform-row">
+          <span class="env-field-key" style="flex-shrink:0">Platform</span>
+          <select class="env-platform-select" onchange="saveEnvPlatform('${def.key}', this.value)">
+            <option value="">— select —</option>
+            ${platformOptions}
+          </select>
+        </div>
+        ${def.key === 'production' ? `<div style="font-size:10px;color:var(--text-3);line-height:1.5;margin-bottom:8px">${def.desc}</div>` : ''}
+        <div class="env-actions">${actions}</div>
+      </div>`;
+  }).join('');
+}
+
+function _workflowYaml(platform, stagingBranch, productionBranch) {
+  const sb = stagingBranch || 'staging';
+  const pb = productionBranch || 'main';
+  if (platform === 'vercel') {
+    return `name: Deploy to Vercel
+
+on:
+  push:
+    branches: [${pb}, ${sb}]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy to Vercel
+        uses: amondnet/vercel-action@v25
+        with:
+          vercel-token: \${{ secrets.VERCEL_TOKEN }}
+          vercel-org-id: \${{ secrets.VERCEL_ORG_ID }}
+          vercel-project-id: \${{ secrets.VERCEL_PROJECT_ID }}
+          vercel-args: >-
+            \${{ github.ref == 'refs/heads/${pb}' && '--prod' || '' }}`;
+  }
+  if (platform === 'railway') {
+    return `name: Deploy to Railway
+
+on:
+  push:
+    branches: [${pb}, ${sb}]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Railway CLI
+        run: npm install -g @railway/cli
+
+      - name: Deploy
+        run: railway up --service \${{ secrets.RAILWAY_SERVICE_ID }}
+        env:
+          RAILWAY_TOKEN: \${{ secrets.RAILWAY_TOKEN }}`;
+  }
+  if (platform === 'render') {
+    return `name: Deploy to Render
+
+on:
+  push:
+    branches: [${pb}, ${sb}]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Trigger Render deploy
+        run: |
+          curl -s -X POST \
+            -H "Authorization: Bearer \${{ secrets.RENDER_API_KEY }}" \
+            "https://api.render.com/v1/services/\${{ secrets.RENDER_SERVICE_ID }}/deploys" \
+            -H "Content-Type: application/json" \
+            -d '{}'`;
+  }
+  // custom / docker
+  return `name: Build and Deploy
+
+on:
+  push:
+    branches: [${pb}, ${sb}]
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: \${{ github.actor }}
+          password: \${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push image
+        uses: docker/build-push-action@v5
+        with:
+          push: true
+          tags: ghcr.io/\${{ github.repository }}:latest
+
+      # Add your deployment step here (SSH, kubectl, etc.)`;
+}
+
+function _renderWorkflowSection(envs) {
+  const el = document.getElementById('deploy-workflow-section');
+  if (!el) return;
+
+  const stagingBranch = (envs.staging || {}).branch || 'staging';
+  const productionBranch = (envs.production || {}).branch || 'main';
+  const yaml = _workflowYaml(_deployPlatform, stagingBranch, productionBranch);
+
+  const platforms = [
+    { value: 'vercel',  label: 'Vercel' },
+    { value: 'railway', label: 'Railway' },
+    { value: 'render',  label: 'Render' },
+    { value: 'custom',  label: 'Docker / Custom' },
+  ];
+
+  el.innerHTML = `
+    <div class="deploy-workflow-card" style="margin-top:0;margin-bottom:16px">
+      <div class="deploy-workflow-header">
+        <div class="deploy-workflow-title">${icon('codeSquare', 14)} CI/CD Workflow File</div>
+      </div>
+      <div class="deploy-workflow-desc">
+        Generate a <code>.github/workflows/deploy.yml</code> file for your target platform.
+        Commit it to your repo — GitHub Actions handles the rest automatically on every push.
+      </div>
+      <div class="deploy-workflow-platform-row">
+        ${platforms.map(p => `
+          <button class="deploy-platform-btn ${_deployPlatform === p.value ? 'deploy-platform-btn--active' : ''}"
+            onclick="setDeployPlatform('${p.value}')">${p.label}</button>
+        `).join('')}
+      </div>
+      <div class="deploy-workflow-preview" id="workflow-yaml-preview">${escapeHtml(yaml)}</div>
+      <div class="deploy-workflow-actions">
+        <button class="btn btn-primary btn-sm" onclick="downloadWorkflowFile()">
+          ${icon('download', 12)} Download deploy.yml
+        </button>
+        <button class="btn btn-ghost btn-sm" onclick="copyWorkflowFile(this)">
+          ${icon('clipboard', 12)} Copy
+        </button>
+        <span style="font-size:11px;color:var(--text-3)">Place at <code>.github/workflows/deploy.yml</code> in your repo</span>
+      </div>
+    </div>`;
+}
+
+function setDeployPlatform(platform) {
+  _deployPlatform = platform;
+  const envs = state.environments || {};
+  _renderWorkflowSection(envs);
+}
+
+function saveEnvPlatform(envKey, platform) {
+  const envs = state.environments || {};
+  const updated = {
+    environments: {
+      [envKey]: { ...(envs[envKey] || {}), platform }
+    }
+  };
+  apiFetch('/api/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(updated) })
+    .then(() => { if (state.environments) state.environments[envKey] = { ...(state.environments[envKey] || {}), platform }; })
+    .catch(() => {});
+}
+
+function downloadWorkflowFile() {
+  const envs = state.environments || {};
+  const yaml = _workflowYaml(_deployPlatform, (envs.staging || {}).branch, (envs.production || {}).branch);
+  const blob = new Blob([yaml], { type: 'text/yaml' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'deploy.yml';
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+function copyWorkflowFile(btn) {
+  const envs = state.environments || {};
+  const yaml = _workflowYaml(_deployPlatform, (envs.staging || {}).branch, (envs.production || {}).branch);
+  navigator.clipboard.writeText(yaml).then(() => {
+    if (btn) { const orig = btn.innerHTML; btn.innerHTML = `${icon('checkCircle',12)} Copied`; setTimeout(() => { btn.innerHTML = orig; }, 1800); }
+  }).catch(() => {});
+}
+
+function openPromoteModal() {
+  const envs = state.environments || {};
+  const staging = envs.staging || {};
+  const production = envs.production || {};
+
+  const overlay = document.createElement('div');
+  overlay.className = 'promote-modal-overlay';
+  overlay.id = 'promote-modal-overlay';
+  overlay.innerHTML = `
+    <div class="promote-modal">
+      <div class="promote-modal-title">${icon('arrowUp', 16)} Promote to Production</div>
+      <div class="promote-modal-desc">
+        This will push a <code>deploy/production</code> git tag pointing at the current staging commit,
+        triggering your production CI/CD workflow.
+      </div>
+      <div class="promote-modal-diff">
+        <div class="promote-modal-diff-row">
+          <span style="color:var(--text-2)">Staging SHA</span>
+          <span style="color:var(--green)">${staging.sha ? staging.sha.slice(0,12) : 'unknown'}</span>
+        </div>
+        <div class="promote-modal-diff-row">
+          <span style="color:var(--text-2)">Production SHA</span>
+          <span style="color:var(--text-3)">${production.sha ? production.sha.slice(0,12) : 'not deployed'}</span>
+        </div>
+        <div class="promote-modal-diff-row" style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border)">
+          <span style="color:var(--text-2)">Staging URL</span>
+          <span style="color:var(--blue);font-size:10px">${staging.url || '—'}</span>
+        </div>
+      </div>
+      <div class="promote-modal-actions">
+        <button class="btn btn-ghost btn-sm" onclick="closePromoteModal()">Cancel</button>
+        <button class="btn btn-primary btn-sm" onclick="confirmPromote()">${icon('arrowUp',12)} Confirm Promote</button>
+      </div>
+    </div>`;
+  overlay.addEventListener('click', e => { if (e.target === overlay) closePromoteModal(); });
+  document.body.appendChild(overlay);
+}
+
+function closePromoteModal() {
+  const el = document.getElementById('promote-modal-overlay');
+  if (el) el.remove();
+}
+
+function confirmPromote() {
+  closePromoteModal();
+  showToast('Promote triggered — push a production tag in your git workflow to complete.', 'info');
 }
 
 // ============================================================
@@ -2213,12 +3032,15 @@ function renderIssues() {
     return;
   }
 
+  const phaseMap = Object.fromEntries((state.phases || []).map(p => [p.id, p.name]));
+
   listEl.innerHTML = [...issues].reverse().map(issue => {
     const iconName = ISSUE_TYPE_ICONS[issue.type] || 'questionCircle';
     const statusCls = issue.status === 'open' ? 'badge-open'
       : issue.status === 'in-progress' ? 'badge-in-progress'
       : 'badge-closed';
     const priorCls = `priority-${issue.priority || 'medium'}`;
+    const phaseName = issue.phase_id ? phaseMap[issue.phase_id] : null;
 
     return `
       <div class="issue-item" id="issue-${issue.id}" onclick="toggleIssue('${issue.id}')">
@@ -2226,6 +3048,7 @@ function renderIssues() {
           <span class="issue-id">${issue.id}</span>
           <span class="issue-type-icon">${icon(iconName, 14)}</span>
           <span class="issue-title">${escapeHtml(issue.title)}</span>
+          ${phaseName ? `<span class="badge badge-phase">${escapeHtml(phaseName)}</span>` : ''}
           <span class="badge ${priorCls}">${issue.priority || 'medium'}</span>
           <span class="badge ${statusCls}">${issue.status}</span>
         </div>
@@ -2261,6 +3084,7 @@ function toggleIssueForm() {
 async function createIssue() {
   const type = document.getElementById('new-issue-type').value;
   const priority = document.getElementById('new-issue-priority').value;
+  const phase_id = document.getElementById('new-issue-phase')?.value || '';
   const title = document.getElementById('new-issue-title').value.trim();
   const description = document.getElementById('new-issue-desc').value.trim();
   if (!title) { showToast('Title is required', 'error'); return; }
@@ -2269,7 +3093,7 @@ async function createIssue() {
     await apiFetch('/api/issue', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ type, priority, title, description })
+      body: JSON.stringify({ type, priority, title, description, ...(phase_id ? { phase_id } : {}) })
     });
     document.getElementById('new-issue-title').value = '';
     document.getElementById('new-issue-desc').value = '';
@@ -2439,6 +3263,132 @@ function getValue(id) {
 }
 
 // ============================================================
+// Phase Timeline
+// ============================================================
+function renderPhases() {
+  const phases = state.phases || [];
+  const activeId = state.active_phase_id;
+  const el = document.getElementById('phase-timeline');
+  if (!el) return;
+
+  // Populate phase dropdown in Issues form
+  const phaseSelect = document.getElementById('new-issue-phase');
+  if (phaseSelect) {
+    const cur = phaseSelect.value;
+    phaseSelect.innerHTML = '<option value="">— None —</option>'
+      + phases.map(p => `<option value="${p.id}" ${cur === p.id ? 'selected' : ''}>${escapeHtml(p.name)}</option>`).join('');
+  }
+
+  if (phases.length === 0) {
+    el.innerHTML = `<div class="phase-empty">No phases found. Click <strong>Sync from docs</strong> to extract phases from your delivery documents, or they will be added automatically after generation.</div>`;
+    return;
+  }
+
+  el.innerHTML = phases.map((p, i) => {
+    const isActive = p.id === activeId;
+    const statusCls = p.status === 'built' ? 'phase-built'
+      : p.status === 'deployed' ? 'phase-deployed'
+      : p.status === 'in-progress' ? 'phase-active'
+      : 'phase-pending';
+    const statusLabel = p.status === 'built' ? 'Built'
+      : p.status === 'deployed' ? 'Deployed'
+      : p.status === 'in-progress' ? 'In Progress'
+      : 'Pending';
+
+    const prevPhase = i > 0 ? phases[i - 1] : null;
+    const canActivate = p.status === 'pending' && (!prevPhase || prevPhase.status === 'built' || prevPhase.status === 'deployed');
+    const canBuild = p.status === 'in-progress';
+    const issueCount = (p.issue_ids || []).length;
+
+    return `
+      <div class="phase-card ${isActive ? 'phase-card-active' : ''}">
+        <div class="phase-card-top">
+          <div class="phase-card-order">${i === 0 ? 'MVP' : `P${i}`}</div>
+          <div class="phase-card-name">${escapeHtml(p.name)}</div>
+          <span class="phase-badge ${statusCls}">${statusLabel}</span>
+        </div>
+        ${p.description ? `<div class="phase-card-desc">${escapeHtml(p.description)}</div>` : ''}
+        <div class="phase-card-meta">
+          ${issueCount > 0 ? `<span class="phase-issue-count">${issueCount} issue${issueCount !== 1 ? 's' : ''}</span>` : ''}
+        </div>
+        <div class="phase-card-actions">
+          ${canActivate
+            ? `<button class="btn btn-primary btn-xs" onclick="activatePhase('${p.id}')">Start Phase</button>`
+            : isActive && canBuild
+              ? `<button class="btn btn-primary btn-xs" onclick="runBuildStep('all')" title="Build this phase">Build Phase</button>
+                 <button class="btn btn-ghost btn-xs" onclick="completePhase('${p.id}')">Mark Built</button>`
+              : ''
+          }
+        </div>
+      </div>
+      ${i < phases.length - 1 ? '<div class="phase-connector"></div>' : ''}
+    `;
+  }).join('');
+}
+
+async function syncPhases() {
+  const btn = document.getElementById('btn-sync-phases');
+  if (btn) btn.disabled = true;
+  try {
+    const res = await apiFetch('/api/phases', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'sync' })
+    });
+    const data = await res.json();
+    if (data.phases !== undefined) {
+      state.phases = data.phases;
+      renderPhases();
+      showToast(`${data.phases.length} phase${data.phases.length !== 1 ? 's' : ''} synced`, 'success');
+    } else {
+      showToast(data.error || 'Sync failed', 'error');
+    }
+  } catch (e) {
+    showToast('Sync failed', 'error');
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+async function activatePhase(id) {
+  try {
+    const res = await apiFetch('/api/phases', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'activate', id })
+    });
+    const data = await res.json();
+    if (data.status === 'ok') {
+      showToast('Phase activated', 'success');
+      loadState();
+    } else {
+      showToast(data.error || 'Cannot activate phase', 'error');
+    }
+  } catch (e) {
+    showToast('Failed to activate phase', 'error');
+  }
+}
+
+async function completePhase(id) {
+  try {
+    const res = await apiFetch('/api/phases', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'complete', id })
+    });
+    const data = await res.json();
+    if (data.status === 'ok') {
+      showToast('Phase marked as built', 'success');
+      loadState();
+    } else {
+      showToast(data.error || 'Failed', 'error');
+    }
+  } catch (e) {
+    showToast('Failed to update phase', 'error');
+  }
+}
+
+// ============================================================
 // Reset
 // ============================================================
 function openResetDialog() {
@@ -2459,7 +3409,7 @@ async function resetPipeline() {
     const data = await res.json();
     showToast(`Pipeline reset — ${data.cleared} files cleared`, 'success');
     currentReviewFile = null;
-    document.getElementById('viewer-content').innerHTML = 'Select a file from the tree to review its contents.';
+    document.getElementById('viewer-content').innerHTML = VIEWER_DEFAULT_HTML;
     document.getElementById('viewer-raw-pre').textContent = '';
     document.getElementById('viewer-filename').textContent = 'Select a file';
     document.getElementById('btn-mark-reviewed').style.display = 'none';
@@ -2490,4 +3440,9 @@ document.addEventListener('keydown', e => {
 document.getElementById('project-create-name')?.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') createProjectFromHome();
 });
+
+// Set initial viewer empty state on load
+const _vc = document.getElementById('viewer-content');
+if (_vc && !_vc.innerHTML.trim()) _vc.innerHTML = VIEWER_DEFAULT_HTML;
+
 startPolling();

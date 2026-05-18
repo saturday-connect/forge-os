@@ -306,6 +306,14 @@ def build_prompt(agent_path, inputs, output_file, critique=None):
     
     return "".join(prompt_parts)
 
+_ALLOWED_MODELS = {{
+    "gemini": {{"gemini-3-flash-preview", "gemini-3-pro-preview", "gemini-2.5-flash",
+                "gemini-2.5-pro", "gemini-2.5-flash-lite"}},
+    "claude": {{"claude-sonnet-4-6", "claude-opus-4-7", "claude-haiku-4-5-20251001"}},
+    "codex":  {{"o4-mini", "o3", "gpt-4.1", "gpt-4.1-mini"}},
+    "openai": {{"gpt-4o", "gpt-4o-mini", "o3-mini"}},
+}}
+
 def invoke_model(prompt, output_path):
     with tempfile.NamedTemporaryFile(mode='w+', delete=False, encoding='utf-8') as tmp:
         tmp_path = tmp.name
@@ -313,6 +321,10 @@ def invoke_model(prompt, output_path):
     try:
         tool = getattr(state, "tool", state.model)
         model_id = getattr(state, "model_id", "")
+        # C2: validate model_id against allowlist before passing to subprocess
+        if model_id and tool in _ALLOWED_MODELS and model_id not in _ALLOWED_MODELS[tool]:
+            log_error(f"Unsupported model '{{model_id}}' for tool '{{tool}}'. Aborting.")
+            sys.exit(1)
         if tool == "gemini":
             cmd = ["gemini", "--skip-trust"]
             if model_id:

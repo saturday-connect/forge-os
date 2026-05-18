@@ -2521,31 +2521,33 @@ def build_forge():
     with open("forge", "w", encoding='utf-8') as f:
         f.write(forge_content)
 
-    # Hot-deploy dashboard.html to all existing .forge/scripts/ directories so
-    # a rebuild immediately takes effect without requiring a manual upgrade run.
-    import glob
-    dashboard_src = os.path.join(os.path.dirname(__file__), "dashboard.html")
-    repo_root = os.path.normpath(os.path.join(os.path.dirname(__file__), ".."))
+    # Hot-deploy dashboard.html and server.py to all existing .forge/scripts/
+    # directories so a rebuild immediately takes effect without a manual upgrade.
+    import glob, shutil
+    src_dir = os.path.dirname(__file__)
+    dashboard_src = os.path.join(src_dir, "dashboard.html")
+    server_src = os.path.join(src_dir, "runtime", "server.py")
+    repo_root = os.path.normpath(os.path.join(src_dir, ".."))
     parent_dir = os.path.dirname(repo_root)
-    targets = (
-        glob.glob(os.path.join(repo_root, ".forge/scripts/dashboard.html"))
-        + glob.glob(os.path.join(repo_root, ".projects/*/.forge/scripts/dashboard.html"))
-        + glob.glob(os.path.join(repo_root, "test-projects/*/.forge/scripts/dashboard.html"))
-        # Sibling projects in the same parent directory
-        + glob.glob(os.path.join(parent_dir, "*/.forge/scripts/dashboard.html"))
+    scripts_dirs = (
+        glob.glob(os.path.join(repo_root, ".forge/scripts"))
+        + glob.glob(os.path.join(repo_root, ".projects/*/.forge/scripts"))
+        + glob.glob(os.path.join(repo_root, "test-projects/*/.forge/scripts"))
+        + glob.glob(os.path.join(parent_dir, "*/.forge/scripts"))
     )
     copied = 0
-    for dst in targets:
-        dst = os.path.normpath(dst)
-        if os.path.exists(os.path.dirname(dst)):
-            try:
-                import shutil
-                shutil.copy2(dashboard_src, dst)
-                copied += 1
-            except Exception:
-                pass
+    for sd in scripts_dirs:
+        sd = os.path.normpath(sd)
+        if not os.path.isdir(sd):
+            continue
+        try:
+            shutil.copy2(dashboard_src, os.path.join(sd, "dashboard.html"))
+            shutil.copy2(server_src, os.path.join(sd, "server.py"))
+            copied += 1
+        except Exception:
+            pass
     if copied:
-        print(f"Dashboard hot-deployed to {copied} runtime director{'y' if copied==1 else 'ies'}.")
+        print(f"Dashboard + server hot-deployed to {copied} runtime director{'y' if copied==1 else 'ies'}.")
 
     print("forge built successfully.")
 

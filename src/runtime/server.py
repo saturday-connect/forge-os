@@ -1,16 +1,36 @@
 import os
 import sys
 import json
+import logging
 import subprocess
 import shutil
 import tempfile
 import time
 import threading
+import re
 import urllib.parse
 import urllib.request
 import urllib.error
 from datetime import datetime
 from http.server import HTTPServer, BaseHTTPRequestHandler
+
+# ---------------------------------------------------------------------------
+# Logging
+# ---------------------------------------------------------------------------
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s [server] %(message)s",
+    datefmt="%Y-%m-%dT%H:%M:%S",
+    stream=sys.stderr,
+)
+logger = logging.getLogger("forge.server")
+
+# ---------------------------------------------------------------------------
+# Thread safety
+# ---------------------------------------------------------------------------
+_state_lock   = threading.Lock()
+_reviews_lock = threading.Lock()
+_index_lock   = threading.Lock()
 
 # Module-level security constants — read from env at startup
 FORGE_TOKEN = os.environ.get("FORGE_TOKEN", "")
@@ -125,27 +145,29 @@ def default_projects_index():
 
 
 def load_projects_index():
-    ensure_projects_root()
-    if os.path.exists(PROJECTS_INDEX_FILE):
-        try:
-            with open(PROJECTS_INDEX_FILE, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            if isinstance(data, dict) and isinstance(data.get("projects"), list):
-                data.setdefault("active_project_id", "")
-                return data
-        except Exception:
-            pass
-    return default_projects_index()
+    with _index_lock:
+        ensure_projects_root()
+        if os.path.exists(PROJECTS_INDEX_FILE):
+            try:
+                with open(PROJECTS_INDEX_FILE, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                if isinstance(data, dict) and isinstance(data.get("projects"), list):
+                    data.setdefault("active_project_id", "")
+                    return data
+            except (OSError, json.JSONDecodeError) as exc:
+                logger.warning("load_projects_index: %s", exc)
+        return default_projects_index()
 
 
 def save_projects_index(index_data):
-    ensure_projects_root()
-    with open(PROJECTS_INDEX_FILE, "w", encoding="utf-8") as f:
-        json.dump(index_data, f, indent=2)
-    try:
-        os.chmod(PROJECTS_INDEX_FILE, 0o600)
-    except Exception:
-        pass
+    with _index_lock:
+        ensure_projects_root()
+        with open(PROJECTS_INDEX_FILE, "w", encoding="utf-8") as f:
+            json.dump(index_data, f, indent=2)
+        try:
+            os.chmod(PROJECTS_INDEX_FILE, 0o600)
+        except OSError as exc:
+            logger.warning("save_projects_index chmod: %s", exc)
 
 
 def ensure_unique_slug(index_data, base_slug):
@@ -279,18 +301,20 @@ GATE_STAGE_MAP = {
 # ---------------------------------------------------------------------------
 
 def load_reviews():
-    if os.path.exists(REVIEWS_FILE):
-        try:
-            with open(REVIEWS_FILE, "r") as f:
-                return json.load(f)
-        except Exception:
-            pass
-    return {}
+    with _reviews_lock:
+        if os.path.exists(REVIEWS_FILE):
+            try:
+                with open(REVIEWS_FILE, "r") as f:
+                    return json.load(f)
+            except (OSError, json.JSONDecodeError) as exc:
+                logger.warning("load_reviews: %s", exc)
+        return {}
 
 
 def save_reviews(reviews):
-    with open(REVIEWS_FILE, "w") as f:
-        json.dump(reviews, f, indent=2)
+    with _reviews_lock:
+        with open(REVIEWS_FILE, "w") as f:
+            json.dump(reviews, f, indent=2)
 
 
 def _default_state():
@@ -299,6 +323,8 @@ def _default_state():
         "project_name": "",
         "builds": [],
         "issues": [],
+        "phases": [],
+        "active_phase_id": None,
         "git": {
             "repo_url": "",
             "username": "",
@@ -316,34 +342,162 @@ def _default_state():
 
 
 def load_project_state():
-    if os.path.exists(STATE_FILE):
-        try:
-            with open(STATE_FILE, "r") as f:
-                data = json.load(f)
-            defaults = _default_state()
-            for k, v in defaults.items():
-                if k not in data:
-                    data[k] = v
-                elif isinstance(v, dict) and isinstance(data[k], dict):
-                    for sk, sv in v.items():
-                        if sk not in data[k]:
-                            data[k][sk] = sv
-            return data
-        except Exception:
-            pass
-    return _default_state()
+    with _state_lock:
+        if os.path.exists(STATE_FILE):
+            try:
+                with open(STATE_FILE, "r") as f:
+                    data = json.load(f)
+                defaults = _default_state()
+                for k, v in defaults.items():
+                    if k not in data:
+                        data[k] = v
+                    elif isinstance(v, dict) and isinstance(data[k], dict):
+                        for sk, sv in v.items():
+                            if sk not in data[k]:
+                                data[k][sk] = sv
+                return data
+            except (OSError, json.JSONDecodeError) as exc:
+                logger.warning("load_project_state: %s", exc)
+        return _default_state()
 
 
 def save_project_state(state):
     # Strip git PAT before persisting — use env var GIT_PAT instead
-    to_save = json.loads(json.dumps(state))
-    to_save.get("git", {}).pop("token", None)
-    with open(STATE_FILE, "w") as f:
-        json.dump(to_save, f, indent=2)
-    try:
-        os.chmod(STATE_FILE, 0o600)
-    except Exception:
-        pass
+    with _state_lock:
+        to_save = json.loads(json.dumps(state))
+        to_save.get("git", {}).pop("token", None)
+        with open(STATE_FILE, "w") as f:
+            json.dump(to_save, f, indent=2)
+        try:
+            os.chmod(STATE_FILE, 0o600)
+        except OSError as exc:
+            logger.warning("save_project_state chmod: %s", exc)
+
+
+# ---------------------------------------------------------------------------
+# Phase management helpers
+# ---------------------------------------------------------------------------
+
+import re as _re
+
+def _parse_phases_from_docs():
+    # Scan delivery docs for phase/MVP headings and return an ordered list.
+    scan_dirs = ["05-delivery", "01-requirements", "03-analysis"]
+    scan_files = ["roadmap.md", "milestones.md", "epics.md", "release-roadmap.md",
+                  "sprint-plan.md", "brd.md", "user-stories.md"]
+
+    # Patterns that signal a phase heading (case-insensitive)
+    phase_re = _re.compile(
+        r'^#{1,3}\s*'
+        r'(?P<name>'
+        r'MVP(?:\s*[-–:]?\s*[^\n]*)?'
+        r'|Phase\s+\d+(?:\s*[-–:]\s*[^\n]*)?'
+        r'|(?:Phase|Release|Sprint|Milestone)\s+\w+(?:\s*[-–:]\s*[^\n]*)?'
+        r')',
+        _re.IGNORECASE | _re.MULTILINE
+    )
+
+    found = []      # list of (order_key, name, description, source)
+    seen_names = set()
+
+    for d in scan_dirs:
+        dir_path = os.path.join(FORGE_DIR, d)
+        if not os.path.isdir(dir_path):
+            continue
+        # Prefer the curated list, then fall back to any .md in the dir
+        candidates = scan_files + [
+            f for f in os.listdir(dir_path)
+            if f.endswith(".md") and f not in scan_files
+        ]
+        for fname in candidates:
+            fpath = os.path.join(dir_path, fname)
+            if not os.path.isfile(fpath):
+                continue
+            try:
+                text = open(fpath, encoding="utf-8").read()
+            except OSError:
+                continue
+            lines = text.splitlines()
+            for i, line in enumerate(lines):
+                m = phase_re.match(line)
+                if not m:
+                    continue
+                raw_name = m.group("name").strip().rstrip(":")
+                # Normalise: "Phase 1 - Core Auth" → keep full label
+                clean = _re.sub(r'\s+', ' ', raw_name)
+                # Deduplicate by normalised lower name
+                key = clean.lower()
+                if key in seen_names:
+                    continue
+                seen_names.add(key)
+                # Grab first non-empty line after heading as description
+                desc_lines = []
+                for j in range(i + 1, min(i + 6, len(lines))):
+                    l = lines[j].strip()
+                    if not l or l.startswith('#'):
+                        break
+                    if not l.startswith('|') and not l.startswith('-'):
+                        desc_lines.append(l)
+                        if len(desc_lines) >= 2:
+                            break
+                desc = ' '.join(desc_lines)[:200]
+                # Order: MVP=0, Phase N = N, else alphabetical
+                if _re.match(r'mvp', key):
+                    order_key = 0
+                else:
+                    nm = _re.search(r'\d+', key)
+                    order_key = int(nm.group()) if nm else 99
+                found.append({
+                    "order": order_key,
+                    "name": clean,
+                    "description": desc,
+                    "source": f"{d}/{fname}",
+                })
+
+    found.sort(key=lambda x: x["order"])
+    return found
+
+
+def sync_phases(proj):
+    # Merge phases parsed from delivery docs into project state.
+    # Existing phases keep their status and issue_ids; new phases
+    # are inserted as 'pending'. Removed phases are NOT deleted.
+    doc_phases = _parse_phases_from_docs()
+    existing = {p["id"]: p for p in proj.get("phases", [])}
+
+    merged = []
+    for dp in doc_phases:
+        slug = _re.sub(r'[^a-z0-9]+', '-', dp["name"].lower()).strip('-')
+        if slug in existing:
+            p = existing[slug]
+            p["name"]        = dp["name"]
+            p["description"] = dp["description"] or p.get("description", "")
+            p["order"]       = dp["order"]
+            p["doc_source"]  = dp["source"]
+        else:
+            p = {
+                "id":          slug,
+                "name":        dp["name"],
+                "description": dp["description"],
+                "order":       dp["order"],
+                "status":      "pending",
+                "doc_source":  dp["source"],
+                "issue_ids":   [],
+                "created_at":  datetime.now().isoformat(),
+            }
+            existing[slug] = p
+        merged.append(p)
+
+    # Preserve any manually-created phases not in docs
+    doc_ids = {_re.sub(r'[^a-z0-9]+', '-', d["name"].lower()).strip('-') for d in doc_phases}
+    for pid, p in existing.items():
+        if pid not in doc_ids:
+            p.pop("doc_source", None)
+            merged.append(p)
+
+    merged.sort(key=lambda x: (x.get("order", 99), x["name"]))
+    proj["phases"] = merged
+    return merged
 
 
 # ---------------------------------------------------------------------------
@@ -367,7 +521,7 @@ def load_user():
     try:
         with open(USER_FILE, "r") as _f:
             return json.load(_f)
-    except Exception:
+    except (OSError, json.JSONDecodeError):
         return {"role": "admin", "department": "all"}
 
 
@@ -485,7 +639,7 @@ def _load_distill_result():
     try:
         with open(_path) as _f:
             return json.load(_f)
-    except Exception:
+    except (OSError, json.JSONDecodeError):
         return None
 
 
@@ -591,13 +745,12 @@ def evaluate_gate(gate_name):
 
 
 def save_build_progress(entry):
-    # Write build_entry live so /api/state can stream intermediate states
     progress_file = os.path.join(FORGE_DIR, "runs", "build-in-progress.json")
     try:
         with open(progress_file, "w") as f:
             json.dump(entry, f)
-    except Exception:
-        pass
+    except OSError as exc:
+        logger.debug("save_build_progress: %s", exc)
 
 
 def clear_build_progress():
@@ -605,8 +758,8 @@ def clear_build_progress():
     try:
         if os.path.exists(progress_file):
             os.remove(progress_file)
-    except Exception:
-        pass
+    except OSError as exc:
+        logger.debug("clear_build_progress: %s", exc)
 
 
 def set_processing(status, stage=""):
@@ -622,12 +775,12 @@ def set_processing(status, stage=""):
                         existing = json.load(sf)
                     if "last_error" in existing:
                         data["last_error"] = existing["last_error"]
-                except Exception:
-                    pass
+                except (OSError, json.JSONDecodeError) as exc:
+                    logger.debug("set_processing read existing: %s", exc)
             with open(status_file, "w") as sf:
                 json.dump(data, sf)
-        except Exception:
-            pass
+        except OSError as exc:
+            logger.warning("set_processing write: %s", exc)
 
 
 def compute_full_state():
@@ -704,8 +857,8 @@ def compute_full_state():
         try:
             with open(status_file, "r") as sf:
                 processing_status = json.load(sf)
-        except Exception:
-            pass
+        except (OSError, json.JSONDecodeError) as exc:
+            logger.debug("compute_full_state status.json: %s", exc)
 
     all_reviewed = all(
         s["reviewed"] == s["generated"] and s["generated"] > 0
@@ -729,8 +882,8 @@ def compute_full_state():
                 in_progress = json.load(_pf)
             if not any(b.get("id") == in_progress.get("id") for b in builds):
                 builds = builds + [in_progress]
-        except Exception:
-            pass
+        except (OSError, json.JSONDecodeError) as exc:
+            logger.debug("in-progress build load: %s", exc)
 
     last_build = builds[-1] if builds else None
 
@@ -760,6 +913,8 @@ def compute_full_state():
         "rawInputs": raw_inputs,
         "builds": builds,
         "issues": proj.get("issues", []),
+        "phases": proj.get("phases", []),
+        "active_phase_id": proj.get("active_phase_id"),
         "environments": proj.get("environments", {}),
         "git": proj.get("git", {}),
         "tool": proj.get("tool", "gemini"),
@@ -969,7 +1124,11 @@ class ForgeHandler(BaseHTTPRequestHandler):
                 self._json_response(400, {"error": "missing path"})
                 return
             stem = file_path[:-3] if file_path.endswith(".md") else file_path
-            ver_dir = os.path.join(FORGE_DIR, "versions", stem)
+            ver_dir = os.path.normpath(os.path.join(FORGE_DIR, "versions", stem))
+            _versions_base = os.path.join(FORGE_DIR, "versions") + os.sep
+            if not ver_dir.startswith(_versions_base) and ver_dir != os.path.join(FORGE_DIR, "versions"):
+                self._json_response(403, {"error": "forbidden"})
+                return
             versions = []
             if os.path.isdir(ver_dir):
                 for fname in sorted(os.listdir(ver_dir), reverse=True):
@@ -979,7 +1138,7 @@ class ForgeHandler(BaseHTTPRequestHandler):
                         try:
                             dt = datetime.strptime(ts_raw, "%Y%m%d-%H%M%S")
                             ts_iso = dt.isoformat()
-                        except Exception:
+                        except ValueError:
                             ts_iso = ts_raw
                         versions.append({"id": ts_raw, "timestamp": ts_iso, "size": os.path.getsize(fpath)})
             self._json_response(200, {"path": file_path, "versions": versions})
@@ -991,8 +1150,16 @@ class ForgeHandler(BaseHTTPRequestHandler):
             if not file_path or not ver_id:
                 self._json_response(400, {"error": "missing path or id"})
                 return
+            # C1: validate ver_id format
+            if not re.fullmatch(r'\d{8}-\d{6}', ver_id):
+                self._json_response(400, {"error": "invalid version id"})
+                return
             stem = file_path[:-3] if file_path.endswith(".md") else file_path
-            ver_path = os.path.join(FORGE_DIR, "versions", stem, f"{ver_id}.md")
+            ver_path = os.path.normpath(os.path.join(FORGE_DIR, "versions", stem, f"{ver_id}.md"))
+            _versions_base = os.path.join(FORGE_DIR, "versions") + os.sep
+            if not ver_path.startswith(_versions_base):
+                self._json_response(403, {"error": "forbidden"})
+                return
             if not os.path.exists(ver_path):
                 self._json_response(404, {"error": "version not found"})
                 return
@@ -1012,8 +1179,8 @@ class ForgeHandler(BaseHTTPRequestHandler):
                 try:
                     with open(build_status_file) as f:
                         build_status = json.load(f)
-                except Exception:
-                    pass
+                except (OSError, json.JSONDecodeError) as exc:
+                    logger.debug("build_status_file load: %s", exc)
             step_keys = ["backend", "frontend", "integration", "tests", "infra"]
             steps_out = {}
             for key in step_keys:
@@ -1107,7 +1274,8 @@ class ForgeHandler(BaseHTTPRequestHandler):
                 try:
                     with open(review_file) as f:
                         self._json_response(200, json.load(f))
-                except Exception:
+                except (OSError, json.JSONDecodeError) as exc:
+                    logger.debug("build-review load: %s", exc)
                     self._json_response(200, {"status": "idle"})
             else:
                 self._json_response(200, {"status": "idle"})
@@ -1174,11 +1342,13 @@ class ForgeHandler(BaseHTTPRequestHandler):
 
         parsed = urllib.parse.urlparse(self.path)
         path = parsed.path
-        content_length = int(self.headers.get("Content-Length", 0))
+        _MAX_BODY = 4 * 1024 * 1024
+        content_length = min(int(self.headers.get("Content-Length", 0) or 0), _MAX_BODY)
         post_data = self.rfile.read(content_length)
         try:
             data = json.loads(post_data.decode("utf-8")) if post_data else {}
-        except Exception:
+        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+            logger.debug("do_DELETE: bad JSON body: %s", exc)
             data = {}
 
         if path == "/api/projects":
@@ -1242,11 +1412,14 @@ class ForgeHandler(BaseHTTPRequestHandler):
             self._json_response(403, {"error": "forbidden"})
             return
 
-        content_length = int(self.headers.get("Content-Length", 0))
+        # H5: cap request body at 4 MB to prevent memory exhaustion
+        _MAX_BODY = 4 * 1024 * 1024
+        content_length = min(int(self.headers.get("Content-Length", 0) or 0), _MAX_BODY)
         post_data = self.rfile.read(content_length)
         try:
             data = json.loads(post_data.decode("utf-8")) if post_data else {}
-        except Exception:
+        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+            logger.debug("do_POST: bad JSON body: %s", exc)
             data = {}
 
         parsed = urllib.parse.urlparse(self.path)
@@ -1292,8 +1465,8 @@ class ForgeHandler(BaseHTTPRequestHandler):
                 if not state.get("project_name"):
                     state["project_name"] = name
                     save_project_state(state)
-            except Exception:
-                pass
+            except OSError as exc:
+                logger.warning("project create state init: %s", exc)
             self._json_response(200, {"status": "created", "project": entry, "active_project_id": project_id})
             return
 
@@ -1387,8 +1560,8 @@ class ForgeHandler(BaseHTTPRequestHandler):
                     if processing_status.get("status") == "running":
                         self._json_response(409, {"error": "A generation is already in progress"})
                         return
-                except Exception:
-                    pass
+                except (OSError, json.JSONDecodeError) as exc:
+                    logger.debug("status_file_check: %s", exc)
 
             def run_generate():
                 set_processing("running", stage)
@@ -1423,8 +1596,8 @@ class ForgeHandler(BaseHTTPRequestHandler):
                     if tmp_combined and os.path.exists(tmp_combined):
                         try:
                             os.remove(tmp_combined)
-                        except Exception:
-                            pass
+                        except OSError as exc:
+                            logger.debug("cleanup tmp_combined: %s", exc)
 
             t = threading.Thread(target=run_generate, daemon=True)
             t.start()
@@ -1442,8 +1615,8 @@ class ForgeHandler(BaseHTTPRequestHandler):
                     try:
                         with open(review_file) as f:
                             return json.load(f)
-                    except Exception:
-                        pass
+                    except (OSError, json.JSONDecodeError) as exc:
+                        logger.warning("_load_review: %s", exc)
                 return {}
 
             def _save_review(entry):
@@ -1459,8 +1632,8 @@ class ForgeHandler(BaseHTTPRequestHandler):
                     try:
                         import signal as _sig
                         os.kill(pid, _sig.SIGTERM)
-                    except Exception:
-                        pass
+                    except (OSError, ProcessLookupError) as exc:
+                        logger.debug("kill pid %s: %s", pid, exc)
                 subprocess.run(["git", "reset", "HEAD"], cwd=REPO_ROOT, capture_output=True)
                 entry["status"] = "cancelled"
                 entry.pop("pid", None)
@@ -1657,8 +1830,8 @@ class ForgeHandler(BaseHTTPRequestHandler):
                     if tmp_path and os.path.exists(tmp_path):
                         try:
                             os.remove(tmp_path)
-                        except Exception:
-                            pass
+                        except OSError as exc:
+                            logger.debug("do_review cleanup: %s", exc)
 
             t = threading.Thread(target=do_review, daemon=True)
             t.start()
@@ -1974,6 +2147,104 @@ class ForgeHandler(BaseHTTPRequestHandler):
             self._json_response(200, {"status": "started", "branch": branch_name})
             return
 
+        # ── Phase management ─────────────────────────────────────────────────
+        if path == "/api/phases":
+            proj = load_project_state()
+            action = data.get("action", "")
+
+            if action == "sync":
+                # Re-parse delivery docs and merge into phase list
+                phases = sync_phases(proj)
+                save_project_state(proj)
+                self._json_response(200, {"status": "ok", "phases": phases})
+                return
+
+            if action == "create":
+                # Manual phase creation
+                name = data.get("name", "").strip()
+                if not name:
+                    self._json_response(400, {"error": "name required"}); return
+                slug = _re.sub(r'[^a-z0-9]+', '-', name.lower()).strip('-')
+                phases = proj.setdefault("phases", [])
+                if any(p["id"] == slug for p in phases):
+                    self._json_response(409, {"error": "Phase already exists"}); return
+                new_phase = {
+                    "id": slug, "name": name,
+                    "description": data.get("description", ""),
+                    "order": len(phases),
+                    "status": "pending",
+                    "issue_ids": [],
+                    "created_at": datetime.now().isoformat(),
+                }
+                phases.append(new_phase)
+                save_project_state(proj)
+                self._json_response(200, {"status": "ok", "phases": phases})
+                return
+
+            if action == "activate":
+                phase_id = data.get("id")
+                phases = proj.get("phases", [])
+                phase = next((p for p in phases if p["id"] == phase_id), None)
+                if not phase:
+                    self._json_response(404, {"error": "Phase not found"}); return
+                # Check ordering: previous phase must be built
+                idx = phases.index(phase)
+                if idx > 0:
+                    prev = phases[idx - 1]
+                    if prev["status"] not in ("built", "deployed"):
+                        self._json_response(400, {
+                            "error": f"Complete '{prev['name']}' before activating this phase."
+                        }); return
+                phase["status"] = "active"
+                proj["active_phase_id"] = phase_id
+                save_project_state(proj)
+                self._json_response(200, {"status": "ok", "phases": phases})
+                return
+
+            if action == "complete":
+                phase_id = data.get("id")
+                phases = proj.get("phases", [])
+                phase = next((p for p in phases if p["id"] == phase_id), None)
+                if not phase:
+                    self._json_response(404, {"error": "Phase not found"}); return
+                phase["status"] = "built"
+                phase["completed_at"] = datetime.now().isoformat()
+                save_project_state(proj)
+                self._json_response(200, {"status": "ok", "phases": phases})
+                return
+
+            if action == "delete":
+                phase_id = data.get("id")
+                phases = proj.get("phases", [])
+                proj["phases"] = [p for p in phases if p["id"] != phase_id]
+                if proj.get("active_phase_id") == phase_id:
+                    proj["active_phase_id"] = None
+                save_project_state(proj)
+                self._json_response(200, {"status": "ok", "phases": proj["phases"]})
+                return
+
+            # Default: tag issue to phase
+            if action == "tag_issue":
+                phase_id = data.get("phase_id")
+                issue_id = data.get("issue_id")
+                phases = proj.setdefault("phases", [])
+                # Remove from all phases first
+                for p in phases:
+                    p.setdefault("issue_ids", [])
+                    if issue_id in p["issue_ids"]:
+                        p["issue_ids"].remove(issue_id)
+                # Tag to new phase (None = unassigned)
+                if phase_id:
+                    phase = next((p for p in phases if p["id"] == phase_id), None)
+                    if phase:
+                        phase["issue_ids"].append(issue_id)
+                save_project_state(proj)
+                self._json_response(200, {"status": "ok", "phases": phases})
+                return
+
+            self._json_response(400, {"error": "Unknown action"})
+            return
+
         if path == "/api/issue":
             proj = load_project_state()
             issues = proj.setdefault("issues", [])
@@ -1981,7 +2252,7 @@ class ForgeHandler(BaseHTTPRequestHandler):
             if issue_id:
                 for issue in issues:
                     if issue["id"] == issue_id:
-                        for k in ("type", "title", "description", "priority", "status"):
+                        for k in ("type", "title", "description", "priority", "status", "phase_id"):
                             if k in data:
                                 issue[k] = data[k]
                         issue["updated_at"] = datetime.now().isoformat()
@@ -1995,6 +2266,7 @@ class ForgeHandler(BaseHTTPRequestHandler):
                     "description": data.get("description", ""),
                     "priority": data.get("priority", "medium"),
                     "status": "open",
+                    "phase_id": data.get("phase_id", None),
                     "created_at": datetime.now().isoformat(),
                     "updated_at": datetime.now().isoformat(),
                 }
@@ -2116,8 +2388,18 @@ class ForgeHandler(BaseHTTPRequestHandler):
                     if env_key in data["environments"]:
                         proj["environments"].setdefault(env_key, {}).update(data["environments"][env_key])
             if "tool" in data:
+                # C2: validate tool against known set
+                if data["tool"] not in KNOWN_TOOLS:
+                    self._json_response(400, {"error": "unsupported tool"})
+                    return
                 proj["tool"] = data["tool"]
             if "model" in data:
+                # C2: validate model_id against allowlist for the current tool
+                _tool_key = data.get("tool") or proj.get("tool", "")
+                _tool_models = [m["id"] for m in KNOWN_TOOLS.get(_tool_key, {}).get("models", [])]
+                if _tool_models and data["model"] not in _tool_models:
+                    self._json_response(400, {"error": "unsupported model for tool"})
+                    return
                 proj["model"] = data["model"]
             if "project_name" in data:
                 proj["project_name"] = data["project_name"]
@@ -2128,15 +2410,28 @@ class ForgeHandler(BaseHTTPRequestHandler):
             if "git" in data and "kb_repo_url" in data["git"]:
                 proj["git"]["kb_repo_url"] = data["git"]["kb_repo_url"]
             save_project_state(proj)
-            # Signal Electron to persist new PAT in safeStorage (never write to disk)
+            # Signal Electron to persist new PAT in safeStorage (never write to disk).
+            # The file is 0600, lives briefly, and is deleted by the Electron poller.
             if new_pat:
                 _signal = os.path.expanduser("~/.forge/_pat_signal")
                 try:
-                    with open(_signal, "w") as _sf:
-                        _sf.write(new_pat)
-                    os.chmod(_signal, 0o600)
-                except Exception:
-                    pass
+                    _forge_dir_local = os.path.dirname(_signal)
+                    os.makedirs(_forge_dir_local, exist_ok=True)
+                    # Write to a temp file then rename for atomic delivery
+                    _fd, _tmp = tempfile.mkstemp(dir=_forge_dir_local, prefix="_pat_tmp_")
+                    try:
+                        with os.fdopen(_fd, "w") as _sf:
+                            _sf.write(new_pat)
+                        os.chmod(_tmp, 0o600)
+                        os.replace(_tmp, _signal)
+                    except OSError:
+                        try:
+                            os.unlink(_tmp)
+                        except OSError:
+                            pass
+                        raise
+                except OSError as exc:
+                    logger.warning("PAT signal write failed: %s", exc)
             self._json_response(200, {"status": "saved"})
             return
 
@@ -2218,8 +2513,8 @@ class ForgeHandler(BaseHTTPRequestHandler):
                     if _cur_status.get("status") == "running":
                         self._json_response(409, {"error": "A generation is already in progress"})
                         return
-                except Exception:
-                    pass
+                except (OSError, json.JSONDecodeError) as exc:
+                    logger.debug("status_file_fix read: %s", exc)
 
             stage = file_path.split("/")[0].split("-", 1)[1] if "-" in file_path.split("/")[0] else "context"
             status_file = os.path.join(FORGE_DIR, "runs/status.json")
@@ -2247,10 +2542,21 @@ class ForgeHandler(BaseHTTPRequestHandler):
             if not file_path or not ver_id:
                 self._json_response(400, {"error": "missing path or id"})
                 return
-            # rstrip bug fix: correct .md stripping
+            # C1: validate ver_id to timestamp format only — prevents directory traversal
+            if not re.fullmatch(r'\d{8}-\d{6}', ver_id):
+                self._json_response(400, {"error": "invalid version id"})
+                return
+            # C1: validate file_path stays within FORGE_DIR
             stem = file_path[:-3] if file_path.endswith(".md") else file_path
-            ver_path  = os.path.join(FORGE_DIR, "versions", stem, f"{ver_id}.md")
-            dest_path = os.path.join(FORGE_DIR, file_path)
+            ver_path  = os.path.normpath(os.path.join(FORGE_DIR, "versions", stem, f"{ver_id}.md"))
+            dest_path = os.path.normpath(os.path.join(FORGE_DIR, file_path))
+            _versions_base = os.path.join(FORGE_DIR, "versions") + os.sep
+            if not ver_path.startswith(_versions_base):
+                self._json_response(403, {"error": "forbidden"})
+                return
+            if not dest_path.startswith(FORGE_DIR + os.sep):
+                self._json_response(403, {"error": "forbidden"})
+                return
             if not os.path.exists(ver_path):
                 self._json_response(404, {"error": "version not found"})
                 return

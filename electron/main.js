@@ -218,6 +218,10 @@ function createSetupWindow() {
 
     // IPC: save git global name/email
     ipcMain.handle('setup-git-config', async (_e, name, email) => {
+      // C4: validate input length to prevent oversized arg injection
+      if (typeof name !== 'string' || name.length > 128) return { error: 'Invalid name.' }
+      if (typeof email !== 'string' || email.length > 256) return { error: 'Invalid email.' }
+      if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { error: 'Invalid email format.' }
       try {
         if (name) execFileSync('git', ['config', '--global', 'user.name', name])
         if (email) execFileSync('git', ['config', '--global', 'user.email', email])
@@ -311,6 +315,10 @@ function createSetupWindow() {
 
     // IPC: unlock passphrase-protected SSH key and add to macOS Keychain / agent
     ipcMain.handle('setup-ssh-unlock', async (_e, passphrase) => {
+      // C4: validate passphrase is a reasonable string — no null bytes, reasonable length
+      if (typeof passphrase !== 'string' || passphrase.length === 0 || passphrase.length > 1024) {
+        return { error: 'Invalid passphrase.' }
+      }
       const keyPath = path.join(os.homedir(), '.ssh', 'id_ed25519_forge_os')
       if (!fs.existsSync(keyPath)) return { error: 'Key file not found. Generate the key first.' }
 
@@ -341,6 +349,10 @@ function createSetupWindow() {
 
     // IPC: save setup config and close window
     ipcMain.once('setup-save', (_e, setupConfig) => {
+      // C4: reject non-object or oversized config payloads
+      if (!setupConfig || typeof setupConfig !== 'object' || Array.isArray(setupConfig)) return
+      const configStr = JSON.stringify(setupConfig)
+      if (configStr.length > 8192) return
       setupComplete = true
       const existing = readConfig()
       writeConfig({ ...existing, ...setupConfig })
@@ -885,75 +897,374 @@ function buildTrayMenu() {
         const token = auth.loadToken()
         if (!token) return
 
-        const config = readConfig()
-        const orgHistory = config.orgHistory || []
-        const currentRepo = config.knowledgeRepo || 'forge-knowledge'
-        const isEmpty = orgHistory.length === 0
+        const cfgSnap = readConfig()
+        const orgHistory = cfgSnap.orgHistory || []
 
-        const orgWin = new BrowserWindow({
-          width: 460,
-          height: isEmpty ? 340 : Math.min(80 + orgHistory.length * 62 + 180, 520),
-          resizable: false, minimizable: false, maximizable: false,
-          title: 'Switch Organization',
-          parent: win || undefined, modal: !!win,
-          webPreferences: { nodeIntegration: true, contextIsolation: false }
+        // ── IPC cleanup helper ────────────────────────────────────────────────
+        const cleanup = () => {
+          try { ipcMain.removeHandler('org-picker-verify') } catch (_) {}
+          try { ipcMain.removeAllListeners('org-picker-confirm') } catch (_) {}
+          try { ipcMain.removeAllListeners('org-picker-remove') } catch (_) {}
+          try { ipcMain.removeAllListeners('org-picker-cancel') } catch (_) {}
+        }
+
+        // ── Verify handler: check org on GitHub before committing ─────────────
+        ipcMain.handle('org-picker-verify', async (_e, orgName) => {
+          if (!orgName || !/^[a-z0-9][a-z0-9-]{0,38}$/i.test(orgName.trim())) {
+            return { error: 'Invalid organization name. Use only letters, numbers, and hyphens.' }
+          }
+          const name = orgName.trim().toLowerCase()
+          const repoUrl = `https://api.github.com/repos/${name}/forge-knowledge/contents/forge.config.json`
+          try {
+            const res = await httpGet(repoUrl, token)
+            if (res.status === 200) {
+              try {
+                const content = JSON.parse(Buffer.from(JSON.parse(res.body).content, 'base64').toString())
+                return { orgName: name, githubClientId: content.githubClientId, status: 'found' }
+              } catch (_) {
+                return { orgName: name, status: 'found' }
+              }
+            }
+            if (res.status === 404) {
+              const orgRes = await httpGet(`https://api.github.com/orgs/${name}`, token)
+              if (orgRes.status === 200) return { orgName: name, status: 'private' }
+              return { error: `Organization "${name}" not found on GitHub. Check the spelling and try again.` }
+            }
+            return { error: `GitHub returned ${res.status}. Try again.` }
+          } catch (e) {
+            return { error: `Network error: ${e.message}` }
+          }
         })
 
-        const items = orgHistory.map((o, i) => `
-          <div class="item ${o.org === currentOrg ? 'active' : ''}" onclick="pick(${i})">
-            <div class="item-name">${o.org}</div>
-            <div class="item-sub">${o.org}/${o.repo}</div>
-            ${o.org === currentOrg ? '<span class="badge">active</span>' : ''}
-          </div>`).join('')
+        // ── Ensure current org is always seeded into history ──────────────────
+        const activeOrgVal = currentOrg || cfgSnap.org || ''
+        const activeRepoVal = cfgSnap.knowledgeRepo || 'forge-knowledge'
+        let displayHistory = [...orgHistory]
+        if (activeOrgVal && !displayHistory.find(o => o.org === activeOrgVal)) {
+          displayHistory.unshift({ org: activeOrgVal, repo: activeRepoVal })
+        }
 
-        const emptyState = `
-          <div class="empty">
-            <div class="empty-icon">🏢</div>
-            <div class="empty-title">No recent organizations</div>
-            <div class="empty-desc">Enter your GitHub organization name below. It will appear here for quick switching next time.</div>
-          </div>`
+        // ── Build the HTML ────────────────────────────────────────────────────
+        const ORG_PICKER_CSS = `
+          *, *::before, *::after {box-sizing:border-box;margin:0;padding:0;font-family:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;-webkit-font-smoothing:antialiased}
+          :root {
+            --bg:#060D06; --surface:rgba(255,255,255,0.04); --surface-2:rgba(255,255,255,0.06);
+            --border:rgba(255,255,255,0.08); --border-2:rgba(255,255,255,0.05);
+            --text:#fff; --text-muted:rgba(255,255,255,0.55); --text-subtle:rgba(255,255,255,0.25);
+            --accent:#4ADE80; --accent-hover:#6EE79A; --accent-dim:rgba(74,222,128,0.12);
+            --blue:#0EA5E9; --blue-dim:rgba(14,165,233,0.1);
+            --amber:#F59E0B; --amber-dim:rgba(245,158,11,0.1);
+            --red:#F87171; --red-dim:rgba(248,113,113,0.1);
+            --radius:10px; --radius-sm:8px;
+          }
+          html,body {height:100%;overflow:hidden;background:var(--bg);color:var(--text);font-size:13px;line-height:1.5}
+          body {display:flex;flex-direction:column}
+          /* titlebar — drag region, close btn no-drag */
+          .titlebar {height:52px;display:flex;align-items:center;justify-content:space-between;padding:0 16px;border-bottom:1px solid var(--border-2);flex-shrink:0;-webkit-app-region:drag}
+          .titlebar-left {display:flex;flex-direction:column;gap:1px}
+          .titlebar-title {font-size:13px;font-weight:600;color:var(--text)}
+          .titlebar-sub {font-size:11px;color:var(--text-subtle)}
+          .close-btn {-webkit-app-region:no-drag;width:28px;height:28px;border-radius:50%;background:transparent;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--text-subtle);transition:all .15s;flex-shrink:0}
+          .close-btn:hover {background:var(--surface-2);color:var(--text-muted)}
+          /* current org banner — always visible */
+          .current-banner {flex-shrink:0;padding:10px 16px;border-bottom:1px solid var(--border-2);display:flex;align-items:center;gap:10px}
+          .current-label {font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--text-subtle);margin-bottom:4px}
+          .current-row {display:flex;align-items:center;gap:10px}
+          .current-avatar {width:30px;height:30px;border-radius:8px;background:var(--accent-dim);border:1px solid rgba(74,222,128,0.2);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:var(--accent);text-transform:uppercase;flex-shrink:0}
+          .current-info {flex:1;min-width:0}
+          .current-name {font-size:13px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+          .current-repo {font-size:11px;color:var(--text-subtle);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+          .live-dot {width:7px;height:7px;border-radius:50%;background:var(--accent);box-shadow:0 0 5px rgba(74,222,128,0.5);flex-shrink:0}
+          /* section label */
+          .section-label {padding:10px 16px 5px;font-size:10px;font-weight:600;color:var(--text-subtle);text-transform:uppercase;letter-spacing:.08em;flex-shrink:0}
+          /* org list */
+          .org-list {overflow-y:auto;flex:1;min-height:0}
+          .org-item {display:flex;align-items:center;gap:10px;padding:10px 16px;cursor:pointer;border-bottom:1px solid var(--border-2);transition:background .1s;position:relative}
+          .org-item:last-child {border-bottom:none}
+          .org-item:hover {background:var(--surface)}
+          .org-item.selected {background:var(--surface-2);border-left:2px solid var(--accent);padding-left:14px}
+          .org-avatar {width:30px;height:30px;border-radius:8px;background:var(--surface-2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:var(--text-muted);flex-shrink:0;text-transform:uppercase}
+          .org-info {flex:1;min-width:0}
+          .org-name {font-size:13px;font-weight:500;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+          .org-repo {font-size:11px;color:var(--text-subtle);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+          .org-remove {-webkit-app-region:no-drag;width:22px;height:22px;border-radius:6px;background:transparent;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--text-subtle);transition:all .15s;flex-shrink:0;opacity:0}
+          .org-item:hover .org-remove {opacity:1}
+          .org-remove:hover {background:var(--surface-2);color:var(--text-muted)}
+          /* empty state */
+          .empty-state {flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;padding:28px 24px;text-align:center}
+          .empty-title {font-size:13px;font-weight:500;color:var(--text-subtle)}
+          .empty-desc {font-size:12px;color:rgba(255,255,255,0.18);line-height:1.5;max-width:220px}
+          /* add org section */
+          .add-section {flex-shrink:0;border-top:1px solid var(--border-2);padding:10px 16px 12px}
+          .add-toggle {display:flex;align-items:center;gap:7px;cursor:pointer;padding:5px 0;color:var(--text-subtle);font-size:12px;font-weight:500;transition:color .15s;background:none;border:none;width:100%;-webkit-app-region:no-drag}
+          .add-toggle:hover {color:var(--text-muted)}
+          .add-toggle .chevron {transition:transform .18s;flex-shrink:0}
+          .add-toggle.open .chevron {transform:rotate(90deg)}
+          .add-form {display:none;flex-direction:column;gap:8px;padding-top:10px}
+          .field-label {font-size:11px;color:var(--text-subtle);margin-bottom:4px;display:block;font-weight:500}
+          .field-hint {font-size:10px;color:var(--text-subtle);opacity:.6;margin-top:3px;line-height:1.4}
+          input {width:100%;background:var(--surface);border:1px solid var(--border);color:var(--text);padding:9px 12px;border-radius:var(--radius-sm);font-size:13px;outline:none;transition:border-color .15s}
+          input:focus {border-color:rgba(74,222,128,0.4)}
+          input::placeholder {color:rgba(255,255,255,0.15)}
+          .advanced-toggle {font-size:11px;color:rgba(255,255,255,0.2);cursor:pointer;padding:2px 0;background:none;border:none;text-align:left;transition:color .15s}
+          .advanced-toggle:hover {color:var(--text-subtle)}
+          .advanced-row {display:none;flex-direction:column;margin-top:6px}
+          /* status */
+          .status-row {display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:var(--radius-sm);font-size:12px;margin-top:2px;line-height:1.3}
+          .status-row.checking {background:var(--surface);color:var(--text-subtle);border:1px solid var(--border)}
+          .status-row.ok {background:var(--accent-dim);color:var(--accent);border:1px solid rgba(74,222,128,0.2)}
+          .status-row.private {background:var(--amber-dim);color:var(--amber);border:1px solid rgba(245,158,11,0.2)}
+          .status-row.err {background:var(--red-dim);color:var(--red);border:1px solid rgba(248,113,113,0.2)}
+          .spinner {width:12px;height:12px;border:2px solid rgba(255,255,255,0.1);border-top-color:var(--accent);border-radius:50%;animation:spin .7s linear infinite;flex-shrink:0}
+          @keyframes spin {to{transform:rotate(360deg)}}
+          /* footer */
+          .footer {display:flex;gap:8px;padding:10px 16px 12px;border-top:1px solid var(--border-2);flex-shrink:0}
+          .btn {padding:9px 16px;border-radius:var(--radius-sm);font-size:13px;font-weight:600;cursor:pointer;border:none;transition:all .15s;display:flex;align-items:center;justify-content:center;gap:6px;white-space:nowrap;-webkit-app-region:no-drag}
+          .btn:disabled {opacity:.35;cursor:not-allowed}
+          .btn-primary {background:var(--accent);color:#060D06;flex:1}
+          .btn-primary:hover:not(:disabled) {background:var(--accent-hover)}
+          .btn-ghost {background:transparent;border:1px solid var(--border);color:var(--text-subtle)}
+          .btn-ghost:hover {border-color:var(--border);color:var(--text-muted);background:var(--surface)}
+        `
 
-        const orgHtml = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>${PICKER_STYLES}</style></head><body>
-          <div class="header">Organizations</div>
-          ${isEmpty ? emptyState : `<div class="list">${items}</div>`}
-          <div class="footer">
-            <div style="display:flex;flex-direction:column;gap:6px">
-              <div><label class="field-label">Organization name</label><input id="org" value="${currentOrg || ''}" placeholder="acme-corp" autofocus /></div>
-              <div><label class="field-label">Knowledge repository</label><input id="repo" value="${currentRepo}" placeholder="forge-knowledge" /></div>
+        const historyJson = JSON.stringify(displayHistory)
+        const currentOrgJson = JSON.stringify(activeOrgVal)
+        const currentRepoJson = JSON.stringify(activeRepoVal)
+        const orgHtml = `<!DOCTYPE html><html><head><meta charset="utf-8">
+          <style>${ORG_PICKER_CSS}</style></head>
+          <body>
+            <div class="titlebar">
+              <div class="titlebar-left">
+                <div class="titlebar-title">Switch Organization</div>
+                <div class="titlebar-sub">Choose a GitHub organization to work in</div>
+              </div>
+              <button class="close-btn" onclick="cancel()" title="Close (Esc)">
+                <svg width="11" height="11" viewBox="0 0 12 12" fill="none"><path d="M1 1l10 10M11 1L1 11" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/></svg>
+              </button>
             </div>
-            <button class="btn btn-primary" style="margin-top:4px" onclick="save()">Switch Organization</button>
-          </div>
-          <script>
-            const {ipcRenderer}=require('electron')
-            const orgs=${JSON.stringify(orgHistory)}
-            function pick(i){
-              document.getElementById('org').value=orgs[i].org
-              document.getElementById('repo').value=orgs[i].repo
-            }
-            function save(){
-              const o=document.getElementById('org').value.trim()
-              const r=document.getElementById('repo').value.trim()
-              if(!o)return
-              ipcRenderer.send('org-switch-save',o,r)
-            }
-            document.addEventListener('keydown',e=>{if(e.key==='Enter')save()})
-          </script>
-        </body></html>`
-        orgWin.loadFile(writeTempHtml('org-picker', orgHtml))
 
+            <div id="current-banner" class="current-banner" style="${activeOrgVal ? '' : 'display:none'}">
+              <div style="flex:1;min-width:0">
+                <div class="current-label">Currently active</div>
+                <div class="current-row">
+                  <div class="current-avatar" id="current-avatar">${activeOrgVal ? activeOrgVal[0].toUpperCase() : ''}</div>
+                  <div class="current-info">
+                    <div class="current-name" id="current-name">${activeOrgVal}</div>
+                    <div class="current-repo" id="current-repo">${activeOrgVal ? activeOrgVal + '/' + activeRepoVal : ''}</div>
+                  </div>
+                  <div class="live-dot" title="Active"></div>
+                </div>
+              </div>
+            </div>
+
+            <div id="org-list-section" style="display:flex;flex-direction:column;flex:1;min-height:0;overflow:hidden">
+              <div class="section-label" id="list-label">Switch to</div>
+              <div class="org-list" id="org-list"></div>
+            </div>
+
+            <div class="add-section">
+              <button class="add-toggle" id="add-toggle" onclick="toggleForm()">
+                <svg class="chevron" width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2l4 4-4 4"/></svg>
+                Connect a new organization
+              </button>
+              <div class="add-form" id="add-form">
+                <div>
+                  <label class="field-label">GitHub organization name</label>
+                  <input id="org-input" placeholder="acme-corp" autocomplete="off" spellcheck="false" oninput="onOrgInput()" />
+                  <div class="field-hint">Must have a forge-knowledge repository.</div>
+                </div>
+                <div id="status-row" style="display:none"></div>
+                <button class="advanced-toggle" id="adv-toggle" onclick="toggleAdvanced()">Custom knowledge repository name</button>
+                <div class="advanced-row" id="advanced-row">
+                  <label class="field-label">Repository name</label>
+                  <input id="repo-input" placeholder="forge-knowledge" value="forge-knowledge" autocomplete="off" />
+                </div>
+              </div>
+            </div>
+
+            <div class="footer">
+              <button class="btn btn-ghost" onclick="cancel()">Cancel</button>
+              <button class="btn btn-primary" id="confirm-btn" onclick="doConfirm()" disabled>Switch</button>
+            </div>
+
+            <script>
+              const {ipcRenderer} = require('electron')
+              const orgs = ${historyJson}
+              const activeOrg = ${currentOrgJson}
+              let selectedOrg = null
+              let verifiedOrg = null
+              let formOpen = false
+              let verifyTimer = null
+
+              // ── render list ────────────────────────────────────────────────
+              function renderList() {
+                const el = document.getElementById('org-list')
+                const label = document.getElementById('list-label')
+                // Exclude the currently active org from the "switch to" list
+                const switchable = orgs.filter(o => o.org !== activeOrg)
+                if (switchable.length === 0) {
+                  el.innerHTML = \`<div class="empty-state">
+                    <div class="empty-title">No other organizations</div>
+                    <div class="empty-desc">Connect a new organization below to switch to a different workspace.</div>
+                  </div>\`
+                  label.style.display = 'none'
+                  if (!formOpen) toggleForm()
+                  return
+                }
+                label.style.display = ''
+                el.innerHTML = switchable.map((o, i) => \`
+                  <div class="org-item" id="org-item-\${i}" onclick="pickOrg(\${i})">
+                    <div class="org-avatar">\${o.org[0].toUpperCase()}</div>
+                    <div class="org-info">
+                      <div class="org-name">\${o.org}</div>
+                      <div class="org-repo">\${o.org}/\${o.repo}</div>
+                    </div>
+                    <button class="org-remove" onclick="event.stopPropagation();removeOrg('\${o.org}')" title="Remove">
+                      <svg width="9" height="9" viewBox="0 0 12 12" fill="none"><path d="M1 1l10 10M11 1L1 11" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/></svg>
+                    </button>
+                  </div>\`).join('')
+              }
+
+              function pickOrg(i) {
+                const switchable = orgs.filter(o => o.org !== activeOrg)
+                selectedOrg = switchable[i]
+                verifiedOrg = null
+                document.querySelectorAll('.org-item').forEach((el, j) => {
+                  el.classList.toggle('selected', j === i)
+                })
+                const btn = document.getElementById('confirm-btn')
+                btn.disabled = false
+                btn.textContent = 'Switch to ' + switchable[i].org
+                if (formOpen) toggleForm()
+              }
+
+              function removeOrg(orgName) {
+                const idx = orgs.findIndex(o => o.org === orgName)
+                if (idx !== -1) orgs.splice(idx, 1)
+                if (selectedOrg && selectedOrg.org === orgName) {
+                  selectedOrg = null
+                  const btn = document.getElementById('confirm-btn')
+                  btn.disabled = true; btn.textContent = 'Switch'
+                }
+                renderList()
+                ipcRenderer.send('org-picker-remove', orgs)
+              }
+
+              // ── add-org form ───────────────────────────────────────────────
+              function toggleForm() {
+                formOpen = !formOpen
+                const form = document.getElementById('add-form')
+                const toggle = document.getElementById('add-toggle')
+                form.style.display = formOpen ? 'flex' : 'none'
+                toggle.classList.toggle('open', formOpen)
+                if (formOpen) {
+                  setTimeout(() => document.getElementById('org-input').focus(), 40)
+                  selectedOrg = null
+                  const btn = document.getElementById('confirm-btn')
+                  btn.disabled = true; btn.textContent = 'Connect'
+                  document.querySelectorAll('.org-item').forEach(el => el.classList.remove('selected'))
+                }
+              }
+
+              function toggleAdvanced() {
+                const row = document.getElementById('advanced-row')
+                const tog = document.getElementById('adv-toggle')
+                const open = row.style.display === 'flex'
+                row.style.display = open ? 'none' : 'flex'
+                tog.style.color = open ? '' : 'rgba(255,255,255,0.4)'
+              }
+
+              function setStatus(type, msg) {
+                const el = document.getElementById('status-row')
+                if (!type) { el.style.display = 'none'; return }
+                el.style.display = 'flex'
+                el.className = 'status-row ' + type
+                const icons = {
+                  ok: '<path d="M20 6L9 17l-5-5"/>',
+                  private: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>',
+                  err: '<circle cx="12" cy="12" r="10"/><path d="M12 8v4m0 4h.01"/>'
+                }
+                el.innerHTML = type === 'checking'
+                  ? \`<div class="spinner"></div><span>Verifying with GitHub...</span>\`
+                  : \`<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0">\${icons[type]||icons.err}</svg><span>\${msg}</span>\`
+              }
+
+              function onOrgInput() {
+                clearTimeout(verifyTimer)
+                verifiedOrg = null
+                const val = document.getElementById('org-input').value.trim()
+                const btn = document.getElementById('confirm-btn')
+                btn.disabled = true; btn.textContent = 'Connect'
+                if (!val) { setStatus(null); return }
+                if (!/^[a-z0-9][a-z0-9-]{0,38}$/i.test(val)) {
+                  setStatus('err', 'Invalid format — letters, numbers, and hyphens only.')
+                  return
+                }
+                setStatus('checking')
+                verifyTimer = setTimeout(async () => {
+                  const result = await ipcRenderer.invoke('org-picker-verify', val)
+                  if (result.error) {
+                    setStatus('err', result.error)
+                  } else if (result.status === 'private') {
+                    setStatus('private', 'Organization found — forge-knowledge is private (member access only).')
+                    verifiedOrg = result
+                    btn.disabled = false; btn.textContent = 'Connect'
+                  } else {
+                    setStatus('ok', 'forge-knowledge repository found and accessible.')
+                    verifiedOrg = result
+                    btn.disabled = false; btn.textContent = 'Connect'
+                  }
+                }, 650)
+              }
+
+              function doConfirm() {
+                if (formOpen && verifiedOrg) {
+                  const repo = (document.getElementById('repo-input').value.trim()) || 'forge-knowledge'
+                  ipcRenderer.send('org-picker-confirm', verifiedOrg.orgName, repo)
+                } else if (selectedOrg) {
+                  ipcRenderer.send('org-picker-confirm', selectedOrg.org, selectedOrg.repo)
+                }
+              }
+
+              function cancel() { ipcRenderer.send('org-picker-cancel') }
+
+              document.addEventListener('keydown', e => {
+                if (e.key === 'Escape') cancel()
+                if (e.key === 'Enter' && !document.getElementById('confirm-btn').disabled) doConfirm()
+              })
+
+              renderList()
+            </script>
+          </body></html>`
+
+        const switchableCount = displayHistory.filter(o => o.org !== activeOrgVal).length
+        const orgWin = new BrowserWindow({
+          width: 440,
+          height: switchableCount === 0 ? 460 : Math.min(52 + 68 + 20 + switchableCount * 52 + 200, 580),
+          resizable: false,
+          minimizable: false,
+          maximizable: false,
+          alwaysOnTop: true,
+          title: 'Switch Organization',
+          titleBarStyle: 'hidden',
+          webPreferences: { nodeIntegration: true, contextIsolation: false }
+        })
+        orgWin.setMenu(null)
+        orgWin.center()
+        orgWin.loadFile(writeTempHtml('org-picker', orgHtml))
         orgWin.once('ready-to-show', () => orgWin.show())
 
         const result = await new Promise(resolve => {
-          const { ipcMain: ipc } = require('electron')
-          ipc.once('org-switch-save', (_e, orgVal, repoVal) => {
-            orgWin.close()
-            resolve({ orgVal, repoVal })
+          ipcMain.once('org-picker-confirm', (_e, orgVal, repoVal) => {
+            orgWin.close(); resolve({ orgVal, repoVal })
           })
-          orgWin.on('closed', () => {
-            ipc.removeAllListeners('org-switch-save')
-            resolve(null)
+          ipcMain.once('org-picker-remove', (_e, newList) => {
+            writeConfig({ ...readConfig(), orgHistory: newList })
           })
+          ipcMain.once('org-picker-cancel', () => { orgWin.close(); resolve(null) })
+          orgWin.on('closed', () => { cleanup(); resolve(null) })
         })
+        cleanup()
 
         if (!result || !result.orgVal) return
 
@@ -968,7 +1279,13 @@ function buildTrayMenu() {
         org.syncInBackground(token, orgVal)
         buildTrayMenu()
 
-        dialog.showMessageBox({ icon: appDialogIcon, type: 'info', title: 'Organization Updated', message: `Switched to ${orgVal}/${repoName}.\n\nKnowledge base sync started in the background.` })
+        dialog.showMessageBox({
+          icon: appDialogIcon,
+          type: 'info',
+          title: 'Organization Updated',
+          message: `Switched to ${orgVal}`,
+          detail: `Knowledge base sync has started in the background.`
+        })
       }
     },
     { type: 'separator' },
