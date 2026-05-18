@@ -753,10 +753,62 @@ body.mac #sidebar {
   overflow: hidden;
 }
 .review-tree-header {
-  padding: 10px 12px;
+  padding: 8px 12px 10px;
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
 }
+
+/* Role/view filter pills */
+.review-view-filters {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.review-view-pill {
+  padding: 2px 8px;
+  border-radius: var(--r-pill);
+  font-size: 10px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-3);
+  transition: var(--trans);
+  line-height: 1.6;
+  white-space: nowrap;
+}
+.review-view-pill:hover { color: var(--text-2); border-color: var(--text-3); }
+.review-view-pill.active {
+  background: var(--blue-dim);
+  border-color: var(--blue);
+  color: var(--blue);
+}
+
+/* Status filter row */
+.review-status-filters {
+  display: flex;
+  gap: 3px;
+}
+.review-status-btn {
+  flex: 1;
+  padding: 3px 0;
+  border-radius: var(--r);
+  font-size: 10px;
+  font-weight: 500;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-3);
+  transition: var(--trans);
+  text-align: center;
+}
+.review-status-btn:hover { color: var(--text-2); }
+.review-status-btn.active { background: var(--bg-2); color: var(--text); border-color: var(--text-3); }
+.review-status-btn.active.status-pending  { color: var(--amber); border-color: var(--amber-dim); background: rgba(245,158,11,0.08); }
+.review-status-btn.active.status-reviewed { color: var(--green); border-color: var(--green-dim); background: rgba(74,222,128,0.08); }
 .search-input {
   width: 100%;
   background: var(--bg-2);

@@ -244,6 +244,12 @@
       <div class="review-layout">
         <div class="review-tree">
           <div class="review-tree-header">
+            <div class="review-view-filters" id="review-view-filters"></div>
+            <div class="review-status-filters">
+              <button class="review-status-btn active" id="rsf-all"      onclick="setReviewStatus('all')">All</button>
+              <button class="review-status-btn status-pending"  id="rsf-pending"  onclick="setReviewStatus('pending')">Pending</button>
+              <button class="review-status-btn status-reviewed" id="rsf-reviewed" onclick="setReviewStatus('reviewed')">Reviewed</button>
+            </div>
             <input class="search-input" type="text" placeholder="Search files..." id="review-search" oninput="filterReviewTree(this.value)">
           </div>
           <div class="review-tree-body" id="review-tree-body"></div>

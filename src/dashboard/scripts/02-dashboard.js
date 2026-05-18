@@ -1085,19 +1085,97 @@ async function generate(stage) {
 // ============================================================
 // Review
 // ============================================================
+// ── Review view filter state ───────────────────────────────────────────────────
+// Persisted in localStorage so the user's preferred lens survives navigation.
+
+const REVIEW_VIEWS = [
+  { id: 'all',          label: 'All' },
+  { id: 'product',      label: 'Product',      dirs: ['00-context','01-requirements','02-design','03-analysis','13-decisions'] },
+  { id: 'engineering',  label: 'Engineering',  dirs: ['04-architecture','05-delivery','06-engineering','07-quality','15-build'] },
+  { id: 'architecture', label: 'Architecture', dirs: ['03-analysis','04-architecture','02-design','13-decisions'] },
+  { id: 'qa',           label: 'QA',           dirs: ['01-requirements','07-quality','06-engineering'] },
+  { id: 'operations',   label: 'Operations',   dirs: ['05-delivery','08-operations','15-build','09-release'] },
+  { id: 'marketing',    label: 'Marketing',    dirs: ['10-marketing','09-release','14-assets'] },
+];
+
+let reviewViewFilter   = localStorage.getItem('review-view')   || 'all';
+let reviewStatusFilter = localStorage.getItem('review-status') || 'all';
+
+function setReviewView(id) {
+  reviewViewFilter = id;
+  localStorage.setItem('review-view', id);
+  renderReview();
+}
+
+function setReviewStatus(s) {
+  reviewStatusFilter = s;
+  localStorage.setItem('review-status', s);
+  // Update status button active states
+  ['all','pending','reviewed'].forEach(k => {
+    const el = document.getElementById(`rsf-${k}`);
+    if (el) el.classList.toggle('active', k === s);
+  });
+  renderReview();
+}
+
+function renderReviewViewPills() {
+  const tree    = state.tree    || {};
+  const reviews = state.reviews || {};
+  const container = document.getElementById('review-view-filters');
+  if (!container) return;
+
+  container.innerHTML = REVIEW_VIEWS.map(v => {
+    // Count reviewed/total for this view's dirs using f.status from the tree
+    let reviewed = 0, total = 0;
+    Object.entries(tree).forEach(([dir, files]) => {
+      const inView = !v.dirs || v.dirs.some(d => dir.startsWith(d));
+      if (!inView) return;
+      files.forEach(f => {
+        if (f.size === 0) return;
+        total++;
+        if (f.status === 'reviewed') reviewed++;
+      });
+    });
+    const countLabel = total > 0 ? ` <span style="opacity:0.55;font-weight:400">${reviewed}/${total}</span>` : '';
+    return `<button class="review-view-pill${reviewViewFilter === v.id ? ' active' : ''}" onclick="setReviewView('${v.id}')">${v.label}${countLabel}</button>`;
+  }).join('');
+
+  // Sync status filter buttons on initial render
+  ['all','pending','reviewed'].forEach(k => {
+    const el = document.getElementById(`rsf-${k}`);
+    if (el) el.classList.toggle('active', k === reviewStatusFilter);
+  });
+}
+
 function renderReview() {
-  const tree = state.tree || {};
+  const tree  = state.tree  || {};
   const gates = state.gates || {};
+
+  renderReviewViewPills();
 
   const treeEl = document.getElementById('review-tree-body');
   const searchVal = document.getElementById('review-search').value.toLowerCase();
+  const activeView = REVIEW_VIEWS.find(v => v.id === reviewViewFilter) || REVIEW_VIEWS[0];
   treeEl.innerHTML = '';
 
+  let totalVisible = 0;
+
   Object.entries(tree).forEach(([dir, files]) => {
-    const filtered = searchVal
-      ? files.filter(f => f.name.toLowerCase().includes(searchVal))
-      : files;
+    // View filter: skip dirs not in the active view
+    if (activeView.dirs && !activeView.dirs.some(d => dir.startsWith(d))) return;
+
+    // Apply search + status filters
+    const filtered = files.filter(f => {
+      if (searchVal && !f.name.toLowerCase().includes(searchVal)) return false;
+      if (reviewStatusFilter !== 'all') {
+        const isReviewed = f.status === 'reviewed';
+        if (reviewStatusFilter === 'reviewed' && !isReviewed) return false;
+        if (reviewStatusFilter === 'pending'  &&  isReviewed) return false;
+      }
+      return true;
+    });
     if (filtered.length === 0) return;
+    totalVisible += filtered.length;
 
     const summary = state.stageReviewSummary?.[dir] || {};
     treeEl.insertAdjacentHTML('beforeend', `
@@ -1121,6 +1199,10 @@ function renderReview() {
       </div>
     `);
   });
+
+  if (totalVisible === 0) {
+    treeEl.innerHTML = `<div style="padding:24px 16px;text-align:center;color:var(--text-3);font-size:11px;">No files match the current filter.</div>`;
+  }
 
   const gatesEl = document.getElementById('review-gates-summary');
   gatesEl.innerHTML = Object.entries(gates).map(([g, status]) => `
