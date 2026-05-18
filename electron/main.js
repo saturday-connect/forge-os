@@ -1716,9 +1716,8 @@ if (!app.requestSingleInstanceLock()) {
       app.exit(1); return
     }
 
-    // Keep scripts fresh: run forge upgrade against the data dir by injecting a
-    // temporary .forge dotfile so the forge binary can locate the data directory.
-    // This ensures server.py + dashboard.html are always current after app updates.
+    // Run forge upgrade first — updates server.py, build_runner.py etc.
+    // Dashboard.html is overwritten AFTER upgrade so it always wins.
     const tmpDotfile = path.join(forgeDataDir, '.forge')
     const hadDotfile = fs.existsSync(tmpDotfile)
     if (!hadDotfile) {
@@ -1736,9 +1735,35 @@ if (!app.requestSingleInstanceLock()) {
         env: { ...process.env, FORGE_REPO_ROOT: forgeDataDir }
       })
     } catch (_) {}
-    // Clean up temporary dotfile if we created it
     if (!hadDotfile && fs.existsSync(tmpDotfile)) {
       try { fs.unlinkSync(tmpDotfile) } catch (_) {}
+    }
+
+    // ── Dashboard hot-deploy (runs AFTER upgrade so it always wins) ───────────
+    // The Electron app owns dashboard.html. Bypasses forge upgrade's legacy-root
+    // detection which can silently skip the write.
+    //
+    // Dev  (npm start): symlink → src/dashboard.html — any rebuild is instant.
+    // Prod (packaged) : copy from process.resourcesPath every startup so the
+    //                   installed version always matches the shipped bundle.
+    const dashDst = path.join(forgeDataDir, 'scripts', 'dashboard.html')
+    try {
+      if (app.isPackaged) {
+        const dashSrc = path.join(process.resourcesPath, 'dashboard.html')
+        if (fs.existsSync(dashSrc)) {
+          fs.copyFileSync(dashSrc, dashDst)
+        }
+      } else {
+        const dashSrc = path.join(__dirname, '..', 'src', 'dashboard.html')
+        if (fs.existsSync(dashSrc)) {
+          // Remove whatever upgrade wrote (file or stale symlink), then symlink
+          try { fs.rmSync(dashDst, { force: true }) } catch (_) {}
+          fs.symlinkSync(dashSrc, dashDst)
+          console.log('[dashboard] dev symlink →', dashSrc)
+        }
+      }
+    } catch (e) {
+      console.warn('[dashboard] deploy failed:', e.message)
     }
 
     // Ensure index.json exists (server will create it on first load_projects_index call,

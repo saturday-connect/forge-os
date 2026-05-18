@@ -29,6 +29,10 @@
         "filter": [
           "**/*"
         ]
+      },
+      {
+        "from": "../src/dashboard.html",
+        "to": "dashboard.html"
       }
     ],
     "files": [
