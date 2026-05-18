@@ -1229,15 +1229,14 @@ function _applyUpdateNow() {
   }
 }
 
-function _notifyUpdateReady(version, releaseNotes) {
+function _notifyUpdateReady(version, releaseNotes, force = false) {
   const ver = version || _updateReadyVersion || ''
 
   // Guard: if we already showed the restart dialog for this exact version in a
   // previous session, don't spam it again on every relaunch.
-  // The tray is NOT rebuilt here — the stale re-detection guard in update-downloaded
-  // already reset _updateReady and the tray before we get here when applicable.
+  // Bypassed when force=true (e.g. explicit "Check for Updates" click).
   const config = readConfig()
-  if (config.updateNotifiedVersion === ver) {
+  if (!force && config.updateNotifiedVersion === ver) {
     console.log(`[updater] Restart dialog already shown for ${ver} — skipping`)
     return
   }
@@ -1363,13 +1362,15 @@ function setupAutoUpdater() {
 
     const cfg = readConfig()
 
-    // Stale re-detection guard: if the "downloaded" version matches what we already
-    // notified about AND equals the currently-running app version, the update was
-    // already applied (quitAndInstall ran). The updater found its own cached download.
-    // Reset state and tray so the user doesn't see a ghost "Restart to Update" item.
-    if (cfg.updateNotifiedVersion === info.version && app.getVersion() === info.version) {
+    // Stale re-detection guard: if the downloaded version is the same as the version
+    // that's already running, the update was already applied (quitAndInstall ran) and
+    // the updater found its own cached download. Version equality alone is the signal —
+    // no notification-history check needed.
+    if (app.getVersion() === info.version) {
       console.log(`[updater] Stale update-downloaded for current version ${info.version} — clearing ghost state`)
-      writeConfig({ ...cfg, updateNotifiedVersion: null })
+      if (cfg.updateNotifiedVersion === info.version) {
+        writeConfig({ ...cfg, updateNotifiedVersion: null })
+      }
       _updateReady        = false
       _updateReadyVersion = null
       if (tray) { tray.setToolTip('Forge OS'); buildTrayMenu() }
@@ -1468,8 +1469,10 @@ function setupAutoUpdater() {
 // dialog is shown, then fires the check.
 function checkForUpdatesManual() {
   if (_updateReady) {
-    // Update already staged — skip the network round-trip, go straight to install prompt
-    _notifyUpdateReady(_updateReadyVersion)
+    // Update already staged — skip the network round-trip, go straight to install prompt.
+    // Pass force=true so the "already shown" guard doesn't suppress the dialog for an
+    // explicit manual click (user deserves feedback regardless).
+    _notifyUpdateReady(_updateReadyVersion, null, true)
     return
   }
   if (_updateChecking) return   // debounce rapid clicks
