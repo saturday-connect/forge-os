@@ -2525,10 +2525,14 @@ def build_forge():
     # a rebuild immediately takes effect without requiring a manual upgrade run.
     import glob
     dashboard_src = os.path.join(os.path.dirname(__file__), "dashboard.html")
+    repo_root = os.path.normpath(os.path.join(os.path.dirname(__file__), ".."))
+    parent_dir = os.path.dirname(repo_root)
     targets = (
-        glob.glob(os.path.join(os.path.dirname(__file__), "../.forge/scripts/dashboard.html"))
-        + glob.glob(os.path.join(os.path.dirname(__file__), "../.projects/*/.forge/scripts/dashboard.html"))
-        + glob.glob(os.path.join(os.path.dirname(__file__), "../test-projects/*/.forge/scripts/dashboard.html"))
+        glob.glob(os.path.join(repo_root, ".forge/scripts/dashboard.html"))
+        + glob.glob(os.path.join(repo_root, ".projects/*/.forge/scripts/dashboard.html"))
+        + glob.glob(os.path.join(repo_root, "test-projects/*/.forge/scripts/dashboard.html"))
+        # Sibling projects in the same parent directory
+        + glob.glob(os.path.join(parent_dir, "*/.forge/scripts/dashboard.html"))
     )
     copied = 0
     for dst in targets:
