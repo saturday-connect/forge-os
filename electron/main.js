@@ -1228,23 +1228,22 @@ function _applyUpdateNow() {
 function _notifyUpdateReady(version, releaseNotes) {
   const ver = version || _updateReadyVersion || ''
 
-  // Always update tray so there's a persistent ambient signal
+  // Guard: if we already showed the restart dialog for this exact version in a
+  // previous session, don't spam it again on every relaunch.
+  // The tray is NOT rebuilt here — the stale re-detection guard in update-downloaded
+  // already reset _updateReady and the tray before we get here when applicable.
+  const config = readConfig()
+  if (config.updateNotifiedVersion === ver) {
+    console.log(`[updater] Restart dialog already shown for ${ver} — skipping`)
+    return
+  }
+
+  // New version: update tray now that we've confirmed this is a first notification
   if (tray) {
     tray.setToolTip(`Forge OS — Update ${ver} ready to install`)
     buildTrayMenu()
   }
 
-  // Guard: if we already showed the restart dialog for this exact version in a
-  // previous session, don't spam it again on every relaunch.
-  // The flag is cleared automatically when a *newer* version is downloaded.
-  // In production this never triggers (quitAndInstall advances the app version
-  // so the update check finds nothing on next launch). In dev mode — where
-  // app.relaunch() doesn't install anything — it prevents the infinite loop.
-  const config = readConfig()
-  if (config.updateNotifiedVersion === ver) {
-    console.log(`[updater] Restart dialog already shown for ${ver} — tray updated, skipping dialog`)
-    return
-  }
   writeConfig({ ...config, updateNotifiedVersion: ver })
 
   // Build release-notes excerpt for the dialog detail line
@@ -1332,13 +1331,29 @@ function setupAutoUpdater() {
 
   autoUpdater.on('update-downloaded', info => {
     console.log(`[updater] Update downloaded: ${info.version}`)
+    _updateChecking  = false
+    _downloadRetries = 0
+
+    const cfg = readConfig()
+
+    // Stale re-detection guard: if the "downloaded" version matches what we already
+    // notified about AND equals the currently-running app version, the update was
+    // already applied (quitAndInstall ran). The updater found its own cached download.
+    // Reset state and tray so the user doesn't see a ghost "Restart to Update" item.
+    if (cfg.updateNotifiedVersion === info.version && app.getVersion() === info.version) {
+      console.log(`[updater] Stale update-downloaded for current version ${info.version} — clearing ghost state`)
+      writeConfig({ ...cfg, updateNotifiedVersion: null })
+      _updateReady        = false
+      _updateReadyVersion = null
+      if (tray) { tray.setToolTip('Forge OS'); buildTrayMenu() }
+      return
+    }
+
     _updateReady        = true
     _updateReadyVersion = info.version
-    _updateChecking     = false
-    _downloadRetries    = 0
+
     // Clear the "already notified" flag if this is a newer version than what was
     // previously shown — ensures a fresh dialog for each distinct release.
-    const cfg = readConfig()
     if (cfg.updateNotifiedVersion && cfg.updateNotifiedVersion !== info.version) {
       writeConfig({ ...cfg, updateNotifiedVersion: null })
     }
