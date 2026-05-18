@@ -1044,7 +1044,7 @@ function _notifyUpdateReady() {
 
 function setupAutoUpdater() {
   autoUpdater.logger = console
-  autoUpdater.autoDownload = true
+  autoUpdater.autoDownload = false      // manual download so we own the promise and can catch it
   autoUpdater.autoInstallOnAppQuit = true
 
   autoUpdater.on('checking-for-update', () => {
@@ -1053,8 +1053,6 @@ function setupAutoUpdater() {
 
   autoUpdater.on('update-available', info => {
     console.log(`[updater] Update available: ${info.version}`)
-    // Always notify — whether manual or background — when a new version is found.
-    // Downloading happens automatically (autoDownload: true).
     dialog.showMessageBox({ icon: appDialogIcon,
       type: 'info',
       title: 'Update Downloading',
@@ -1064,6 +1062,12 @@ function setupAutoUpdater() {
     })
     _updateCheckManual = false
     _updateChecking = false
+    // Start download manually — we own the promise so unhandled rejections are impossible.
+    // The 'error' event fires on failure; this .catch() is just the safety net.
+    autoUpdater.downloadUpdate().catch(err => {
+      console.error('[updater] Download failed:', err.message)
+      if (tray) tray.setToolTip('Forge OS')
+    })
   })
 
   autoUpdater.on('update-not-available', () => {
