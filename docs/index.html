@@ -4,26 +4,30 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Forge OS — Documentation-first PDLC automation</title>
-  <meta name="description" content="Forge OS turns Markdown into a full product delivery pipeline — requirements, design, architecture, build, and deploy — driven by AI and a local dashboard." />
+  <meta name="description" content="Forge OS turns product ideas into a full delivery pipeline. AI-generated requirements, design, architecture, build systems, and deployment — driven from Markdown." />
   <meta property="og:title" content="Forge OS" />
   <meta property="og:description" content="Documentation-first PDLC automation. From idea to shipped product." />
   <meta property="og:type" content="website" />
+  <meta name="theme-color" content="#060D06" />
+  <link rel="canonical" href="https://saturday-connect.github.io/forge-os/" />
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     :root {
-      --accent: #494fdf;
-      --accent-hover: #5a60e8;
-      --bg: #000;
-      --surface: #0a0a0a;
-      --surface-2: #111;
-      --border: rgba(255,255,255,0.07);
-      --border-hover: rgba(255,255,255,0.15);
-      --text: #fff;
-      --text-2: #a0a0a0;
-      --text-3: #555;
-      --radius: 14px;
-      --radius-sm: 8px;
+      --bg:            #060D06;
+      --surface:       rgba(255,255,255,0.04);
+      --surface-2:     rgba(255,255,255,0.06);
+      --border:        rgba(255,255,255,0.08);
+      --border-hover:  rgba(255,255,255,0.18);
+      --text:          #ffffff;
+      --text-2:        rgba(255,255,255,0.55);
+      --text-3:        rgba(255,255,255,0.25);
+      --accent:        #4ADE80;
+      --accent-hover:  #6ee89a;
+      --accent-subtle: rgba(74,222,128,0.10);
+      --accent-border: rgba(74,222,128,0.22);
+      --radius:        0px;
+      --radius-sm:     0px;
     }
 
     html { scroll-behavior: smooth; }
@@ -31,333 +35,608 @@
     body {
       background: var(--bg);
       color: var(--text);
-      font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
-      font-size: 16px;
-      line-height: 1.6;
+      font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
       -webkit-font-smoothing: antialiased;
       -moz-osx-font-smoothing: grayscale;
+      line-height: 1.6;
+      overflow-x: hidden;
     }
 
     a { color: inherit; text-decoration: none; }
-    svg { display: block; flex-shrink: 0; }
+    img { display: block; max-width: 100%; }
 
-    /* ── Nav ─────────────────────────────────────────────── */
+    /* ── NAV ── */
     nav {
+      position: sticky;
+      top: 0;
+      z-index: 100;
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 0 40px;
+      padding: 0 32px;
       height: 60px;
-      border-bottom: 1px solid var(--border);
-      position: sticky;
-      top: 0;
-      background: rgba(0,0,0,0.8);
+      background: rgba(6,13,6,0.82);
       backdrop-filter: blur(16px);
       -webkit-backdrop-filter: blur(16px);
-      z-index: 100;
+      border-bottom: 1px solid var(--accent-border);
     }
 
     .nav-logo {
       display: flex;
       align-items: center;
-      gap: 9px;
+      gap: 10px;
       font-weight: 600;
       font-size: 15px;
-      letter-spacing: -0.2px;
+      letter-spacing: -0.3px;
     }
 
-    .nav-logo-mark {
-      width: 26px;
-      height: 26px;
-      background: var(--accent);
-      border-radius: 6px;
+    .nav-logo img {
+      width: 28px;
+      height: 28px;
+    }
+
+    .nav-right {
       display: flex;
       align-items: center;
-      justify-content: center;
+      gap: 28px;
     }
 
-    .nav-links {
+    .nav-text-links {
       display: flex;
-      align-items: center;
-      gap: 4px;
+      gap: 28px;
     }
 
-    .nav-link {
-      padding: 7px 14px;
-      border-radius: 20px;
+    .nav-text-links a {
       font-size: 14px;
       color: var(--text-2);
       transition: color 0.15s;
     }
 
-    .nav-link:hover { color: var(--text); }
+    .nav-text-links a:hover { color: var(--text); }
 
-    .nav-link.cta {
+    .btn-github {
       display: flex;
       align-items: center;
       gap: 7px;
+      padding: 7px 14px;
+      border-radius: var(--radius-sm);
       border: 1px solid var(--border);
-      color: var(--text);
-      transition: border-color 0.15s;
+      background: var(--surface);
+      font-size: 13px;
+      color: var(--text-2);
+      transition: border-color 0.15s, color 0.15s, background 0.15s;
+      white-space: nowrap;
     }
 
-    .nav-link.cta:hover { border-color: var(--border-hover); }
+    .btn-github:hover {
+      border-color: var(--border-hover);
+      color: var(--text);
+      background: var(--surface-2);
+    }
 
-    /* ── Hero ────────────────────────────────────────────── */
-    .hero {
-      max-width: 720px;
-      margin: 0 auto;
-      padding: 96px 40px 80px;
+    @media (max-width: 640px) {
+      nav { padding: 0 20px; }
+      .nav-text-links { display: none; }
+    }
+
+    /* ── SECTIONS ── */
+    section { padding: 96px 32px; }
+    .container { max-width: 1100px; margin: 0 auto; }
+
+    .eyebrow {
+      display: inline-block;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin-bottom: 16px;
+    }
+
+    .section-heading {
+      font-size: clamp(28px, 4vw, 40px);
+      font-weight: 700;
+      letter-spacing: -1.5px;
+      line-height: 1.15;
+      margin-bottom: 14px;
+    }
+
+    .section-sub {
+      font-size: 16px;
+      color: var(--text-2);
+      max-width: 520px;
+      line-height: 1.65;
+    }
+
+    /* ── HERO ── */
+    #hero {
+      padding: 120px 32px 0;
       text-align: center;
     }
 
     .hero-badge {
       display: inline-flex;
       align-items: center;
-      gap: 7px;
-      padding: 4px 12px 4px 8px;
-      border: 1px solid rgba(73,79,223,0.3);
-      border-radius: 20px;
-      font-size: 12px;
-      font-weight: 500;
-      color: rgba(147,151,255,0.9);
+      gap: 8px;
+      padding: 6px 14px;
+      border: 1px solid var(--border);
+      border-radius: 99px;
+      font-size: 13px;
+      color: var(--text-2);
       margin-bottom: 36px;
-      letter-spacing: 0.4px;
     }
 
-    .hero-badge-dot {
-      width: 6px;
-      height: 6px;
-      background: var(--accent);
+    .hero-badge .pulse {
+      width: 8px;
+      height: 8px;
       border-radius: 50%;
+      background: var(--green);
+      animation: pulse 2s infinite;
+      flex-shrink: 0;
     }
 
-    h1 {
-      font-size: clamp(38px, 6vw, 62px);
-      font-weight: 700;
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50%       { opacity: 0.5; transform: scale(0.85); }
+    }
+
+    .hero-h1 {
+      font-size: clamp(48px, 7vw, 88px);
+      font-weight: 800;
       letter-spacing: -2px;
-      line-height: 1.08;
-      margin-bottom: 22px;
+      line-height: 1.0;
+      margin-bottom: 24px;
     }
 
-    h1 em {
-      color: var(--accent);
-      font-style: normal;
-    }
+    .hero-h1 .accent { color: var(--accent); font-style: italic; }
 
     .hero-sub {
-      font-size: 17px;
+      font-size: clamp(16px, 2vw, 19px);
       color: var(--text-2);
       max-width: 480px;
-      margin: 0 auto 52px;
+      margin: 0 auto 48px;
       line-height: 1.65;
-      font-weight: 400;
     }
 
-    /* ── Downloads ───────────────────────────────────────── */
-    .downloads {
+    /* Download buttons */
+    .download-row {
       display: flex;
       flex-wrap: wrap;
-      gap: 10px;
+      gap: 12px;
       justify-content: center;
-      margin-bottom: 20px;
+      margin-bottom: 24px;
     }
 
     .btn {
       display: inline-flex;
       align-items: center;
-      gap: 11px;
+      gap: 12px;
       padding: 13px 22px;
-      border-radius: 40px;
+      border-radius: var(--radius);
       font-size: 14px;
-      font-weight: 600;
+      font-weight: 500;
+      transition: background 0.15s, border-color 0.15s, opacity 0.15s, transform 0.1s;
       cursor: pointer;
-      transition: background 0.15s, border-color 0.15s, transform 0.12s, opacity 0.15s;
-      border: none;
-      line-height: 1;
+      text-align: left;
+      min-width: 196px;
+      border: 1px solid transparent;
     }
+
+    .btn:active { transform: scale(0.98); }
 
     .btn-primary {
       background: var(--accent);
-      color: #fff;
+      color: #060D06;
+      border-color: var(--accent);
+      font-weight: 700;
     }
 
-    .btn-primary:hover {
-      background: var(--accent-hover);
-      transform: translateY(-1px);
-    }
+    .btn-primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
 
     .btn-secondary {
       background: transparent;
       color: var(--text);
-      border: 1px solid var(--border);
+      border-color: var(--border);
     }
 
-    .btn-secondary:hover {
-      border-color: var(--border-hover);
-      transform: translateY(-1px);
+    .btn-secondary:hover { background: rgba(255,255,255,0.05); border-color: var(--border-hover); }
+
+    .btn.recommended {
+      outline: 1px solid var(--accent);
+      outline-offset: 2px;
     }
 
     .btn.loading { opacity: 0.45; pointer-events: none; }
 
-    .btn-label { display: flex; flex-direction: column; gap: 2px; text-align: left; }
-    .btn-label span { font-size: 11px; font-weight: 400; color: inherit; opacity: 0.6; }
+    .btn-icon { flex-shrink: 0; width: 22px; height: 22px; }
 
-    .download-meta {
-      font-size: 12px;
+    .btn-labels { display: flex; flex-direction: column; gap: 1px; }
+    .btn-main   { font-size: 14px; font-weight: 600; line-height: 1.2; }
+    .btn-sub    { font-size: 11px; opacity: 0.65; line-height: 1.2; }
+
+    #version-note {
+      font-size: 13px;
+      color: var(--text-3);
+      margin-bottom: 6px;
+      min-height: 20px;
+    }
+
+    #version-note a { color: var(--text-2); text-decoration: underline; text-underline-offset: 3px; }
+
+    /* Platform strip */
+    .platform-strip {
+      margin-top: 64px;
+      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+      padding: 14px 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-wrap: wrap;
+      gap: 4px 0;
+    }
+
+    .platform-strip .strip-item {
+      font-size: 11px;
+      font-variant: small-caps;
+      letter-spacing: 0.5px;
       color: var(--text-3);
     }
 
-    .download-meta a {
-      color: var(--text-2);
-      transition: color 0.15s;
-    }
-
-    .download-meta a:hover { color: var(--text); }
-
-    /* ── Divider ─────────────────────────────────────────── */
-    .divider {
-      border: none;
-      border-top: 1px solid var(--border);
-      margin: 0;
-    }
-
-    /* ── Section ─────────────────────────────────────────── */
-    .section {
-      max-width: 980px;
-      margin: 0 auto;
-      padding: 80px 40px;
-    }
-
-    .section-eyebrow {
+    .platform-strip .sep {
+      color: var(--text-3);
       font-size: 11px;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 1.8px;
-      color: var(--accent);
-      margin-bottom: 14px;
+      margin: 0 10px;
     }
 
-    .section-title {
-      font-size: clamp(24px, 3vw, 34px);
-      font-weight: 700;
-      letter-spacing: -0.8px;
-      line-height: 1.15;
-      margin-bottom: 12px;
-    }
+    /* ── FEATURES ── */
+    #features { background: var(--bg); }
 
-    .section-sub {
-      color: var(--text-2);
-      font-size: 15px;
-      max-width: 440px;
-      line-height: 1.65;
-      margin-bottom: 52px;
-    }
+    .features-header { margin-bottom: 48px; }
 
-    /* ── Features ────────────────────────────────────────── */
     .features-grid {
       display: grid;
-      grid-template-columns: repeat(3, 1fr);
+      grid-template-columns: repeat(4, 1fr);
       gap: 1px;
       background: var(--border);
       border: 1px solid var(--border);
-      border-radius: var(--radius);
       overflow: hidden;
     }
 
-    @media (max-width: 720px) {
-      .features-grid { grid-template-columns: 1fr 1fr; }
-    }
-
-    @media (max-width: 480px) {
-      .features-grid { grid-template-columns: 1fr; }
-    }
-
     .feature-card {
-      background: var(--surface);
-      padding: 28px;
-      transition: background 0.15s;
+      background: var(--bg);
+      padding: 28px 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
     }
-
-    .feature-card:hover { background: var(--surface-2); }
 
     .feature-icon {
       width: 36px;
       height: 36px;
-      background: rgba(73,79,223,0.1);
-      border-radius: var(--radius-sm);
+      background: var(--accent-subtle);
+      border: 1px solid var(--accent-border);
       display: flex;
       align-items: center;
       justify-content: center;
-      margin-bottom: 18px;
+      flex-shrink: 0;
       color: var(--accent);
     }
 
     .feature-title {
-      font-size: 14px;
+      font-size: 15px;
       font-weight: 600;
-      margin-bottom: 7px;
-      letter-spacing: -0.1px;
+      letter-spacing: -0.3px;
+      line-height: 1.3;
     }
 
     .feature-desc {
       font-size: 13px;
       color: var(--text-2);
-      line-height: 1.6;
+      line-height: 1.65;
     }
 
-    /* ── Lifecycle ───────────────────────────────────────── */
-    .lifecycle-wrap {
+    @media (max-width: 900px) {
+      .features-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+    @media (max-width: 480px) {
+      .features-grid { grid-template-columns: 1fr; }
+    }
+
+    /* ── LIFECYCLE ── */
+    #how-it-works {
       background: var(--surface);
       border-top: 1px solid var(--border);
       border-bottom: 1px solid var(--border);
     }
 
-    .lifecycle-steps {
+    .lifecycle-header { margin-bottom: 48px; }
+
+    .lifecycle-strip {
       display: flex;
-      flex-wrap: wrap;
+      border: 1px solid var(--border);
+      overflow: hidden;
+      margin-bottom: 32px;
     }
 
-    .lifecycle-step {
+    .lifecycle-phase {
       flex: 1;
-      min-width: 160px;
-      padding: 32px 28px;
+      padding: 24px 20px;
       border-right: 1px solid var(--border);
-      position: relative;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      background: var(--bg);
     }
 
-    .lifecycle-step:last-child { border-right: none; }
+    .lifecycle-phase:last-child { border-right: none; }
 
-    .step-index {
+    .phase-num {
       font-size: 11px;
       font-weight: 700;
+      letter-spacing: 1px;
       color: var(--accent);
+    }
+
+    .phase-name {
+      font-size: 15px;
+      font-weight: 600;
+      letter-spacing: -0.3px;
+    }
+
+    .phase-desc {
+      font-size: 12px;
+      color: var(--text-2);
+      line-height: 1.6;
+    }
+
+    @media (max-width: 768px) {
+      .lifecycle-strip { flex-direction: column; }
+      .lifecycle-phase { border-right: none; border-bottom: 1px solid var(--border); }
+      .lifecycle-phase:last-child { border-bottom: none; }
+    }
+
+    .stage-pills {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .stage-pill {
+      padding: 3px 9px;
+      border: 1px solid var(--border);
+      font-size: 11px;
+      color: var(--text-2);
+      font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+      letter-spacing: 0.5px;
+    }
+
+    /* ── TEAM ── */
+    #team { background: var(--bg); }
+
+    .team-header { margin-bottom: 48px; }
+
+    .team-cards {
+      display: flex;
+      gap: 24px;
+      margin-bottom: 20px;
+    }
+
+    @media (max-width: 640px) {
+      .team-cards { flex-direction: column; }
+    }
+
+    .team-card {
+      flex: 1;
+      border: 1px solid var(--border);
+      padding: 28px 28px 32px;
+      background: var(--surface);
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .team-card.admin-card {
+      border-color: var(--accent-border);
+      background: var(--accent-subtle);
+    }
+
+    .role-badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 4px 10px;
+      font-size: 10px;
+      font-weight: 700;
       letter-spacing: 1.2px;
       text-transform: uppercase;
-      margin-bottom: 10px;
+      width: fit-content;
     }
 
-    .step-name {
-      font-size: 14px;
-      font-weight: 600;
-      margin-bottom: 5px;
+    .role-badge.admin {
+      background: var(--accent);
+      color: #060D06;
     }
 
-    .step-desc {
-      font-size: 13px;
+    .role-badge.member {
+      background: transparent;
       color: var(--text-2);
-      line-height: 1.55;
+      border: 1px solid var(--border);
     }
 
-    /* ── Footer ──────────────────────────────────────────── */
-    .footer-wrap {
+    .team-card h3 {
+      font-size: 18px;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+    }
+
+    .team-steps {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .team-steps li {
+      display: flex;
+      gap: 12px;
+      font-size: 14px;
+      color: var(--text-2);
+      line-height: 1.5;
+      align-items: flex-start;
+    }
+
+    .step-num {
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--text-3);
+      flex-shrink: 0;
+      margin-top: 1px;
+    }
+
+    .team-note {
+      font-size: 13px;
+      color: var(--text-3);
+      text-align: center;
+    }
+
+    .inline-code {
+      font-size: 12px;
+      background: rgba(255,255,255,0.06);
+      padding: 1px 5px;
+      font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+    }
+
+    /* ── PLATFORMS ── */
+    #platforms {
+      background: var(--bg);
       border-top: 1px solid var(--border);
     }
 
+    .platforms-header { margin-bottom: 48px; }
+
+    .platform-cards {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 20px;
+    }
+
+    @media (max-width: 768px) {
+      .platform-cards { grid-template-columns: 1fr; }
+    }
+
+    .platform-card {
+      border: 1px solid var(--border);
+      padding: 28px 24px;
+      background: var(--surface);
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+
+    .platform-card-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .platform-os-icon {
+      width: 36px;
+      height: 36px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      color: var(--text-2);
+    }
+
+    .platform-name {
+      font-size: 15px;
+      font-weight: 600;
+      letter-spacing: -0.3px;
+    }
+
+    .platform-name-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .platform-req {
+      font-size: 12px;
+      color: var(--text-3);
+      margin-top: 2px;
+    }
+
+    .platform-downloads {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .dl-link {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 9px 14px;
+      border: 1px solid var(--border);
+      font-size: 13px;
+      color: var(--text-2);
+      background: var(--bg);
+      transition: border-color 0.15s, color 0.15s;
+    }
+
+    .dl-link:hover { border-color: var(--border-hover); color: var(--text); }
+
+    .dl-link.loading { opacity: 0.4; pointer-events: none; }
+
+    .dl-link svg { flex-shrink: 0; color: var(--text-3); }
+
+    .platform-install-note {
+      font-size: 12px;
+      color: var(--text-3);
+      line-height: 1.7;
+      border-top: 1px solid var(--border);
+      padding-top: 16px;
+    }
+
+    .platform-install-note .code-block {
+      display: block;
+      font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid var(--border);
+      padding: 8px 12px;
+      margin: 8px 0;
+      white-space: pre;
+      font-size: 11px;
+      color: var(--text-2);
+    }
+
+    .badge-new {
+      display: inline-flex;
+      align-items: center;
+      padding: 2px 8px;
+      border-radius: 99px;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+      background: rgba(74,222,128,0.12);
+      color: var(--green);
+      border: 1px solid rgba(74,222,128,0.25);
+    }
+
+    /* ── FOOTER ── */
     footer {
-      max-width: 980px;
-      margin: 0 auto;
-      padding: 36px 40px;
+      border-top: 1px solid var(--border);
+      padding: 28px 32px;
       display: flex;
       align-items: center;
       justify-content: space-between;
@@ -368,267 +647,577 @@
     .footer-left {
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 10px;
       font-size: 13px;
       color: var(--text-3);
     }
 
-    .footer-links {
+    .footer-logo {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 20px;
+      height: 20px;
+      background: var(--accent);
+      font-weight: 800;
+      font-size: 12px;
+      color: #060D06;
+      flex-shrink: 0;
+    }
+
+    .footer-right {
       display: flex;
       gap: 20px;
-      font-size: 13px;
-      color: var(--text-3);
     }
 
-    .footer-links a:hover { color: var(--text-2); }
+    .footer-right a {
+      font-size: 13px;
+      color: var(--text-3);
+      transition: color 0.15s;
+    }
 
-    /* ── Responsive ──────────────────────────────────────── */
-    @media (max-width: 600px) {
+    .footer-right a:hover { color: var(--text-2); }
+
+    @media (max-width: 480px) {
+      section { padding: 64px 20px; }
+      #hero { padding: 80px 20px 0; }
+      footer { padding: 24px 20px; }
       nav { padding: 0 20px; }
-      .hero { padding: 64px 24px 56px; }
-      .section { padding: 56px 24px; }
-      .lifecycle-step { min-width: 50%; }
-      footer { padding: 28px 24px; }
-      .nav-link:not(.cta) { display: none; }
     }
   </style>
 </head>
 <body>
 
-  <!-- Nav -->
-  <nav>
-    <div class="nav-logo">
-      <img src="assets/logo.svg" alt="Forge OS" height="32" style="display:block">
+<!-- NAV -->
+<nav>
+  <a class="nav-logo" href="#">
+    <img src="assets/logo.svg" alt="Forge OS logo" width="28" height="28" />
+    Forge OS
+  </a>
+  <div class="nav-right">
+    <div class="nav-text-links">
+      <a href="#features">Features</a>
+      <a href="#how-it-works">How it works</a>
+      <a href="#team">Team</a>
     </div>
-    <div class="nav-links">
-      <a href="#features" class="nav-link">Features</a>
-      <a href="#how-it-works" class="nav-link">How it works</a>
-      <a href="https://github.com/saturday-connect/forge-os" class="nav-link cta" target="_blank" rel="noopener">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
-          <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/>
-        </svg>
-        GitHub
-      </a>
-    </div>
-  </nav>
+    <a class="btn-github" href="https://github.com/saturday-connect/forge-os" target="_blank" rel="noopener">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+        <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z" />
+      </svg>
+      GitHub
+    </a>
+  </div>
+</nav>
 
-  <!-- Hero -->
-  <section class="hero">
+<!-- HERO -->
+<section id="hero">
+  <div class="container" style="display:flex;flex-direction:column;align-items:center;">
     <div class="hero-badge">
-      <div class="hero-badge-dot"></div>
-      Open source &nbsp;&middot;&nbsp; Free to use
+      <span class="pulse" aria-hidden="true"></span>
+      Open source &middot; Free to use
     </div>
-    <h1>Build products,<br /><em>not just code</em></h1>
+
+    <h1 class="hero-h1">
+      Build products,<br /><span class="accent">not just code</span>
+    </h1>
+
     <p class="hero-sub">
-      Forge OS is a documentation-first PDLC automation framework. Describe your product in Markdown — Forge generates requirements, design, architecture, build systems, and deployment pipelines.
+      Forge OS drives the full PDLC — requirements through deployment — with AI and a local dashboard.
     </p>
 
-    <div class="downloads">
-      <a href="https://github.com/saturday-connect/forge-os/releases/latest" class="btn btn-primary loading" id="btn-mac-arm">
-        <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor">
-          <path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/>
+    <div class="download-row">
+      <a id="btn-mac-arm" class="btn btn-primary loading" href="https://github.com/saturday-connect/forge-os/releases/latest" aria-label="Download Forge OS for macOS Apple Silicon">
+        <svg class="btn-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+          <path d="M16.25 5.65a4.74 4.74 0 001.17-3.48 4.81 4.81 0 00-3.25 1.65 4.52 4.52 0 00-1.09 3.33 4 4 0 003.17-1.5zm2.73 8.07a4.88 4.88 0 012.35-4.13 5.05 5.05 0 00-3.97-2.17c-1.68-.17-3.26.98-4.14.98-.87 0-2.22-.96-3.65-.93A5.33 5.33 0 005.1 10.2C2.78 14.12 4.5 19.99 6.7 23.2c1.08 1.55 2.4 3.3 4.1 3.24 1.64-.07 2.26-.98 4.24-.98 1.97 0 2.54.98 4.26.95 1.77-.03 2.9-1.57 3.97-3.13a13.7 13.7 0 001.76-3.6 4.77 4.77 0 01-3.05-4.96z"/>
         </svg>
-        <div class="btn-label">
-          Download for macOS
-          <span>Apple Silicon</span>
-        </div>
+        <span class="btn-labels">
+          <span class="btn-main">Download for macOS</span>
+          <span class="btn-sub">Apple Silicon</span>
+        </span>
       </a>
-      <a href="https://github.com/saturday-connect/forge-os/releases/latest" class="btn btn-secondary loading" id="btn-mac-intel">
-        <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor">
-          <path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/>
+
+      <a id="btn-mac-intel" class="btn btn-secondary loading" href="https://github.com/saturday-connect/forge-os/releases/latest" aria-label="Download Forge OS for macOS Intel">
+        <svg class="btn-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+          <path d="M16.25 5.65a4.74 4.74 0 001.17-3.48 4.81 4.81 0 00-3.25 1.65 4.52 4.52 0 00-1.09 3.33 4 4 0 003.17-1.5zm2.73 8.07a4.88 4.88 0 012.35-4.13 5.05 5.05 0 00-3.97-2.17c-1.68-.17-3.26.98-4.14.98-.87 0-2.22-.96-3.65-.93A5.33 5.33 0 005.1 10.2C2.78 14.12 4.5 19.99 6.7 23.2c1.08 1.55 2.4 3.3 4.1 3.24 1.64-.07 2.26-.98 4.24-.98 1.97 0 2.54.98 4.26.95 1.77-.03 2.9-1.57 3.97-3.13a13.7 13.7 0 001.76-3.6 4.77 4.77 0 01-3.05-4.96z"/>
         </svg>
-        <div class="btn-label">
-          Download for macOS
-          <span>Intel</span>
-        </div>
+        <span class="btn-labels">
+          <span class="btn-main">Download for macOS</span>
+          <span class="btn-sub">Intel x64</span>
+        </span>
       </a>
-      <a href="https://github.com/saturday-connect/forge-os/releases/latest" class="btn btn-secondary loading" id="btn-win">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-          <path d="M0 3.449L9.75 2.1v9.451H0m10.949-9.602L24 0v11.4H10.949M0 12.6h9.75v9.451L0 20.699M10.949 12.6H24V24l-13.051-1.799"/>
+
+      <a id="btn-win" class="btn btn-secondary loading" href="https://github.com/saturday-connect/forge-os/releases/latest" aria-label="Download Forge OS for Windows x64">
+        <svg class="btn-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+          <path d="M3 5.55L10.5 4.5V11H3V5.55zM11.5 4.35L22 2.8V11H11.5V4.35zM3 12H10.5V18.5L3 17.45V12zM11.5 12H22V20.7L11.5 19.2V12z"/>
         </svg>
-        <div class="btn-label">
-          Download for Windows
-          <span>x64 Installer</span>
-        </div>
+        <span class="btn-labels">
+          <span class="btn-main">Download for Windows</span>
+          <span class="btn-sub">x64 Installer</span>
+        </span>
+      </a>
+
+      <a id="btn-linux" class="btn btn-secondary loading" href="https://github.com/saturday-connect/forge-os/releases/latest" aria-label="Download Forge OS for Linux x64">
+        <svg class="btn-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+          <path d="M12 2a7 7 0 00-7 7c0 2.1.9 4 2.3 5.3-.9 1.1-1.5 2.4-1.8 3.8-.4 1.4-.2 2.8.5 4.1.6 1.2 1.6 2.1 2.8 2.7-.4 1-.6 2-.6 3.1 0 .5 0 .9.1 1.3h7.4c.1-.4.1-.8.1-1.3 0-1-.2-2-.6-3.1 1.2-.6 2.2-1.5 2.8-2.7.7-1.3.9-2.7.5-4.1-.3-1.4-.9-2.7-1.8-3.8A7.03 7.03 0 0019 9a7 7 0 00-7-7zm-1.5 9.5a1.5 1.5 0 110-3 1.5 1.5 0 010 3zm3 0a1.5 1.5 0 110-3 1.5 1.5 0 010 3z"/>
+        </svg>
+        <span class="btn-labels">
+          <span class="btn-main">Download for Linux</span>
+          <span class="btn-sub">x64 AppImage</span>
+        </span>
       </a>
     </div>
-    <p class="download-meta" id="version-note">
-      Loading latest release&hellip; &nbsp;&middot;&nbsp;
-      <a href="https://github.com/saturday-connect/forge-os/releases" target="_blank" rel="noopener">All releases</a>
-    </p>
-  </section>
 
-  <hr class="divider" />
+    <p id="version-note"></p>
 
-  <!-- Features -->
-  <section class="section" id="features">
-    <div class="section-eyebrow">Capabilities</div>
-    <h2 class="section-title">Everything from idea to shipped</h2>
-    <p class="section-sub">One tool drives the entire product delivery lifecycle — no stitching together separate tools.</p>
+    <div class="platform-strip">
+      <span class="strip-item">macOS 12+</span>
+      <span class="sep">&middot;</span>
+      <span class="strip-item">Windows 10+</span>
+      <span class="sep">&middot;</span>
+      <span class="strip-item">Ubuntu 20.04+</span>
+      <span class="sep">&middot;</span>
+      <span class="strip-item">Apache 2.0</span>
+      <span class="sep">&middot;</span>
+      <span class="strip-item">No cloud required</span>
+    </div>
+  </div>
+</section>
+
+<!-- FEATURES -->
+<section id="features">
+  <div class="container">
+    <div class="features-header">
+      <span class="eyebrow">Capabilities</span>
+      <h2 class="section-heading">Everything from idea to shipped</h2>
+      <p class="section-sub">One tool drives the entire product delivery lifecycle.</p>
+    </div>
 
     <div class="features-grid">
-
       <div class="feature-card">
-        <div class="feature-icon">
+        <div class="feature-icon" aria-hidden="true">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/>
+            <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/>
+            <line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/>
           </svg>
         </div>
-        <div class="feature-title">AI-generated documentation</div>
-        <div class="feature-desc">Write raw product ideas in Markdown. Forge generates requirements, design specs, architecture docs, and QA plans — all version-controlled.</div>
+        <div class="feature-title">AI-generated docs</div>
+        <div class="feature-desc">Write ideas in Markdown; Forge generates requirements, design specs, and architecture docs through 11 structured stages.</div>
       </div>
 
       <div class="feature-card">
-        <div class="feature-icon">
+        <div class="feature-icon" aria-hidden="true">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
+            <polyline points="9 11 12 14 22 4"/>
+            <path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/>
           </svg>
         </div>
-        <div class="feature-title">Review and gate system</div>
-        <div class="feature-desc">Every generated document goes through a review gate before the next stage unlocks. Nothing advances without sign-off.</div>
+        <div class="feature-title">Review &amp; gate system</div>
+        <div class="feature-desc">Every generated document must be reviewed and approved before the pipeline advances to the next stage.</div>
       </div>
 
       <div class="feature-card">
-        <div class="feature-icon">
+        <div class="feature-icon" aria-hidden="true">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14"/>
+            <polyline points="16 18 22 12 16 6"/>
+            <polyline points="8 6 2 12 8 18"/>
           </svg>
         </div>
-        <div class="feature-title">Build system generation</div>
-        <div class="feature-desc">Forge generates CI/CD pipelines, Dockerfiles, and environment configs from your architecture docs — not from scratch every time.</div>
+        <div class="feature-title">Build generation</div>
+        <div class="feature-desc">Generates CI/CD pipelines, Dockerfiles, and env configs directly from your architecture docs.</div>
       </div>
 
       <div class="feature-card">
-        <div class="feature-icon">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <rect x="2" y="2" width="9" height="9"/><rect x="13" y="2" width="9" height="9"/><rect x="13" y="13" width="9" height="9"/><rect x="2" y="13" width="9" height="9"/>
-          </svg>
-        </div>
-        <div class="feature-title">Multi-project orchestration</div>
-        <div class="feature-desc">Run Forge at your repository root and manage multiple independent products from a single dashboard.</div>
-      </div>
-
-      <div class="feature-card">
-        <div class="feature-icon">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"/><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/><line x1="4.93" y1="19.07" x2="7.76" y2="16.24"/><line x1="16.24" y1="7.76" x2="19.07" y2="4.93"/>
-          </svg>
-        </div>
-        <div class="feature-title">Deploy and secrets management</div>
-        <div class="feature-desc">Tracks required secrets, pushes them to GitHub, and reports environment readiness before you ship.</div>
-      </div>
-
-      <div class="feature-card">
-        <div class="feature-icon">
+        <div class="feature-icon" aria-hidden="true">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>
           </svg>
         </div>
-        <div class="feature-title">Native desktop app</div>
-        <div class="feature-desc">Ships as a macOS and Windows desktop app with secure GitHub authentication via Device Flow — no credentials stored in plain text.</div>
+        <div class="feature-title">Multi-project</div>
+        <div class="feature-desc">Run Forge at the root of your repo and orchestrate multiple independent products from one dashboard.</div>
       </div>
 
-    </div>
-  </section>
-
-  <!-- Lifecycle -->
-  <div class="lifecycle-wrap" id="how-it-works">
-    <div class="section" style="padding-bottom: 32px;">
-      <div class="section-eyebrow">Lifecycle</div>
-      <h2 class="section-title">From input to deploy</h2>
-      <p class="section-sub" style="margin-bottom: 0;">A structured pipeline with gates at every stage.</p>
-    </div>
-    <div class="lifecycle-steps">
-      <div class="lifecycle-step">
-        <div class="step-index">01</div>
-        <div class="step-name">Input</div>
-        <div class="step-desc">Write raw product ideas and context in Markdown</div>
-      </div>
-      <div class="lifecycle-step">
-        <div class="step-index">02</div>
-        <div class="step-name">Generate</div>
-        <div class="step-desc">AI generates requirements, design, and architecture docs</div>
-      </div>
-      <div class="lifecycle-step">
-        <div class="step-index">03</div>
-        <div class="step-name">Review</div>
-        <div class="step-desc">Gate every document before the pipeline advances</div>
-      </div>
-      <div class="lifecycle-step">
-        <div class="step-index">04</div>
-        <div class="step-name">Build</div>
-        <div class="step-desc">Generate build systems, CI/CD, and open pull requests</div>
-      </div>
-      <div class="lifecycle-step">
-        <div class="step-index">05</div>
-        <div class="step-name">Deploy</div>
-        <div class="step-desc">Push secrets, validate environments, and ship</div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Footer -->
-  <div class="footer-wrap">
-    <footer>
-      <div class="footer-left">
-        <div class="nav-logo-mark" style="width:20px;height:20px;border-radius:5px;">
-          <svg width="11" height="11" viewBox="0 0 14 14" fill="none">
-            <path d="M2 2h4v4H2zM8 2h4v4H8zM2 8h4v4H2zM8 8h4v4H8z" fill="#fff" opacity=".9"/>
+      <div class="feature-card">
+        <div class="feature-icon" aria-hidden="true">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/>
+            <circle cx="9" cy="7" r="4"/>
+            <path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/>
           </svg>
         </div>
-        Forge OS &nbsp;&middot;&nbsp; Apache 2.0
+        <div class="feature-title">Team collaboration</div>
+        <div class="feature-desc">Admins publish an org config once; every team member connects by entering the org name. Roles: admin, member, viewer.</div>
       </div>
-      <div class="footer-links">
-        <a href="https://github.com/saturday-connect/forge-os" target="_blank" rel="noopener">GitHub</a>
-        <a href="https://github.com/saturday-connect/forge-os/releases" target="_blank" rel="noopener">Releases</a>
-        <a href="https://github.com/saturday-connect/forge-os/issues" target="_blank" rel="noopener">Issues</a>
+
+      <div class="feature-card">
+        <div class="feature-icon" aria-hidden="true">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="23 4 23 10 17 10"/>
+            <polyline points="1 20 1 14 7 14"/>
+            <path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/>
+          </svg>
+        </div>
+        <div class="feature-title">Silent auto-updates</div>
+        <div class="feature-desc">Ships as a self-updating desktop app. Background downloads, release notes in the restart prompt, retry on transient errors.</div>
       </div>
-    </footer>
+
+      <div class="feature-card">
+        <div class="feature-icon" aria-hidden="true">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+            <path d="M7 11V7a5 5 0 0110 0v4"/>
+          </svg>
+        </div>
+        <div class="feature-title">Deploy &amp; secrets</div>
+        <div class="feature-desc">Tracks required secrets, pushes them to GitHub via API, and reports environment readiness before you ship.</div>
+      </div>
+
+      <div class="feature-card">
+        <div class="feature-icon" aria-hidden="true">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="2" y="3" width="20" height="14" rx="2"/>
+            <path d="M8 21h8M12 17v4"/>
+          </svg>
+        </div>
+        <div class="feature-title">Cross-platform</div>
+        <div class="feature-desc">Native desktop app for macOS (Apple Silicon + Intel), Windows 10+, and Linux (AppImage). GitHub Device Flow auth — no plain-text credentials.</div>
+      </div>
+    </div>
   </div>
+</section>
 
-  <script>
-    const REPO = 'saturday-connect/forge-os'
+<!-- LIFECYCLE -->
+<section id="how-it-works">
+  <div class="container">
+    <div class="lifecycle-header">
+      <span class="eyebrow">Lifecycle</span>
+      <h2 class="section-heading">From input to deploy</h2>
+      <p class="section-sub">A structured pipeline with AI at every stage and gates before each transition.</p>
+    </div>
 
-    async function loadRelease() {
-      try {
-        const res = await fetch(`https://api.github.com/repos/${REPO}/releases/latest`, {
-          headers: { Accept: 'application/vnd.github+json' }
-        })
-        if (!res.ok) throw new Error('no release')
-        const release = await res.json()
-        const assets = release.assets || []
-        const tag = release.tag_name || ''
+    <div class="lifecycle-strip" role="list">
+      <div class="lifecycle-phase" role="listitem">
+        <div class="phase-num">01</div>
+        <div class="phase-name">Input</div>
+        <div class="phase-desc">Capture raw product ideas and context in Markdown files</div>
+      </div>
+      <div class="lifecycle-phase" role="listitem">
+        <div class="phase-num">02</div>
+        <div class="phase-name">Generate</div>
+        <div class="phase-desc">AI produces requirements, design, architecture, QA, release, and marketing docs across 11 stages</div>
+      </div>
+      <div class="lifecycle-phase" role="listitem">
+        <div class="phase-num">03</div>
+        <div class="phase-name">Review</div>
+        <div class="phase-desc">File-level review with critique regeneration and gate sign-off before advancing</div>
+      </div>
+      <div class="lifecycle-phase" role="listitem">
+        <div class="phase-num">04</div>
+        <div class="phase-name">Build</div>
+        <div class="phase-desc">Generate build systems and CI/CD, commit, and open pull requests automatically</div>
+      </div>
+      <div class="lifecycle-phase" role="listitem">
+        <div class="phase-num">05</div>
+        <div class="phase-name">Deploy</div>
+        <div class="phase-desc">Push secrets to GitHub, validate environments, and ship</div>
+      </div>
+    </div>
 
-        const arm   = assets.find(a => /arm64.*\.dmg$/i.test(a.name))
-        const intel = assets.find(a => /\.dmg$/i.test(a.name) && !/arm64/i.test(a.name))
-        const win   = assets.find(a => /\.exe$/i.test(a.name))
+    <div class="stage-pills" aria-label="Pipeline stages">
+      <span class="stage-pill">context</span>
+      <span class="stage-pill">requirements</span>
+      <span class="stage-pill">design</span>
+      <span class="stage-pill">analysis</span>
+      <span class="stage-pill">architecture</span>
+      <span class="stage-pill">delivery</span>
+      <span class="stage-pill">engineering</span>
+      <span class="stage-pill">quality</span>
+      <span class="stage-pill">operations</span>
+      <span class="stage-pill">release</span>
+      <span class="stage-pill">marketing</span>
+    </div>
+  </div>
+</section>
 
-        const fallback = `https://github.com/${REPO}/releases/latest`
-        const set = (id, asset) => {
-          const el = document.getElementById(id)
-          if (!el) return
-          el.href = asset ? asset.browser_download_url : fallback
-          el.classList.remove('loading')
-        }
+<!-- TEAM -->
+<section id="team">
+  <div class="container">
+    <div class="team-header">
+      <span class="eyebrow">Team setup</span>
+      <h2 class="section-heading">One install, one org, whole team connected</h2>
+      <p class="section-sub">Admin registers once. Every team member connects in under a minute.</p>
+    </div>
 
-        set('btn-mac-arm', arm)
-        set('btn-mac-intel', intel)
-        set('btn-win', win)
+    <div class="team-cards">
+      <div class="team-card admin-card">
+        <span class="role-badge admin">Admin</span>
+        <h3>Set up for your organization</h3>
+        <ol class="team-steps">
+          <li>
+            <span class="step-num" aria-hidden="true">1</span>
+            <span>Download and open Forge OS</span>
+          </li>
+          <li>
+            <span class="step-num" aria-hidden="true">2</span>
+            <span>Choose "I'm the admin" in the setup wizard</span>
+          </li>
+          <li>
+            <span class="step-num" aria-hidden="true">3</span>
+            <span>Register a GitHub OAuth App (step-by-step guide built in)</span>
+          </li>
+          <li>
+            <span class="step-num" aria-hidden="true">4</span>
+            <span>Connect your GitHub organization</span>
+          </li>
+          <li>
+            <span class="step-num" aria-hidden="true">5</span>
+            <span>Forge publishes <span class="inline-code">forge.config.json</span> to your org repo automatically</span>
+          </li>
+        </ol>
+      </div>
 
-        const note = document.getElementById('version-note')
-        if (note && tag) {
-          note.innerHTML = `Version ${tag} &nbsp;&middot;&nbsp; <a href="https://github.com/${REPO}/releases" target="_blank" rel="noopener">All releases</a>`
-        }
-      } catch {
-        document.querySelectorAll('.btn').forEach(el => el.classList.remove('loading'))
-        const note = document.getElementById('version-note')
-        if (note) {
-          note.innerHTML = `<a href="https://github.com/${REPO}/releases" target="_blank" rel="noopener">View all releases on GitHub</a>`
-        }
+      <div class="team-card">
+        <span class="role-badge member">Member</span>
+        <h3>Join your team</h3>
+        <ol class="team-steps">
+          <li>
+            <span class="step-num" aria-hidden="true">1</span>
+            <span>Download and open Forge OS</span>
+          </li>
+          <li>
+            <span class="step-num" aria-hidden="true">2</span>
+            <span>Choose "I'm a team member"</span>
+          </li>
+          <li>
+            <span class="step-num" aria-hidden="true">3</span>
+            <span>Enter your GitHub organization name</span>
+          </li>
+          <li>
+            <span class="step-num" aria-hidden="true">4</span>
+            <span>Forge auto-connects and pulls the org configuration</span>
+          </li>
+          <li>
+            <span class="step-num" aria-hidden="true">5</span>
+            <span>Authenticate with GitHub — you're ready</span>
+          </li>
+        </ol>
+      </div>
+    </div>
+
+    <p class="team-note">Private org repos are supported — your admin provides a Client ID during setup.</p>
+  </div>
+</section>
+
+<!-- PLATFORMS -->
+<section id="platforms">
+  <div class="container">
+    <div class="platforms-header">
+      <span class="eyebrow">Supported platforms</span>
+      <h2 class="section-heading">macOS &middot; Windows &middot; Linux</h2>
+    </div>
+
+    <div class="platform-cards">
+      <!-- macOS -->
+      <div class="platform-card">
+        <div class="platform-card-header">
+          <div class="platform-os-icon" aria-hidden="true">
+            <svg viewBox="0 0 28 28" fill="currentColor" width="28" height="28">
+              <path d="M18.45 6.13A5.25 5.25 0 0019.8 2a5.3 5.3 0 00-3.6 1.82 5 5 0 00-1.2 3.7 4.42 4.42 0 003.45-1.39zm3.02 8.93a5.4 5.4 0 012.59-4.57 5.59 5.59 0 00-4.4-2.4c-1.87-.19-3.6 1.09-4.59 1.09-.97 0-2.46-1.07-4.06-1.03a5.9 5.9 0 00-4.97 3.04C3.52 14.94 5.09 20.4 7.2 23.36c.96 1.45 2.16 3.1 3.74 3.04 1.5-.06 2.06-.96 3.88-.96s2.33.96 3.93.93 2.64-1.49 3.6-2.94a13.2 13.2 0 001.65-3.42 5.29 5.29 0 01-3.07-4.86-.13.13 0 01.54-.09z"/>
+            </svg>
+          </div>
+          <div>
+            <div class="platform-name">macOS</div>
+            <div class="platform-req">macOS 12 Monterey or later</div>
+          </div>
+        </div>
+
+        <div class="platform-downloads">
+          <a id="dl-mac-arm" class="dl-link loading" href="https://github.com/saturday-connect/forge-os/releases/latest" aria-label="Download macOS Apple Silicon DMG">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+            </svg>
+            Apple Silicon (.dmg)
+          </a>
+          <a id="dl-mac-intel" class="dl-link loading" href="https://github.com/saturday-connect/forge-os/releases/latest" aria-label="Download macOS Intel DMG">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+            </svg>
+            Intel x64 (.dmg)
+          </a>
+        </div>
+
+        <div class="platform-install-note">
+          Open the DMG, drag Forge OS to Applications. macOS will ask to allow on first launch — click Open.<br /><br />
+          <strong style="color:var(--text-2);font-weight:500;">Unsigned builds</strong> — Gatekeeper may warn on first open. Right-click &rarr; Open to bypass.
+        </div>
+      </div>
+
+      <!-- Windows -->
+      <div class="platform-card">
+        <div class="platform-card-header">
+          <div class="platform-os-icon" aria-hidden="true">
+            <svg viewBox="0 0 28 28" fill="currentColor" width="28" height="28">
+              <path d="M3 6.3L12 5V13H3V6.3zM13 4.85L26 3V13H13V4.85zM3 14H12V22L3 20.7V14zM13 14H26V24.5L13 23V14z"/>
+            </svg>
+          </div>
+          <div>
+            <div class="platform-name">Windows</div>
+            <div class="platform-req">Windows 10 or later (x64)</div>
+          </div>
+        </div>
+
+        <div class="platform-downloads">
+          <a id="dl-win" class="dl-link loading" href="https://github.com/saturday-connect/forge-os/releases/latest" aria-label="Download Windows x64 installer">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+            </svg>
+            x64 NSIS Installer (.exe)
+          </a>
+        </div>
+
+        <div class="platform-install-note">
+          Run the installer. Windows SmartScreen may warn — click "More info &rarr; Run anyway" for unsigned builds.
+        </div>
+      </div>
+
+      <!-- Linux -->
+      <div class="platform-card">
+        <div class="platform-card-header">
+          <div class="platform-os-icon" aria-hidden="true">
+            <svg viewBox="0 0 28 28" fill="currentColor" width="28" height="28">
+              <path d="M14 3a6 6 0 00-6 6c0 1.8.77 3.42 2 4.56-.76.93-1.32 2-1.6 3.2-.27 1.18-.15 2.41.37 3.5.47 1 1.2 1.8 2.1 2.3-.3.8-.47 1.65-.47 2.54 0 .44.04.87.1 1.29h6.99c.07-.42.11-.85.11-1.29 0-.9-.17-1.74-.47-2.54.9-.5 1.63-1.3 2.1-2.3.52-1.09.64-2.32.37-3.5-.28-1.2-.84-2.27-1.6-3.2A5.96 5.96 0 0020 9a6 6 0 00-6-6zm-1.25 8.25a1.25 1.25 0 110-2.5 1.25 1.25 0 010 2.5zm2.5 0a1.25 1.25 0 110-2.5 1.25 1.25 0 010 2.5z"/>
+            </svg>
+          </div>
+          <div>
+            <div class="platform-name-row">
+              <div class="platform-name">Linux</div>
+              <span class="badge-new">New</span>
+            </div>
+            <div class="platform-req">Ubuntu 20.04+ / Debian / Fedora (x64)</div>
+          </div>
+        </div>
+
+        <div class="platform-downloads">
+          <a id="dl-linux" class="dl-link loading" href="https://github.com/saturday-connect/forge-os/releases/latest" aria-label="Download Linux AppImage">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+            </svg>
+            x64 AppImage (.AppImage)
+          </a>
+        </div>
+
+        <div class="platform-install-note">
+          Make the file executable, then run it:
+          <span class="code-block">chmod +x forge-os-*.AppImage
+./forge-os-*.AppImage</span>
+          Secure credential storage requires <span class="inline-code">libsecret</span>:<br />
+          <span class="code-block">sudo apt install libsecret-1-0</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<footer>
+  <div class="footer-left">
+    <div class="footer-logo" aria-label="Forge OS">F</div>
+    <span>Forge OS &middot; Apache 2.0 &middot; &copy; 2026</span>
+  </div>
+  <div class="footer-right">
+    <a href="https://github.com/saturday-connect/forge-os" target="_blank" rel="noopener">GitHub</a>
+    <a href="https://github.com/saturday-connect/forge-os/releases" target="_blank" rel="noopener">Releases</a>
+    <a href="https://github.com/saturday-connect/forge-os/issues" target="_blank" rel="noopener">Issues</a>
+  </div>
+</footer>
+
+<script>
+  var REPO = 'saturday-connect/forge-os'
+
+  function detectOS() {
+    var p = (navigator.platform || '').toLowerCase()
+    var ua = navigator.userAgent.toLowerCase()
+    if (p.includes('mac') || ua.includes('mac os')) return 'mac'
+    if (p.includes('win') || ua.includes('windows')) return 'win'
+    if (p.includes('linux') || ua.includes('linux')) return 'linux'
+    return null
+  }
+
+  function isAppleSilicon() {
+    try {
+      var gl = document.createElement('canvas').getContext('webgl')
+      var ext = gl && gl.getExtension('WEBGL_debug_renderer_info')
+      if (!ext) return false
+      return (gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) || '').includes('Apple')
+    } catch(e) { return false }
+  }
+
+  function setBtn(id, asset, fallback) {
+    var el = document.getElementById(id)
+    if (!el) return
+    el.href = asset ? asset.browser_download_url : fallback
+    el.classList.remove('loading')
+  }
+
+  async function loadRelease() {
+    var fallback = 'https://github.com/' + REPO + '/releases/latest'
+    try {
+      var res = await fetch('https://api.github.com/repos/' + REPO + '/releases/latest', {
+        headers: { Accept: 'application/vnd.github+json' }
+      })
+      if (!res.ok) throw new Error('no release')
+      var release = await res.json()
+      var assets = release.assets || []
+      var tag = release.tag_name || ''
+
+      var arm   = assets.find(function(a){ return /arm64.*\.dmg$/i.test(a.name) })
+      var intel = assets.find(function(a){ return /\.dmg$/i.test(a.name) && !/arm64/i.test(a.name) })
+      var win   = assets.find(function(a){ return /\.exe$/i.test(a.name) })
+      var linux = assets.find(function(a){ return /\.AppImage$/i.test(a.name) })
+
+      setBtn('btn-mac-arm',   arm,   fallback)
+      setBtn('btn-mac-intel', intel, fallback)
+      setBtn('btn-win',       win,   fallback)
+      setBtn('btn-linux',     linux, fallback)
+      setBtn('dl-mac-arm',    arm,   fallback)
+      setBtn('dl-mac-intel',  intel, fallback)
+      setBtn('dl-win',        win,   fallback)
+      setBtn('dl-linux',      linux, fallback)
+
+      var note = document.getElementById('version-note')
+      if (note && tag) {
+        note.innerHTML = tag + ' &nbsp;&middot;&nbsp; <a href="https://github.com/' + REPO + '/releases" target="_blank" rel="noopener">All releases →</a>'
+      }
+    } catch(e) {
+      document.querySelectorAll('.btn.loading').forEach(function(el){ el.classList.remove('loading') })
+      document.querySelectorAll('.dl-link.loading').forEach(function(el){ el.classList.remove('loading') })
+      var note = document.getElementById('version-note')
+      if (note) {
+        note.innerHTML = '<a href="https://github.com/' + REPO + '/releases" target="_blank" rel="noopener">View all releases on GitHub →</a>'
       }
     }
+  }
 
-    loadRelease()
-  </script>
+  function highlightPlatform() {
+    var os = detectOS()
+    if (!os) return
+    var mapPrimary = {
+      mac: isAppleSilicon() ? 'btn-mac-arm' : 'btn-mac-intel',
+      win: 'btn-win',
+      linux: 'btn-linux'
+    }
+    var primaryId = mapPrimary[os]
+    if (!primaryId) return
+    var el = document.getElementById(primaryId)
+    if (!el) return
+    el.classList.remove('btn-secondary')
+    el.classList.add('btn-primary', 'recommended')
+    el.parentElement.prepend(el)
+    var span = el.querySelector('.btn-sub')
+    if (span) span.textContent = 'Recommended for your system'
+  }
+
+  loadRelease()
+  highlightPlatform()
+</script>
 </body>
 </html>

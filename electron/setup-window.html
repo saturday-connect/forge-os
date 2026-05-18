@@ -410,6 +410,9 @@
     @keyframes spin { to { transform: rotate(360deg); } }
 
     .spacer { flex: 1; }
+
+    .step-item.skipped .step-num  { background: transparent; border-color: rgba(255,255,255,0.05); color: rgba(255,255,255,0.12); }
+    .step-item.skipped .step-label { color: rgba(255,255,255,0.18); text-decoration: line-through; }
   </style>
 </head>
 <body>
@@ -584,6 +587,28 @@
           >
           <span class="field-error" id="member-org-error"></span>
           <span class="field-ok" id="member-org-ok"></span>
+        </div>
+        <!-- Private repo fallback — revealed when forge-knowledge returns 403 -->
+        <div id="private-client-id-section" style="display:none;flex-direction:column;gap:8px">
+          <div style="background:rgba(14,165,233,0.08);border:1px solid rgba(14,165,233,0.2);border-radius:8px;padding:10px 12px;font-size:12px;color:rgba(255,255,255,0.7);line-height:1.6">
+            This organization's repository is private. Ask your admin for the
+            <strong style="color:#ffffff">OAuth App Client ID</strong>
+            (starts with <code style="font-family:'SFMono-Regular','SF Mono',Menlo,Monaco,Consolas,monospace;font-size:11px">Ov23li</code>).
+          </div>
+          <div class="field">
+            <label class="field-label" for="private-client-id-input">Admin's Client ID</label>
+            <input
+              class="field-input"
+              id="private-client-id-input"
+              type="text"
+              placeholder="Ov23li…"
+              autocomplete="off"
+              spellcheck="false"
+              oninput="clearPrivateClientIdStatus()"
+            >
+            <span class="field-error" id="private-client-id-error"></span>
+            <span class="field-ok"    id="private-client-id-ok"></span>
+          </div>
         </div>
       </div>
     </div>
@@ -768,6 +793,7 @@
       <button class="btn-ghost" id="btn-back" onclick="goBack()" style="display:none">← Back</button>
       <button class="btn-ghost" id="btn-skip-git" onclick="skipGitSetup()" style="display:none">Skip Git Setup</button>
       <div class="spacer"></div>
+      <span id="git-continue-hint" style="display:none;font-size:12px;color:rgba(255,255,255,0.38);margin-right:12px">Test SSH above to continue</span>
       <button class="btn-primary" id="btn-next" onclick="goNext()">Get Started →</button>
     </div>
   </div>
@@ -781,6 +807,17 @@
   const TOTAL_STEPS = 6
   let sshPublicKey = ''
   let gitSetupReady = false   // true when SSH test passes or already configured
+  let _fetchedClientId = null    // githubClientId pulled from org config (public repo) or entered manually (private)
+  let _orgIsPrivate   = false    // true when forge-knowledge repo returned 403
+
+  // ── HTML escaping helper ───────────────────────────────────────────────────
+  function escHtml(s) {
+    return String(s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+  }
 
   // ── Navigation ─────────────────────────────────────────────────────────────
   function updateUI() {
@@ -805,6 +842,8 @@
     // Next button label
     const btn = document.getElementById('btn-next')
     btn.disabled = (currentStep === 4 && !gitSetupReady)
+    const hintEl = document.getElementById('git-continue-hint')
+    if (hintEl) hintEl.style.display = (currentStep === 4 && !gitSetupReady) ? 'inline' : 'none'
     if (currentStep === TOTAL_STEPS - 1) {
       btn.textContent = 'Launch Forge OS'
     } else if (currentStep === 2 && role === 'member') {
@@ -886,6 +925,10 @@
     role = r
     document.getElementById('role-admin').classList.toggle('selected', r === 'admin')
     document.getElementById('role-member').classList.toggle('selected', r === 'member')
+    // Adapt sidebar labels and skip-state to role
+    const nav2Label = document.querySelector('#nav-2 .step-label')
+    if (nav2Label) nav2Label.textContent = r === 'member' ? 'Connect org' : 'GitHub OAuth App'
+    document.getElementById('nav-3').classList.toggle('skipped', r === 'member')
   }
 
   // ── Client ID validation ───────────────────────────────────────────────────
@@ -972,18 +1015,60 @@
     document.getElementById('member-org-input').className = 'field-input'
     document.getElementById('member-org-error').className = 'field-error'
     document.getElementById('member-org-ok').className = 'field-ok'
+    _orgIsPrivate    = false
+    _fetchedClientId = null
+    const section = document.getElementById('private-client-id-section')
+    if (section) section.style.display = 'none'
+    clearPrivateClientIdStatus()
+  }
+
+  function clearPrivateClientIdStatus() {
+    const cidEl  = document.getElementById('private-client-id-input')
+    const cidErr = document.getElementById('private-client-id-error')
+    const cidOk  = document.getElementById('private-client-id-ok')
+    if (cidEl)  cidEl.className  = 'field-input'
+    if (cidErr) cidErr.className = 'field-error'
+    if (cidOk)  cidOk.className  = 'field-ok'
   }
 
   async function verifyMemberOrg() {
     const val = document.getElementById('member-org-input').value.trim().toLowerCase()
     const input = document.getElementById('member-org-input')
-    const err = document.getElementById('member-org-error')
-    const ok = document.getElementById('member-org-ok')
+    const err   = document.getElementById('member-org-error')
+    const ok    = document.getElementById('member-org-ok')
 
     if (!val) {
       err.textContent = 'Enter your GitHub organization name.'
       err.className = 'field-error visible'
       return false
+    }
+    if (!/^[a-z0-9][a-z0-9-]{0,38}$/.test(val)) {
+      input.className = 'field-input error'
+      err.textContent = 'Organization names can only contain letters, numbers, and hyphens.'
+      err.className = 'field-error visible'
+      return false
+    }
+
+    // Org already confirmed private — just validate the manually-entered client ID
+    if (_orgIsPrivate) {
+      const cidEl  = document.getElementById('private-client-id-input')
+      const cidErr = document.getElementById('private-client-id-error')
+      const cidOk  = document.getElementById('private-client-id-ok')
+      const cid    = cidEl ? cidEl.value.trim() : ''
+      if (!cid) {
+        if (cidEl) cidEl.className = 'field-input error'
+        if (cidErr) { cidErr.textContent = 'Enter the Client ID your admin provided.'; cidErr.className = 'field-error visible' }
+        return false
+      }
+      if (!/^Ov23li[A-Za-z0-9]{14,}$/.test(cid)) {
+        if (cidEl) cidEl.className = 'field-input error'
+        if (cidErr) { cidErr.textContent = 'Does not look like a valid Client ID — it should start with Ov23li.'; cidErr.className = 'field-error visible' }
+        return false
+      }
+      _fetchedClientId = cid
+      if (cidEl)  cidEl.className   = 'field-input valid'
+      if (cidOk)  { cidOk.textContent = '✓ Client ID accepted'; cidOk.className = 'field-ok visible' }
+      return true
     }
 
     const btn = document.getElementById('btn-next')
@@ -1002,9 +1087,22 @@
       return false
     }
 
-    input.className = 'field-input valid'
-    ok.textContent = `✓ Connected to ${val}/forge-knowledge`
-    ok.className = 'field-ok visible'
+    if (result.private) {
+      _orgIsPrivate    = true
+      _fetchedClientId = null
+      input.className  = 'field-input valid'
+      ok.textContent   = `✓ Organization found — repo is private, enter Client ID below`
+      ok.className     = 'field-ok visible'
+      const section = document.getElementById('private-client-id-section')
+      if (section) { section.style.display = 'flex'; section.style.flexDirection = 'column' }
+      return false   // user must enter client ID before advancing
+    }
+
+    _fetchedClientId = result.githubClientId || null
+    _orgIsPrivate    = false
+    input.className  = 'field-input valid'
+    ok.textContent   = `✓ Connected to ${val}/forge-knowledge`
+    ok.className     = 'field-ok visible'
     return true
   }
 
@@ -1014,12 +1112,13 @@
       ? document.getElementById('org-input').value.trim()
       : document.getElementById('member-org-input').value.trim()
 
+    const safeOrg = escHtml(orgName)
     const adminLine = role === 'admin'
       ? `GitHub OAuth App registered and configured. `
-      : `Connected to organization config from <strong>${orgName}/forge-knowledge</strong>. `
+      : `Connected to organization config from <strong>${safeOrg}/forge-knowledge</strong>. `
 
     document.getElementById('summary-text').innerHTML =
-      adminLine + `Organization: <strong>${orgName}</strong>.`
+      adminLine + `Organization: <strong>${safeOrg}</strong>.`
     document.getElementById('summary-org').textContent = orgName
   }
 
@@ -1033,11 +1132,12 @@
         knowledgeRepo: repoVal || 'forge-knowledge'
       }
     } else {
-      return {
+      const cfg = {
         role: 'member',
         org: document.getElementById('member-org-input').value.trim().toLowerCase()
-        // githubClientId is pulled from org config by main process
       }
+      if (_fetchedClientId) cfg.githubClientId = _fetchedClientId
+      return cfg
     }
   }
 

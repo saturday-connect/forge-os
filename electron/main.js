@@ -130,14 +130,13 @@ function createSetupWindow() {
     ipcMain.on('setup-open-url', (_e, url) => shell.openExternal(url))
 
     // IPC: verify org (admin step 3)
-    ipcMain.handle('setup-verify-org', async (_e, orgName, repoName) => {
-      const repo = repoName || 'forge-knowledge'
-      try {
-        const exists = await github.repoExists(null, orgName, repo).catch(() => false)
-        return { repoExists: exists }
-      } catch (err) {
-        return { error: `Could not verify organization: ${err.message}` }
+    // Note: no token available during setup — just validate the slug format.
+    // Actual repo existence is confirmed post-auth during the first sync.
+    ipcMain.handle('setup-verify-org', async (_e, orgName) => {
+      if (!orgName || !/^[a-z0-9][a-z0-9-]{0,38}$/.test(orgName.trim().toLowerCase())) {
+        return { error: 'Organization names can only contain letters, numbers, and hyphens.' }
       }
+      return { repoExists: false }
     })
 
     // IPC: fetch org config for member flow — pulls forge.config.json from the
@@ -319,8 +318,11 @@ function createSetupWindow() {
       }
     })
 
+    let setupComplete = false
+
     // IPC: save setup config and close window
     ipcMain.once('setup-save', (_e, setupConfig) => {
+      setupComplete = true
       const existing = readConfig()
       writeConfig({ ...existing, ...setupConfig })
       if (setupConfig.knowledgeRepo) org.setRepoName(setupConfig.knowledgeRepo)
@@ -338,6 +340,7 @@ function createSetupWindow() {
     })
 
     setupWin.on('closed', () => {
+      if (setupComplete) return
       // User closed window without completing setup
       const config = readConfig()
       if (!config.githubClientId && !config.org) {
@@ -469,6 +472,33 @@ async function resolveOrg(token) {
   })
 
   return response >= 0 ? available[response] : available[0]
+}
+
+/**
+ * Ensure forge.config.json is published to the org's forge-knowledge repo.
+ * Members read this file during their onboarding to get the githubClientId.
+ * Called once post-auth for admin role — fire-and-forget, never throws to caller.
+ */
+async function ensureOrgConfigPublished(token, orgLogin, config) {
+  const repoName = config.knowledgeRepo || 'forge-knowledge'
+  const filePath = 'forge.config.json'
+  const content  = JSON.stringify({ githubClientId: config.githubClientId }, null, 2)
+
+  try {
+    const existingSha = await github.getFileSha(token, orgLogin, repoName, filePath)
+    await github.putFileContent(
+      token, orgLogin, repoName, filePath, content,
+      'chore: update forge.config.json [forge-os]',
+      existingSha
+    )
+    console.log(`[setup] Published forge.config.json to ${orgLogin}/${repoName}`)
+  } catch (err) {
+    if (err.code === 'GITHUB_NOT_FOUND') {
+      console.warn(`[setup] ${orgLogin}/${repoName} not found — cannot publish forge.config.json`)
+    } else {
+      console.warn(`[setup] Could not publish forge.config.json: ${err.message}`)
+    }
+  }
 }
 
 // ─── Project management ───────────────────────────────────────────────────────
@@ -1485,6 +1515,12 @@ if (!app.requestSingleInstanceLock()) {
       org.syncInBackground(token, currentOrg).catch(err => {
         console.warn('[org] Background sync error:', err.message)
       })
+    }
+
+    // 4b. For admin role: ensure forge.config.json exists in org repo so members can onboard.
+    const postAuthCfg = readConfig()
+    if (token && currentOrg && postAuthCfg.role === 'admin' && postAuthCfg.githubClientId) {
+      ensureOrgConfigPublished(token, currentOrg, postAuthCfg).catch(() => {})
     }
 
     // 5. Resolve orchestrator data dir — lives inside ~/.forge/projects/<uuid>/
