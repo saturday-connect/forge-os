@@ -1017,10 +1017,96 @@ let _updateCheckManual = false
 let _updateReady = false          // true once update-downloaded fires
 let _updateChecking = false       // debounce rapid tray clicks
 
+// ─── Update progress window ───────────────────────────────────────────────────
+
+const PROGRESS_WIN_STYLES = `
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%;overflow:hidden}
+  body{
+    font-family:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+    background:#111;color:#e5e5e5;
+    display:flex;flex-direction:column;justify-content:center;
+    padding:22px 26px 18px;
+    -webkit-app-region:drag;
+  }
+  .title{font-size:13px;font-weight:600;margin-bottom:2px;letter-spacing:-.1px}
+  .sub{font-size:11px;color:#666;margin-bottom:15px}
+  .bar-track{background:#1f1f1f;border-radius:4px;height:5px;overflow:hidden;margin-bottom:10px}
+  .bar-fill{background:#494fdf;height:100%;border-radius:4px;width:0%;transition:width .25s ease}
+  .meta{display:flex;justify-content:space-between;font-size:11px;color:#555}
+`
+
+let _progressWin = null
+
+function _formatBytes(bytes) {
+  if (bytes >= 1024 * 1024) return (bytes / 1024 / 1024).toFixed(1) + ' MB'
+  if (bytes >= 1024) return Math.round(bytes / 1024) + ' KB'
+  return bytes + ' B'
+}
+
+function showProgressWindow(version) {
+  if (_progressWin && !_progressWin.isDestroyed()) return
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>${PROGRESS_WIN_STYLES}</style></head><body>
+    <div class="title">Downloading Forge OS ${version || ''}</div>
+    <div class="sub" id="sub">Starting download…</div>
+    <div class="bar-track"><div class="bar-fill" id="bar"></div></div>
+    <div class="meta"><span id="pct">0%</span><span id="speed"></span></div>
+  </body></html>`
+
+  _progressWin = new BrowserWindow({
+    width: 380,
+    height: 108,
+    resizable: false,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    frame: false,
+    alwaysOnTop: true,
+    webPreferences: { nodeIntegration: false, contextIsolation: true }
+  })
+  _progressWin.setMenuBarVisibility(false)
+  _progressWin.loadFile(writeTempHtml('update-progress', html))
+  _progressWin.once('ready-to-show', () => {
+    if (_progressWin && !_progressWin.isDestroyed()) _progressWin.show()
+  })
+  _progressWin.on('closed', () => { _progressWin = null })
+}
+
+function updateProgressWindow(pct, speedBps) {
+  if (!_progressWin || _progressWin.isDestroyed()) return
+  const speedStr = speedBps > 0 ? _formatBytes(speedBps) + '/s' : ''
+  const subText = pct < 5 ? 'Starting download…' : 'Downloading update…'
+  _progressWin.webContents.executeJavaScript(`
+    (function(){
+      var b=document.getElementById('bar');   if(b) b.style.width=${JSON.stringify(pct+'%')};
+      var p=document.getElementById('pct');   if(p) p.textContent=${JSON.stringify(pct+'%')};
+      var s=document.getElementById('speed'); if(s) s.textContent=${JSON.stringify(speedStr)};
+      var u=document.getElementById('sub');   if(u) u.textContent=${JSON.stringify(subText)};
+    })()
+  `).catch(() => {})
+}
+
+function closeProgressWindow() {
+  if (_progressWin && !_progressWin.isDestroyed()) {
+    try { _progressWin.close() } catch (_) {}
+    _progressWin = null
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 function _applyUpdateNow() {
   isQuitting = true
   killServer()
-  autoUpdater.quitAndInstall()
+  if (!app.isPackaged) {
+    // quitAndInstall() is a no-op in dev mode (no installer to run).
+    // Relaunch the process directly so the flow is testable end-to-end.
+    app.relaunch()
+    app.exit(0)
+  } else {
+    // isSilent=false  forceRunAfter=true — quit, run installer, restart app
+    autoUpdater.quitAndInstall(false, true)
+  }
 }
 
 function _notifyUpdateReady() {
@@ -1053,19 +1139,15 @@ function setupAutoUpdater() {
 
   autoUpdater.on('update-available', info => {
     console.log(`[updater] Update available: ${info.version}`)
-    dialog.showMessageBox({ icon: appDialogIcon,
-      type: 'info',
-      title: 'Update Downloading',
-      message: `Forge OS ${info.version} is available.`,
-      detail: 'Downloading in the background. You\'ll be prompted to restart when it\'s ready.',
-      buttons: ['OK']
-    })
     _updateCheckManual = false
     _updateChecking = false
+    // Show progress window immediately so the user sees something happening
+    showProgressWindow(info.version)
     // Start download manually — we own the promise so unhandled rejections are impossible.
     // The 'error' event fires on failure; this .catch() is just the safety net.
     autoUpdater.downloadUpdate().catch(err => {
       console.error('[updater] Download failed:', err.message)
+      closeProgressWindow()
       if (tray) tray.setToolTip('Forge OS')
     })
   })
@@ -1089,17 +1171,25 @@ function setupAutoUpdater() {
     console.log(`[updater] Update downloaded: ${info.version}`)
     _updateReady = true
     _updateChecking = false
-    _notifyUpdateReady()
+    // Fill bar to 100% briefly, then close and prompt restart
+    updateProgressWindow(100, 0)
+    setTimeout(() => {
+      closeProgressWindow()
+      _notifyUpdateReady()
+    }, 600)
   })
 
   autoUpdater.on('download-progress', progress => {
     const pct = Math.round(progress.percent)
     if (tray) tray.setToolTip(`Forge OS — Downloading update ${pct}%`)
-    console.log(`[updater] Download ${pct}%`)
+    updateProgressWindow(pct, Math.round(progress.bytesPerSecond || 0))
+    console.log(`[updater] Download ${pct}% — ${_formatBytes(Math.round(progress.bytesPerSecond || 0))}/s`)
   })
 
   autoUpdater.on('error', err => {
     console.error('[updater]', err.message)
+    closeProgressWindow()
+    if (tray) tray.setToolTip('Forge OS')
     if (_updateCheckManual) {
       dialog.showMessageBox({ icon: appDialogIcon,
         type: 'warning',

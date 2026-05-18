@@ -1,6 +1,6 @@
 {
   "name": "forge-os",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "description": "Forge OS — Documentation-first PDLC automation desktop app",
   "main": "main.js",
   "scripts": {
@@ -20,6 +20,7 @@
   "build": {
     "appId": "com.forgeos.desktop",
     "productName": "Forge OS",
+    "artifactName": "forge-os-${version}-${arch}-${os}.${ext}",
     "copyright": "Copyright © 2026",
     "extraResources": [
       {

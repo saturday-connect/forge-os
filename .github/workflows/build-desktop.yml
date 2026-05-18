@@ -45,6 +45,11 @@ jobs:
         run: npm install
         working-directory: electron
 
+      # Clean any stale dist/ artifacts from prior runs — prevents electron-builder
+      # from publishing old latest*.yml files that reference renamed/missing assets.
+      - name: Clean dist
+        run: rm -rf electron/dist
+
       - name: Build desktop app (macOS)
         if: runner.os == 'macOS'
         run: npm run build:mac -- --publish never
