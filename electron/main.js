@@ -1232,6 +1232,14 @@ function _applyUpdateNow() {
 function _notifyUpdateReady(version, releaseNotes, force = false) {
   const ver = version || _updateReadyVersion || ''
 
+  // In dev mode the Squirrel.Mac installer never runs — suppress the restart dialog
+  // so the user isn't stuck in a relaunch loop. checkForUpdatesManual() shows a
+  // dev-mode explanation when the user explicitly clicks.
+  if (!app.isPackaged) {
+    console.log(`[updater] Dev mode — suppressing restart dialog for ${ver}`)
+    return
+  }
+
   // Guard: if we already showed the restart dialog for this exact version in a
   // previous session, don't spam it again on every relaunch.
   // Bypassed when force=true (e.g. explicit "Check for Updates" click).
@@ -1468,6 +1476,18 @@ function setupAutoUpdater() {
 // Called from tray "Check for Updates" — marks intent as manual so "up to date"
 // dialog is shown, then fires the check.
 function checkForUpdatesManual() {
+  // In dev mode the packaged Squirrel.Mac installer never runs, so showing a
+  // "restart to update" dialog is misleading — tell the developer instead.
+  if (!app.isPackaged) {
+    dialog.showMessageBox({ icon: appDialogIcon,
+      type: 'info',
+      title: 'Dev build — updates disabled',
+      message: 'You are running a dev build.',
+      detail: `Update checks work, but the installer only runs in packaged builds.\nInstall the latest DMG from GitHub Releases to get v${_updateReadyVersion || '?'}.`,
+      buttons: ['OK']
+    }).catch(() => {})
+    return
+  }
   if (_updateReady) {
     // Update already staged — skip the network round-trip, go straight to install prompt.
     // Pass force=true so the "already shown" guard doesn't suppress the dialog for an
