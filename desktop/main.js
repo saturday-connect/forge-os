@@ -1,6 +1,6 @@
 'use strict'
 
-const { app, BrowserWindow, Tray, Menu, shell, dialog, nativeImage, ipcMain, clipboard } = require('electron')
+const { app, BrowserWindow, Tray, Menu, shell, dialog, nativeImage, ipcMain, clipboard, Notification } = require('electron')
 const { autoUpdater } = require('electron-updater')
 const { spawn, execSync, execFileSync } = require('child_process')
 const path = require('path')
@@ -1411,53 +1411,108 @@ function _applyUpdateNow() {
   }
 }
 
+// ── Reminder scheduler ────────────────────────────────────────────────────
+// After 48 h with an update pending and not installed, send one follow-up
+// OS notification.  Only fires once per pending version (tracked in config).
+const UPDATE_REMINDER_MS = 48 * 60 * 60 * 1000   // 48 hours
+let _reminderTimer = null
+
+function _scheduleUpdateReminder(ver) {
+  if (_reminderTimer) { clearTimeout(_reminderTimer); _reminderTimer = null }
+  if (!app.isPackaged) return
+  const cfg = readConfig()
+  if (cfg.updateReminderSentVersion === ver) return   // already sent for this version
+  const notifiedAt = cfg.updateNotifiedAt || 0
+  const elapsed    = Date.now() - notifiedAt
+  const delay      = Math.max(UPDATE_REMINDER_MS - elapsed, 60 * 1000)  // at least 60 s
+  console.log(`[updater] Reminder scheduled in ${Math.round(delay / 3600000 * 10) / 10}h for v${ver}`)
+  _reminderTimer = setTimeout(() => {
+    _reminderTimer = null
+    if (!_updateReady || _updateReadyVersion !== ver) return  // already installed
+    console.log(`[updater] Sending reminder notification for v${ver}`)
+    _sendOsNotification({
+      title: 'Forge OS update still pending',
+      body: `Version ${ver} is ready — restart Forge OS whenever you're ready to install.`,
+      urgency: 'low'
+    })
+    writeConfig({ ...readConfig(), updateReminderSentVersion: ver })
+  }, delay)
+}
+
+// ── OS notification helper ────────────────────────────────────────────────
+function _sendOsNotification({ title, body, urgency = 'normal', onAction } = {}) {
+  if (!Notification.isSupported()) return
+  const n = new Notification({
+    title,
+    body,
+    silent: urgency === 'low',
+    // macOS-only action buttons; ignored on Windows/Linux (plain click focuses window)
+    actions: onAction ? [{ type: 'button', text: 'Restart Now' }] : [],
+    closeButtonText: 'Later',
+    icon: app.isPackaged
+      ? path.join(process.resourcesPath, '..', 'Resources', 'assets', 'icon.png')
+      : path.join(__dirname, 'assets', 'icon.png'),
+  })
+  n.on('click', () => {
+    if (win) { win.show(); win.focus() }
+  })
+  if (onAction) {
+    n.on('action', (_e, idx) => { if (idx === 0) onAction() })
+  }
+  n.show()
+  return n
+}
+
 function _notifyUpdateReady(version, releaseNotes, force = false) {
   const ver = version || _updateReadyVersion || ''
 
-  // In dev mode the Squirrel.Mac installer never runs — suppress the restart dialog
-  // so the user isn't stuck in a relaunch loop. checkForUpdatesManual() shows a
-  // dev-mode explanation when the user explicitly clicks.
   if (!app.isPackaged) {
-    console.log(`[updater] Dev mode — suppressing restart dialog for ${ver}`)
+    console.log(`[updater] Dev mode — suppressing update notification for ${ver}`)
     return
   }
 
-  // Guard: if we already showed the restart dialog for this exact version in a
-  // previous session, don't spam it again on every relaunch.
-  // Bypassed when force=true (e.g. explicit "Check for Updates" click).
+  // Guard: don't re-notify for the same version on every relaunch.
+  // Bypassed when force=true (explicit "Check for Updates" click).
   const config = readConfig()
   if (!force && config.updateNotifiedVersion === ver) {
-    console.log(`[updater] Restart dialog already shown for ${ver} — skipping`)
+    console.log(`[updater] Already notified for ${ver} — restoring banner only`)
+    // Still restore the in-app banner (user may have dismissed it last session)
+    _showUpdateBannerInApp(ver)
     return
   }
 
-  // New version: update tray now that we've confirmed this is a first notification
+  writeConfig({ ...config, updateNotifiedVersion: ver, updateNotifiedAt: Date.now() })
+
+  // 1. Tray — tooltip + menu item
   if (tray) {
-    tray.setToolTip(`Forge OS — Update ${ver} ready to install`)
+    tray.setToolTip(`Forge OS — Update ${ver} ready`)
     buildTrayMenu()
   }
 
-  writeConfig({ ...config, updateNotifiedVersion: ver })
-
-  // Build release-notes excerpt for the dialog detail line
-  const notes = _truncate(_stripHtml(releaseNotes || ''), 280)
-  const detail = notes
-    ? `What's new in ${ver}:\n${notes}\n\nRestart now to apply, or it will install the next time you quit.`
-    : 'Restart now to apply it, or it will install automatically the next time you quit.'
-
-  dialog.showMessageBox({ icon: appDialogIcon,
-    type: 'info',
-    title: `Forge OS ${ver} Ready`,
-    message: `Forge OS ${ver} has downloaded and is ready to install.`,
-    detail,
-    buttons: ['Restart Now', 'Later'],
-    defaultId: 0
-  }).then(({ response }) => {
-    if (response === 0) _applyUpdateNow()
-  }).catch(err => {
-    // Squirrel.Mac may throw if it races with the background install — safe to ignore
-    console.warn('[updater] Restart dialog error (harmless in dev):', err.message)
+  // 2. OS notification — non-blocking, appears in notification centre
+  //    Action button on macOS lets the user install without opening the app.
+  _sendOsNotification({
+    title: `Forge OS ${ver} ready to install`,
+    body: 'The update has downloaded. Restart to apply it.',
+    onAction: () => _applyUpdateNow()
   })
+
+  // 3. In-app banner — persistent green bar below topbar, survives navigation
+  _showUpdateBannerInApp(ver)
+
+  // 4. Schedule a 48 h reminder if the user hasn't installed yet
+  _scheduleUpdateReminder(ver)
+}
+
+function _showUpdateBannerInApp(ver) {
+  if (!win || win.isDestroyed()) return
+  win.webContents
+    .executeJavaScript(`typeof window.forgeElectron !== 'undefined' && window.forgeElectron !== null`)
+    .then(bridgePresent => {
+      if (!bridgePresent) return
+      win.webContents.send('forge:update-ready', { version: ver })
+    })
+    .catch(() => {})
 }
 
 function _startDownload() {
@@ -1494,6 +1549,15 @@ function setupAutoUpdater() {
   // In dev mode, Squirrel.Mac auto-install fails (bundle ID mismatch). Packaged builds
   // auto-install on quit so users who click "Later" still get the update eventually.
   autoUpdater.autoInstallOnAppQuit = app.isPackaged
+
+  // In-app banner buttons
+  ipcMain.on('forge:install-update', () => { _applyUpdateNow() })
+  ipcMain.on('forge:dismiss-update', () => {
+    // User chose "Later" — clear the tray tooltip but keep _updateReady true so
+    // the tray menu still shows "Restart to Update" and the banner returns next launch.
+    if (tray) tray.setToolTip('Forge OS')
+    console.log('[updater] User deferred update install')
+  })
 
   // "Try Again" button in the progress window sends this IPC message
   ipcMain.on('updater-retry', () => {
@@ -1563,8 +1627,9 @@ function setupAutoUpdater() {
       }
       _updateReady        = false
       _updateReadyVersion = null
+      if (_reminderTimer) { clearTimeout(_reminderTimer); _reminderTimer = null }
       if (tray) { tray.setToolTip('Forge OS'); buildTrayMenu() }
-      // If this was a manual check, let the user know they're up to date
+      if (win && !win.isDestroyed()) win.webContents.send('forge:update-cleared')
       if (_manualCheckPending) _showUpToDateDialog()
       return
     }
@@ -1968,6 +2033,13 @@ if (!app.requestSingleInstanceLock()) {
     try {
       await waitForServer(serverPort)
       win.loadURL(`http://127.0.0.1:${serverPort}`)
+      // Restore the update banner if an update was deferred in a previous session.
+      // The page needs to finish loading before the IPC bridge is available.
+      win.webContents.once('did-finish-load', () => {
+        if (_updateReady && _updateReadyVersion) {
+          setTimeout(() => _showUpdateBannerInApp(_updateReadyVersion), 800)
+        }
+      })
       win.show()
     } catch (err) {
       dialog.showErrorBox(

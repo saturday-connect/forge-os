@@ -3483,3 +3483,29 @@ const _vc = document.getElementById('viewer-content');
 if (_vc && !_vc.innerHTML.trim()) _vc.innerHTML = VIEWER_DEFAULT_HTML;
 
 startPolling();
+
+// ============================================================
+// Electron update banner (Forge OS desktop only)
+// ============================================================
+function updateBannerInstall() {
+  if (window.forgeElectron) window.forgeElectron.installUpdate();
+}
+function updateBannerDismiss() {
+  const el = document.getElementById('update-banner');
+  if (el) el.style.display = 'none';
+  if (window.forgeElectron) window.forgeElectron.dismissUpdate();
+}
+
+if (window.forgeElectron) {
+  window.forgeElectron.onUpdateReady(({ version }) => {
+    const banner = document.getElementById('update-banner');
+    const verEl  = document.getElementById('update-banner-version');
+    if (!banner) return;
+    if (verEl) verEl.textContent = version;
+    banner.style.display = 'flex';
+  });
+  window.forgeElectron.onUpdateCleared(() => {
+    const banner = document.getElementById('update-banner');
+    if (banner) banner.style.display = 'none';
+  });
+}
