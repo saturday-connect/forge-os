@@ -1059,25 +1059,23 @@
         </div>
 
         <div class="platform-downloads">
-          <a id="dl-mac-arm" class="dl-link loading" href="https://github.com/saturday-connect/forge-os/releases/latest" aria-label="Download macOS Apple Silicon DMG">
+          <a id="dl-mac-arm" class="dl-link loading" href="https://github.com/saturday-connect/forge-os/releases/latest" aria-label="Download macOS Apple Silicon PKG">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
             </svg>
-            Apple Silicon (.dmg)
+            Apple Silicon (.pkg)
           </a>
-          <a id="dl-mac-intel" class="dl-link loading" href="https://github.com/saturday-connect/forge-os/releases/latest" aria-label="Download macOS Intel DMG">
+          <a id="dl-mac-intel" class="dl-link loading" href="https://github.com/saturday-connect/forge-os/releases/latest" aria-label="Download macOS Intel PKG">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
             </svg>
-            Intel x64 (.dmg)
+            Intel x64 (.pkg)
           </a>
         </div>
 
         <div class="platform-install-note">
-          Open the DMG, drag Forge OS to Applications, then double-click to launch.<br /><br />
-          <strong style="color:var(--accent);font-weight:600;">"Forge OS is damaged" fix</strong> — macOS quarantines apps downloaded from the web that aren't yet notarized. Run this once in Terminal, then relaunch:
-          <div class="code-block" style="margin-top:8px;">xattr -cr "/Applications/Forge OS.app"</div>
-          Alternatively: right-click the app &rarr; <em>Open</em> &rarr; <em>Open Anyway</em>.
+          Download and run the installer. The installer automatically configures the app to run on your system.<br /><br />
+          <strong style="color:var(--accent);font-weight:600;">"Unidentified developer" fix:</strong> macOS may block the installer because it is not yet notarized. To bypass this, <strong>right-click</strong> the <span class="inline-code">.pkg</span> file, select <em>Open</em>, and click <em>Open</em> again.
         </div>
       </div>
 
@@ -1205,8 +1203,8 @@
       var assets = release.assets || []
       var tag = release.tag_name || ''
 
-      var arm   = assets.find(function(a){ return /arm64.*\.dmg$/i.test(a.name) })
-      var intel = assets.find(function(a){ return /\.dmg$/i.test(a.name) && !/arm64/i.test(a.name) })
+      var arm   = assets.find(function(a){ return /arm64.*\.pkg$/i.test(a.name) })
+      var intel = assets.find(function(a){ return /\.pkg$/i.test(a.name) && !/arm64/i.test(a.name) })
       var win   = assets.find(function(a){ return /\.exe$/i.test(a.name) })
       var linux = assets.find(function(a){ return /\.AppImage$/i.test(a.name) })
 
