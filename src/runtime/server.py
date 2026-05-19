@@ -143,14 +143,15 @@ logger = logging.getLogger("forge.server")
 # shutil.which() and all subprocess calls can find gemini, claude, codex, etc.
 # ---------------------------------------------------------------------------
 import glob as _glob
+_nvm_node_bins = sorted(_glob.glob(os.path.expanduser("~/.nvm/versions/node/*/bin")), reverse=True)
 _extra_paths = [
-    "/opt/homebrew/bin",
-    "/opt/homebrew/sbin",
-    "/usr/local/bin",
-    *_glob.glob(os.path.expanduser("~/.nvm/versions/node/*/bin")),
+    *_nvm_node_bins,
     os.path.expanduser("~/.npm-global/bin"),
     os.path.expanduser("~/.npm/bin"),
     os.path.expanduser("~/.local/bin"),
+    "/opt/homebrew/bin",
+    "/opt/homebrew/sbin",
+    "/usr/local/bin",
 ]
 os.environ["PATH"] = os.pathsep.join(
     [p for p in _extra_paths if os.path.isdir(p)] + [os.environ.get("PATH", "")]

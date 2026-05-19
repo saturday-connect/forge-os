@@ -190,7 +190,9 @@ GEMINI_AUTH_PROMPT_MARKERS = [
     "opening authentication page",
     "do you want to continue",
 ]
-ERROR_GEMINI_AUTH_REQUIRED = "Gemini CLI is waiting for browser authentication. Run `gemini` once in Terminal and complete login, or configure Gemini API credentials, then retry generation."
+GEMINI_AUTH_CONFIRMATION = "y\n"
+ERROR_GEMINI_AUTH_REQUIRED = "Gemini CLI is waiting for browser authentication. Complete the browser sign-in that Gemini opened, then retry generation."
+ERROR_GEMINI_AUTH_TIMEOUT = "Gemini browser authentication did not complete before the generation timeout. Run `gemini` in Terminal, finish sign-in, then retry generation."
 ERROR_AI_QUOTA_LIMIT = "The AI request failed because the model quota or rate limit was reached. Wait a few minutes, then retry."
 ERROR_AI_GENERATION_TIMEOUT = "The AI model did not respond before the generation timeout. Check Gemini CLI authentication or quota, then retry."
 ERROR_AI_GENERATION_FAILED = "The AI model returned an error. It may have reached its usage limit. Wait a minute and try again."
@@ -262,6 +264,12 @@ def normalize_model_failure(output_text, fallback_message):
         return ERROR_AI_QUOTA_LIMIT
     return fallback_message
 
+def display_rel_path(path_value):
+    abs_path = os.path.abspath(path_value)
+    abs_forge_dir = os.path.abspath(FORGE_DIR)
+    rel_base = abs_forge_dir if os.path.commonpath([abs_path, abs_forge_dir]) == abs_forge_dir else os.path.abspath(REPO_ROOT)
+    return os.path.relpath(abs_path, rel_base)
+
 def parse_args():
     parser = argparse.ArgumentParser(description="Forge Pipeline Runner")
     parser.add_argument("stage", help="Stage name (e.g., context, requirements)")
@@ -326,7 +334,7 @@ def resolve_inputs(stage, raw_input):
         
     dirs = STAGE_INPUTS.get(stage, [])
     for d in dirs:
-        dir_path = os.path.join(REPO_ROOT, d)
+        dir_path = os.path.join(FORGE_DIR, d)
         if os.path.isdir(dir_path):
             for root, _, files in os.walk(dir_path):
                 for file in files:
@@ -363,7 +371,7 @@ def build_prompt(agent_path, inputs, output_file, critique=None):
 
     provided_context = ""
     for f_path in inputs:
-        rel_path = os.path.relpath(f_path, REPO_ROOT)
+        rel_path = display_rel_path(f_path)
         with open(f_path, 'r', encoding='utf-8') as f:
             provided_context += f"\n--- START OF {{rel_path}} ---\n\n{{f.read()}}\n--- END OF {{rel_path}} ---\n"
 
@@ -434,13 +442,13 @@ def invoke_model(prompt, output_path):
             with open(tmp_path, 'w', encoding='utf-8') as out_f:
                 proc = subprocess.Popen(
                     cmd,
-                    stdin=subprocess.DEVNULL,
+                    stdin=subprocess.PIPE,
                     stdout=out_f,
                     stderr=subprocess.STDOUT,
                     text=True
                 )
                 started_at = time.time()
-                auth_prompted = False
+                auth_prompt_answered = False
                 while proc.poll() is None:
                     if time.time() - started_at > AI_GENERATION_TIMEOUT_SECS:
                         proc.kill()
@@ -448,28 +456,26 @@ def invoke_model(prompt, output_path):
                         with open(tmp_path, 'r', encoding='utf-8') as f:
                             timeout_output = f.read()
                         append_ai_log(output_path, tool, model_id, timeout_output, "")
-                        msg = normalize_model_failure(timeout_output, ERROR_AI_GENERATION_TIMEOUT)
+                        msg = ERROR_GEMINI_AUTH_TIMEOUT if auth_prompt_answered else normalize_model_failure(timeout_output, ERROR_AI_GENERATION_TIMEOUT)
                         _write_run_error(output_path, msg)
                         log_error(msg)
                         sys.exit(1)
                     out_f.flush()
                     with open(tmp_path, 'r', encoding='utf-8') as f:
                         partial_output = f.read()
-                    if any(marker in partial_output.lower() for marker in GEMINI_AUTH_PROMPT_MARKERS):
-                        auth_prompted = True
-                        proc.terminate()
+                    if not auth_prompt_answered and any(marker in partial_output.lower() for marker in GEMINI_AUTH_PROMPT_MARKERS):
+                        auth_prompt_answered = True
                         try:
-                            proc.wait(timeout=2)
-                        except subprocess.TimeoutExpired:
-                            proc.kill()
-                            proc.wait()
-                        break
+                            proc.stdin.write(GEMINI_AUTH_CONFIRMATION)
+                            proc.stdin.flush()
+                        except Exception:
+                            pass
                     time.sleep(0.5)
                 returncode = proc.returncode if proc.returncode is not None else 1
             with open(tmp_path, 'r', encoding='utf-8') as f:
                 stdout_text = f.read()
             append_ai_log(output_path, tool, model_id, stdout_text, "")
-            if returncode != 0 or auth_prompted:
+            if returncode != 0:
                 msg = normalize_model_failure(stdout_text, ERROR_AI_GENERATION_FAILED)
                 _write_run_error(output_path, msg)
                 log_error(msg)
@@ -528,11 +534,13 @@ def invoke_model(prompt, output_path):
             _write_run_error(output_path, msg)
             log_error(msg)
             sys.exit(1)
+
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
             
         # Save existing content as a version before overwriting
         if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
             try:
-                rel = os.path.relpath(output_path, REPO_ROOT)          # e.g. 00-context/product-vision.md
+                rel = os.path.relpath(output_path, FORGE_DIR)
                 stem = os.path.splitext(rel)[0]
                 ver_dir = os.path.join(VERSIONS_DIR, stem)
                 os.makedirs(ver_dir, exist_ok=True)
@@ -581,14 +589,14 @@ def main():
     inputs = resolve_inputs(args.stage, args.raw_input)
     log_info("Loading inputs...")
     for f in inputs:
-        rel_f = os.path.relpath(f, REPO_ROOT)
+        rel_f = display_rel_path(f)
         log_info(f"  -> {{rel_f}}")
         
     output_file = args.output
     if not output_file:
         output_file = f"01-requirements/prd.md" if args.stage == "requirements" else f"out-{{args.stage}}.md"
         
-    output_path = os.path.join(REPO_ROOT, output_file)
+    output_path = os.path.join(FORGE_DIR, output_file)
     
     # FORGE_TOOL / FORGE_MODEL env vars (set by server) take precedence over --model arg
     state.tool = os.environ.get("FORGE_TOOL", state.model)
