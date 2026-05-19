@@ -4,6 +4,9 @@ from pprint import pformat
 
 FORGE_VERSION = "0.3.4"
 
+PFORMAT_WIDE   = 120
+PFORMAT_NORMAL = 100
+
 _DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
 
 def _load_tools():
@@ -13,7 +16,7 @@ def _load_tools():
 KNOWN_TOOLS = _load_tools()
 
 def _generate_known_tools_code(tools):
-    return "KNOWN_TOOLS = " + pformat(tools, width=120)
+    return "KNOWN_TOOLS = " + pformat(tools, width=PFORMAT_WIDE)
 
 def _generate_allowed_models_code(tools):
     allowed = {k: {m["id"] for m in v["models"]} for k, v in tools.items()}
@@ -29,11 +32,9 @@ def _load_build_steps():
         data = _json.load(fh)
     return data["steps"], data["order"]
 
-STEPS, BUILD_ORDER = _load_build_steps()
-
 def _generate_steps_code(steps, order):
     return (
-        "STEPS = " + pformat(steps, width=120) + "\n\n"
+        "STEPS = " + pformat(steps, width=PFORMAT_WIDE) + "\n\n"
         "BUILD_ORDER = " + repr(order)
     )
 
@@ -59,17 +60,23 @@ def _load_stages():
     with open(os.path.join(_DATA_DIR, "stages.json"), encoding="utf-8") as fh:
         return _json.load(fh)
 
-_CODE_AGENT_KEYS = {"code-architect", "frontend-coder", "integration-engineer", "qa-coder", "devops-coder"}
+def _load_stage_pipeline():
+    with open(os.path.join(_DATA_DIR, "stage_pipeline.json"), encoding="utf-8") as fh:
+        return _json.load(fh)
+
+STEPS, BUILD_ORDER = _load_build_steps()
+_CODE_AGENT_KEYS = {v["agent"] for v in STEPS.values()}
 _all_agents = _load_agents()
 CODE_AGENTS = {k: v for k, v in _all_agents.items() if k in _CODE_AGENT_KEYS}
 AGENTS = {k: v for k, v in _all_agents.items() if k not in _CODE_AGENT_KEYS}
 GATES = _load_gates()
 STAGE_OUTPUT_FILES = _load_stages()
+STAGE_PIPELINE = _load_stage_pipeline()
 
-STAGE_MULTI_OUTPUTS = f"STAGE_MULTI_OUTPUTS = {pformat(STAGE_OUTPUT_FILES, width=100)}"
+STAGE_MULTI_OUTPUTS = f"STAGE_MULTI_OUTPUTS = {pformat(STAGE_OUTPUT_FILES, width=PFORMAT_NORMAL)}"
 FILES_TO_TOUCH = pformat(
     [file_path for output_files in STAGE_OUTPUT_FILES.values() for file_path in output_files],
-    width=100,
+    width=PFORMAT_NORMAL,
 )
 
 def _assemble_dashboard_html():
@@ -115,6 +122,41 @@ BUILD_RUNNER_PY_CONTENT = BUILD_RUNNER_PY_CONTENT.replace(
     "STEPS = {}  # __FORGE_BUILD_STEPS__",
     _generate_steps_code(STEPS, BUILD_ORDER)
 )
+
+def _stage_agent_code():
+    return "STAGE_AGENT = " + pformat(STAGE_PIPELINE["stage_agent"], width=PFORMAT_NORMAL, sort_dicts=False)
+
+def _stage_gate_code():
+    return "STAGE_GATE = " + pformat(STAGE_PIPELINE["stage_gate"], width=PFORMAT_NORMAL, sort_dicts=False)
+
+def _stage_inputs_code():
+    return "STAGE_INPUTS = " + pformat(STAGE_PIPELINE["stage_inputs"], width=PFORMAT_NORMAL, sort_dicts=False)
+
+def _pipeline_stages_code():
+    stages = list(STAGE_OUTPUT_FILES.keys())
+    return "PIPELINE_STAGES = " + repr(stages)
+
+def _directories_code():
+    lines = ["    directories = ["]
+    for d in STAGE_PIPELINE["directories"]:
+        lines.append(f"        {repr(d)},")
+    lines.append("    ]")
+    return "\n".join(lines)
+
+def _agents_list_code():
+    all_agents = {**AGENTS, **CODE_AGENTS}
+    lines = ["    agents = ["]
+    for a in all_agents:
+        lines.append(f"        {repr(a)},")
+    lines.append("    ]")
+    return "\n".join(lines)
+
+def _gates_list_code():
+    lines = ["    gates = ["]
+    for g in GATES:
+        lines.append(f"        {repr(g)},")
+    lines.append("    ]")
+    return "\n".join(lines)
 
 TEMPLATE = '''#!/usr/bin/env python3
 import sys
@@ -313,47 +355,11 @@ def _list_org_context_files():
         return sorted(os.path.join(d, f) for f in os.listdir(d) if f.endswith(".md"))
     return _md_files("knowledge"), _md_files("patterns"), _md_files("agents")
 
-STAGE_AGENT = {{
-    "context": "product-strategist",
-    "requirements": "product-manager",
-    "design": "product-designer",
-    "analysis": "business-analyst",
-    "architecture": "architect",
-    "delivery": "product-manager",
-    "engineering": "backend-engineer",
-    "qa": "qa-engineer",
-    "operations": "devops-engineer",
-    "release": "release-manager",
-    "marketing": "marketing-strategist"
-}}
+{STAGE_AGENT_CODE}
 
-STAGE_GATE = {{
-    "context": "",
-    "requirements": "context-gate",
-    "design": "prd-gate",
-    "analysis": "prd-gate",
-    "architecture": "design-gate",
-    "delivery": "architecture-gate",
-    "engineering": "architecture-gate",
-    "qa": "engineering-gate",
-    "operations": "qa-gate",
-    "release": "release-gate",
-    "marketing": "release-gate"
-}}
+{STAGE_GATE_CODE}
 
-STAGE_INPUTS = {{
-    "context": [],
-    "requirements": ["00-context"],
-    "design": ["00-context", "01-requirements"],
-    "analysis": ["01-requirements"],
-    "architecture": ["01-requirements", "02-design", "03-analysis"],
-    "delivery": ["01-requirements", "04-architecture"],
-    "engineering": ["04-architecture", "02-design"],
-    "qa": ["01-requirements", "06-engineering"],
-    "operations": ["04-architecture", "06-engineering"],
-    "release": ["05-delivery", "07-quality"],
-    "marketing": ["00-context", "05-delivery"]
-}}
+{STAGE_INPUTS_CODE}
 
 class RunState:
     def __init__(self):
@@ -577,7 +583,7 @@ def invoke_model(prompt, output_path):
             if not api_key:
                 log_error("OPENAI_API_KEY environment variable is not set.")
                 sys.exit(1)
-            model_name = os.environ.get("OPENAI_MODEL", "gpt-4o")
+            model_name = os.environ.get("OPENAI_MODEL", OPENAI_DEFAULT_MODEL)
             
             data = json.dumps({{
                 "model": model_name,
@@ -585,7 +591,7 @@ def invoke_model(prompt, output_path):
             }}).encode('utf-8')
             
             req = urllib.request.Request(
-                "https://api.openai.com/v1/chat/completions",
+                OPENAI_API_URL,
                 data=data,
                 headers={{
                     "Content-Type": "application/json",
@@ -795,35 +801,7 @@ def cmd_init():
     FORGE_DIR = data_dir
     os.makedirs(FORGE_DIR, exist_ok=True)
 
-    directories = [
-        "00-context",
-        "01-requirements",
-        "02-design",
-        "03-analysis",
-        "04-architecture/adr",
-        "05-delivery",
-        "06-engineering",
-        "07-quality",
-        "08-operations",
-        "09-release",
-        "10-marketing",
-        "11-agents",
-        "12-gates",
-        "13-decisions",
-        "14-assets/logos",
-        "14-assets/mockups",
-        "14-assets/diagrams",
-        "14-assets/screenshots",
-        "14-assets/presentations",
-        "14-assets/prototypes",
-        "runs",
-        "scripts",
-        "15-build/backend",
-        "15-build/frontend",
-        "15-build/integration",
-        "15-build/tests",
-        "15-build/infra",
-    ]
+{DIRECTORIES_CODE}
 
     for d in directories:
         os.makedirs(os.path.join(FORGE_DIR, d), exist_ok=True)
@@ -835,32 +813,7 @@ def cmd_init():
             pass
 
     # Agents
-    agents = [
-        "product-strategist",
-        "product-manager",
-        "business-analyst",
-        "product-designer",
-        "ux-designer",
-        "design-system-reviewer",
-        "architect",
-        "backend-engineer",
-        "frontend-engineer",
-        "qa-engineer",
-        "devops-engineer",
-        "security-reviewer",
-        "release-manager",
-        "marketing-strategist",
-        "brand-strategist",
-        "content-writer",
-        "seo-specialist",
-        "growth-marketer",
-        "product-analyst",
-        "code-architect",
-        "frontend-coder",
-        "integration-engineer",
-        "qa-coder",
-        "devops-coder",
-    ]
+{AGENTS_LIST_CODE}
 
     agent_template = """# Agent: {{agent}}
 
@@ -888,16 +841,7 @@ Define this agent's responsibility.
 {AGENT_CODE}
 
     # Gates
-    gates = [
-        "context-gate",
-        "prd-gate",
-        "design-gate",
-        "architecture-gate",
-        "engineering-gate",
-        "qa-gate",
-        "release-gate",
-        "marketing-gate"
-    ]
+{GATES_LIST_CODE}
 
     gate_template = """# Gate: {{gate}}
 
@@ -969,10 +913,7 @@ PENDING
 
     print(f"Forge OS environment initialized successfully in {{FORGE_DIR}}")
 
-PIPELINE_STAGES = [
-    "context", "requirements", "design", "analysis", "architecture",
-    "delivery", "engineering", "qa", "operations", "release", "marketing"
-]
+{PIPELINE_STAGES_CODE}
 
 def cmd_generate(stage, input_file=None):
     forge_data_dir, project_root = _resolve_data_dir()
@@ -1184,55 +1125,64 @@ if __name__ == "__main__":
         sys.exit(1)
 '''
 
-def build_forge():
+def _generate_agent_code():
     all_agents = {**AGENTS, **CODE_AGENTS}
-    agent_code = ('    for agent in agents:\n'
-                  '        agent_path = os.path.join(FORGE_DIR, f"11-agents/{agent}.md")\n'
-                  '        needs_write = not os.path.exists(agent_path)\n'
-                  '        if not needs_write:\n'
-                  '            with open(agent_path, encoding="utf-8") as _af:\n'
-                  '                _content = _af.read()\n'
-                  '            needs_write = "Define this agent" in _content or "TBD" in _content\n'
-                  '        if needs_write:\n'
-                  '            with open(agent_path, "w", encoding="utf-8") as f:\n')
+    code = ('    for agent in agents:\n'
+            '        agent_path = os.path.join(FORGE_DIR, f"11-agents/{agent}.md")\n'
+            '        needs_write = not os.path.exists(agent_path)\n'
+            '        if not needs_write:\n'
+            '            with open(agent_path, encoding="utf-8") as _af:\n'
+            '                _content = _af.read()\n'
+            '            needs_write = "Define this agent" in _content or "TBD" in _content\n'
+            '        if needs_write:\n'
+            '            with open(agent_path, "w", encoding="utf-8") as f:\n')
     first = True
     for agent, text in all_agents.items():
         if first:
-            agent_code += f'                if agent == "{agent}":\n                    f.write("""{text}""")\n'
+            code += f'                if agent == "{agent}":\n                    f.write("""{text}""")\n'
             first = False
         else:
-            agent_code += f'                elif agent == "{agent}":\n                    f.write("""{text}""")\n'
+            code += f'                elif agent == "{agent}":\n                    f.write("""{text}""")\n'
+    code += '                else:\n                    f.write(agent_template.format(agent=agent))\n'
+    return code
 
-    agent_code += '                else:\n                    f.write(agent_template.format(agent=agent))\n'
-    
-    gate_code = '    for gate in gates:\n        gate_path = os.path.join(FORGE_DIR, f"12-gates/{gate}.md")\n        if not os.path.exists(gate_path):\n            with open(gate_path, "w", encoding="utf-8") as f:\n'
-    first_gate = True
+def _generate_gate_code():
+    code = ('    for gate in gates:\n'
+            '        gate_path = os.path.join(FORGE_DIR, f"12-gates/{gate}.md")\n'
+            '        if not os.path.exists(gate_path):\n'
+            '            with open(gate_path, "w", encoding="utf-8") as f:\n')
+    first = True
     for gate, text in GATES.items():
-        if first_gate:
-            gate_code += f'                if gate == "{gate}":\n                    f.write("""{text}""")\n'
-            first_gate = False
+        if first:
+            code += f'                if gate == "{gate}":\n                    f.write("""{text}""")\n'
+            first = False
         else:
-            gate_code += f'                elif gate == "{gate}":\n                    f.write("""{text}""")\n'
-    gate_code += '                else:\n                    f.write(gate_template.format(gate=gate))\n'
+            code += f'                elif gate == "{gate}":\n                    f.write("""{text}""")\n'
+    code += '                else:\n                    f.write(gate_template.format(gate=gate))\n'
+    return code
 
+def _render_template():
     forge_content = TEMPLATE.format(
         STAGE_MULTI_OUTPUTS=STAGE_MULTI_OUTPUTS,
         FILES_TO_TOUCH=FILES_TO_TOUCH,
-        AGENT_CODE=agent_code,
-        GATE_CODE=gate_code,
+        AGENT_CODE=_generate_agent_code(),
+        GATE_CODE=_generate_gate_code(),
         DASHBOARD_HTML_CONTENT=DASHBOARD_HTML_CONTENT,
         FORGE_VERSION=FORGE_VERSION,
         BUILD_RUNNER_PY_CONTENT=BUILD_RUNNER_PY_CONTENT,
         ALLOWED_MODELS_CODE=_generate_allowed_models_code(KNOWN_TOOLS),
         CONSTANTS_PY_CONTENT=CONSTANTS_PY_CONTENT,
+        STAGE_AGENT_CODE=_stage_agent_code(),
+        STAGE_GATE_CODE=_stage_gate_code(),
+        STAGE_INPUTS_CODE=_stage_inputs_code(),
+        PIPELINE_STAGES_CODE=_pipeline_stages_code(),
+        DIRECTORIES_CODE=_directories_code(),
+        AGENTS_LIST_CODE=_agents_list_code(),
+        GATES_LIST_CODE=_gates_list_code(),
     )
+    return forge_content.replace("__FORGE_SERVER_PY__", SERVER_PY_CONTENT)
 
-    forge_content = forge_content.replace("__FORGE_SERVER_PY__", SERVER_PY_CONTENT)
-    with open("forge", "w", encoding='utf-8') as f:
-        f.write(forge_content)
-
-    # Hot-deploy dashboard.html, server.py, and constants.py to all existing .forge/scripts/
-    # directories so a rebuild immediately takes effect without a manual upgrade.
+def _hot_deploy_runtime():
     import glob, shutil
     src_dir = os.path.dirname(__file__)
     dashboard_src = os.path.join(src_dir, "dashboard.html")
@@ -1263,6 +1213,11 @@ def build_forge():
     if copied:
         print(f"Dashboard + server hot-deployed to {copied} runtime director{'y' if copied==1 else 'ies'}.")
 
+def build_forge():
+    forge_content = _render_template()
+    with open("forge", "w", encoding='utf-8') as f:
+        f.write(forge_content)
+    _hot_deploy_runtime()
     print("forge built successfully.")
 
 if __name__ == "__main__":

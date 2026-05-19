@@ -27,3 +27,7 @@ DEFAULT_BRANCH_PREFIX = "forge"
 # Build source-block markers (used in collect_docs and build_runner)
 SOURCE_MARKER     = "=== SOURCE: "
 SOURCE_MARKER_END = " ==="
+
+# OpenAI direct API
+OPENAI_API_URL       = "https://api.openai.com/v1/chat/completions"
+OPENAI_DEFAULT_MODEL = "gpt-4o"
