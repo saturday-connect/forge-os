@@ -13,6 +13,7 @@ import urllib.request
 import urllib.error
 from datetime import datetime
 from http.server import HTTPServer, BaseHTTPRequestHandler
+from constants import *
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -214,7 +215,7 @@ def invoke_ai(prompt, tool, model_id):
         else:
             cmd = ["gemini", "--skip-trust", "-p", prompt]
         with open(tmp_path, "w") as out_f:
-            result = subprocess.run(cmd, stdout=out_f, stderr=subprocess.PIPE, timeout=600)
+            result = subprocess.run(cmd, stdout=out_f, stderr=subprocess.PIPE, timeout=GENERATE_TIMEOUT_SECS)
         if result.returncode != 0:
             err = result.stderr.decode("utf-8", errors="replace") if result.stderr else "AI call failed"
             return None, normalize_ai_error(err)
@@ -245,7 +246,7 @@ def normalize_ai_error(raw_error):
         return "The AI request failed. Wait a few minutes, then retry."
     if not text:
         return "The AI model returned an error. Retry the request."
-    return text.splitlines()[0][:220]
+    return text.splitlines()[0][:ERROR_PREVIEW_LEN]
 
 
 GATE_STAGE_MAP = {
@@ -293,8 +294,8 @@ def _default_state():
             "repo_url": "",
             "username": "",
             "email": "",
-            "default_branch": "main",
-            "branch_prefix": "forge"
+            "default_branch": DEFAULT_BRANCH,
+            "branch_prefix": DEFAULT_BRANCH_PREFIX
         },
         "environments": {
             "staging": {"url": "", "branch": "staging", "status": "not_deployed", "deployed_at": ""},
@@ -404,7 +405,7 @@ def _parse_phases_from_docs():
                         desc_lines.append(l)
                         if len(desc_lines) >= 2:
                             break
-                desc = ' '.join(desc_lines)[:200]
+                desc = ' '.join(desc_lines)[:DESCRIPTION_MAX_LEN]
                 # Order: MVP=0, Phase N = N, else alphabetical
                 if _re.match(r'mvp', key):
                     order_key = 0
@@ -584,7 +585,7 @@ def _push_distill_to_kb(kb_repo_url, token, file_path, stage, ts):
                 "User-Agent": "forge-os",
             }
         )
-        with urllib.request.urlopen(_req, timeout=15) as _resp:
+        with urllib.request.urlopen(_req, timeout=GIT_TIMEOUT_SECS) as _resp:
             _pr = json.loads(_resp.read().decode("utf-8"))
             return _pr.get("html_url", ""), None
     except urllib.error.HTTPError as _e:
@@ -1207,7 +1208,7 @@ class ForgeHandler(BaseHTTPRequestHandler):
                     "curl", "-s", *auth_header,
                     "-H", "Accept: application/vnd.github.v3+json",
                     f"https://api.github.com/repos/{gh_owner}/{gh_repo}/pulls/{pr_num}"
-                ], capture_output=True, text=True, timeout=15)
+                ], capture_output=True, text=True, timeout=GIT_TIMEOUT_SECS)
                 pr_data = json.loads(curl_r.stdout)
                 state_val  = pr_data.get("state", "unknown")
                 merged     = pr_data.get("merged", False)
@@ -1228,7 +1229,7 @@ class ForgeHandler(BaseHTTPRequestHandler):
                                     "-H", f"Authorization: token {token}",
                                     "-H", "Accept: application/vnd.github.v3+json",
                                     f"https://api.github.com/repos/{gh_owner}/{gh_repo}/git/refs/heads/{branch_ref}",
-                                ], capture_output=True, text=True, timeout=15)
+                                ], capture_output=True, text=True, timeout=GIT_TIMEOUT_SECS)
                                 b["branch_deleted"] = del_r.stdout.strip() in ("204", "422")
                             updated = True
                     if updated:
@@ -1315,8 +1316,7 @@ class ForgeHandler(BaseHTTPRequestHandler):
 
         parsed = urllib.parse.urlparse(self.path)
         path = parsed.path
-        _MAX_BODY = 4 * 1024 * 1024
-        content_length = min(int(self.headers.get("Content-Length", 0) or 0), _MAX_BODY)
+        content_length = min(int(self.headers.get("Content-Length", 0) or 0), MAX_BODY_BYTES)
         post_data = self.rfile.read(content_length)
         try:
             data = json.loads(post_data.decode("utf-8")) if post_data else {}
@@ -1386,8 +1386,7 @@ class ForgeHandler(BaseHTTPRequestHandler):
             return
 
         # H5: cap request body at 4 MB to prevent memory exhaustion
-        _MAX_BODY = 4 * 1024 * 1024
-        content_length = min(int(self.headers.get("Content-Length", 0) or 0), _MAX_BODY)
+        content_length = min(int(self.headers.get("Content-Length", 0) or 0), MAX_BODY_BYTES)
         post_data = self.rfile.read(content_length)
         try:
             data = json.loads(post_data.decode("utf-8")) if post_data else {}
@@ -1698,8 +1697,7 @@ class ForgeHandler(BaseHTTPRequestHandler):
                     review_entry["total_changed_lines"] = total_changed
                     _save_review(review_entry)
 
-                    DIFF_CHAR_LIMIT = 4000
-                    is_large = total_changed > 800 or not has_commits
+                    is_large = total_changed > LARGE_CHANGESET_THRESHOLD or not has_commits
 
                     if is_large:
                         header_r = subprocess.run(
@@ -1708,7 +1706,7 @@ class ForgeHandler(BaseHTTPRequestHandler):
                         )
                         header_lines = [l for l in header_r.stdout.splitlines()
                                         if l.startswith(("---", "+++", "@@", "diff --git"))]
-                        diff_for_ai = "\n".join(header_lines[:200])
+                        diff_for_ai = "\n".join(header_lines[:DIFF_HEADER_LINES])
                         scope_note = (
                             f"NOTE: This {'first push' if not has_commits else 'large changeset'} has "
                             f"{total_changed} changed lines across many files. "
@@ -1766,7 +1764,7 @@ class ForgeHandler(BaseHTTPRequestHandler):
                     review_entry["pid"] = ai_proc.pid
                     _save_review(review_entry)
 
-                    ai_proc.wait(timeout=300)
+                    ai_proc.wait(timeout=AI_POLL_TIMEOUT_SECS)
                     ai_proc = None
 
                     current = _load_review()
@@ -2074,7 +2072,7 @@ class ForgeHandler(BaseHTTPRequestHandler):
                                             "-H", "User-Agent: ForgeOS/0.2.0",
                                             "-d", api_payload.decode(),
                                             f"https://api.github.com/repos/{gh_owner}/{gh_repo}/pulls",
-                                        ], capture_output=True, text=True, timeout=20)
+                                        ], capture_output=True, text=True, timeout=NETWORK_TIMEOUT_SECS)
                                         pr_json = json.loads(curl_res.stdout)
                                         pr_url = pr_json.get("html_url", "")
                                         if pr_url:
@@ -2090,7 +2088,7 @@ class ForgeHandler(BaseHTTPRequestHandler):
                                                 "-H", "User-Agent: ForgeOS/0.2.0",
                                                 "-d", '{"delete_branch_on_merge":true}',
                                                 f"https://api.github.com/repos/{gh_owner}/{gh_repo}",
-                                            ], capture_output=True, text=True, timeout=10)
+                                            ], capture_output=True, text=True, timeout=HTTP_CHECK_TIMEOUT_SECS)
                                             logs.append("Repo configured: delete branch on merge")
                                         else:
                                             err_msg = pr_json.get("message", curl_res.stdout[:200])
@@ -2682,7 +2680,7 @@ class ForgeHandler(BaseHTTPRequestHandler):
                         "curl", "-s", "-o", "/dev/null", "-w", "%{http_code}",
                         "-H", f"Authorization: token {token}",
                         f"https://api.github.com/repos/{gh_owner}/{gh_repo}/actions/variables/{name}"
-                    ], capture_output=True, text=True, timeout=15)
+                    ], capture_output=True, text=True, timeout=GIT_TIMEOUT_SECS)
                     method = "PATCH" if chk.stdout.strip() == "200" else "POST"
                     url_var = f"https://api.github.com/repos/{gh_owner}/{gh_repo}/actions/variables"
                     if method == "PATCH":
@@ -2695,7 +2693,7 @@ class ForgeHandler(BaseHTTPRequestHandler):
                         "-H", "Content-Type: application/json",
                         "-d", api_payload,
                         url_var
-                    ], capture_output=True, text=True, timeout=20)
+                    ], capture_output=True, text=True, timeout=NETWORK_TIMEOUT_SECS)
                     if curl_r.returncode != 0:
                         self._json_response(500, {"error": curl_r.stderr.strip()})
                         return
@@ -2713,7 +2711,7 @@ class ForgeHandler(BaseHTTPRequestHandler):
         self._json_response(404, {"error": "not found"})
 
 
-def run_server(port=8080):
+def run_server(port=DEFAULT_PORT):
     # C1: Bind to loopback only — never expose to 0.0.0.0 in production
     server_address = ("127.0.0.1", port)
     httpd = HTTPServer(server_address, ForgeHandler)
@@ -2726,5 +2724,5 @@ def run_server(port=8080):
 
 
 if __name__ == "__main__":
-    port = int(sys.argv[1]) if len(sys.argv) > 1 else 8080
+    port = int(sys.argv[1]) if len(sys.argv) > 1 else DEFAULT_PORT
     run_server(port)

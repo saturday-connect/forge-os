@@ -5,6 +5,7 @@ Usage: python3 scripts/build_runner.py <step>
 '''
 import os, sys, json, subprocess, tempfile
 from datetime import datetime
+from constants import *
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.environ.get("FORGE_REPO_ROOT", os.path.dirname(os.path.dirname(SCRIPT_DIR)))
@@ -48,13 +49,13 @@ def collect_docs(meta):
                     if os.path.getsize(fpath) > 0:
                         with open(fpath, encoding="utf-8") as f:
                             content = f.read()
-                        docs.append("=== SOURCE: " + dir_name + "/" + fname + " ===\n" + content)
+                        docs.append(SOURCE_MARKER + dir_name + "/" + fname + SOURCE_MARKER_END + "\n" + content)
     for rel_file in meta.get("source_files", []):
         fpath = os.path.join(FORGE_DIR, rel_file)
         if os.path.exists(fpath) and os.path.getsize(fpath) > 0:
             with open(fpath, encoding="utf-8") as f:
                 content = f.read()
-            docs.append("=== SOURCE: " + rel_file + " ===\n" + content)
+            docs.append(SOURCE_MARKER + rel_file + SOURCE_MARKER_END + "\n" + content)
     return "\n\n".join(docs)
 
 def load_api_contract():
@@ -84,7 +85,7 @@ def invoke_ai(prompt, tool, model_id):
         else:
             cmd = ["gemini", "--skip-trust", "-p", prompt]
         with open(tmp_path, "w", encoding='utf-8') as out_f:
-            result = subprocess.run(cmd, stdout=out_f, stderr=subprocess.PIPE, timeout=600)
+            result = subprocess.run(cmd, stdout=out_f, stderr=subprocess.PIPE, timeout=GENERATE_TIMEOUT_SECS)
         if result.returncode != 0:
             err = result.stderr.decode("utf-8", errors="replace") if result.stderr else "AI call failed"
             return None, err
