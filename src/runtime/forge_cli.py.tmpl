@@ -11,6 +11,7 @@ from datetime import datetime
 {CONSTANTS_PY_CONTENT}
 
 FORGE_VERSION = "{FORGE_VERSION}"
+DEFAULT_PORT = 4949
 
 # -------------------------------------------------------------------------
 # Path Resolution
@@ -212,8 +213,8 @@ class RunState:
 
 state = RunState()
 
-AGENT_PROMPT_TEMPLATE = r'''__FORGE_AGENT_PROMPT__'''
-DISTILL_PROMPT_TEMPLATE = r'''__FORGE_DISTILL_PROMPT__'''
+AGENT_PROMPT_TEMPLATE = __FORGE_AGENT_PROMPT__
+DISTILL_PROMPT_TEMPLATE = __FORGE_DISTILL_PROMPT__
 
 def log_error(msg):
     print(f"[ERROR] {{msg}}")
@@ -564,13 +565,13 @@ if __name__ == "__main__":
     main()
 """
 
-SERVER_PY = r"""__FORGE_SERVER_PY__"""
+SERVER_PY = __FORGE_SERVER_PY__
 
-DASHBOARD_HTML = r"""{DASHBOARD_HTML_CONTENT}"""
+DASHBOARD_HTML = {DASHBOARD_HTML_CONTENT}
 
-BUILD_RUNNER_PY = r"""{BUILD_RUNNER_PY_CONTENT}"""
+BUILD_RUNNER_PY = {BUILD_RUNNER_PY_CONTENT}
 
-CONSTANTS_PY = r"""{CONSTANTS_PY_CONTENT}"""
+CONSTANTS_PY = {CONSTANTS_PY_STRING_LITERAL}
 
 {AGENT_CONTENT_CODE}
 

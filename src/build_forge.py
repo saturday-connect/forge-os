@@ -274,11 +274,12 @@ def _render_template():
         FILES_TO_TOUCH=FILES_TO_TOUCH,
         AGENT_CONTENT_CODE=_agent_content_code(),
         GATE_CONTENT_CODE=_gate_content_code(),
-        DASHBOARD_HTML_CONTENT=DASHBOARD_HTML_CONTENT,
+        DASHBOARD_HTML_CONTENT=_json.dumps(DASHBOARD_HTML_CONTENT),
         FORGE_VERSION=FORGE_VERSION,
-        BUILD_RUNNER_PY_CONTENT=BUILD_RUNNER_PY_CONTENT,
+        BUILD_RUNNER_PY_CONTENT=_json.dumps(BUILD_RUNNER_PY_CONTENT),
         ALLOWED_MODELS_CODE=_generate_allowed_models_code(KNOWN_TOOLS),
         CONSTANTS_PY_CONTENT=CONSTANTS_PY_CONTENT,
+        CONSTANTS_PY_STRING_LITERAL=_json.dumps(CONSTANTS_PY_CONTENT),
         STAGE_AGENT_CODE=_stage_agent_code(),
         STAGE_GATE_CODE=_stage_gate_code(),
         STAGE_INPUTS_CODE=_stage_inputs_code(),
@@ -295,11 +296,11 @@ def _render_template():
         distill_prompt = f.read()
 
     return forge_content.replace(
-        PLACEHOLDER_SERVER_PY, SERVER_PY_CONTENT
+        PLACEHOLDER_SERVER_PY, _json.dumps(SERVER_PY_CONTENT)
     ).replace(
-        PLACEHOLDER_AGENT_PROMPT, agent_prompt
+        PLACEHOLDER_AGENT_PROMPT, _json.dumps(agent_prompt)
     ).replace(
-        PLACEHOLDER_DISTILL_PROMPT, distill_prompt
+        PLACEHOLDER_DISTILL_PROMPT, _json.dumps(distill_prompt)
     )
 
 
