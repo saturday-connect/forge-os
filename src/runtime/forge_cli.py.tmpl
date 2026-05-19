@@ -246,17 +246,25 @@ def validate_environment(stage):
 def check_gate():
     if not state.gate:
         return
-        
+
     gate_path = os.path.join(GATES_DIR, f"{{state.gate}}.md")
     if not os.path.exists(gate_path):
-        log_error(f"Gate file not found: {{gate_path}}")
+        msg = f"Gate file not found: {{state.gate}}. Run 'forge upgrade' to recreate it."
+        log_error(msg)
+        _write_run_error(getattr(state, 'output_file', state.stage), msg)
         sys.exit(1)
-        
+
     with open(gate_path, 'r', encoding='utf-8') as f:
         content = f.read()
-        if "PASSED" not in content and "APPROVED" not in content:
-            log_error(f"Gate {{state.gate}} is not PASSED/APPROVED. Cannot proceed.")
-            sys.exit(1)
+    if "PASSED" not in content and "APPROVED" not in content:
+        msg = (
+            f"Gate '{{state.gate}}' has not been passed. "
+            f"Open the Review tab, review and approve all documents in the preceding stage, "
+            f"then run generation again."
+        )
+        log_error(msg)
+        _write_run_error(getattr(state, 'output_file', state.stage), msg)
+        sys.exit(1)
     log_info(f"Gate {{state.gate}} PASSED.")
 
 def resolve_inputs(stage, raw_input):
