@@ -40,6 +40,13 @@
     "files": [
       "main.js",
       "preload.js",
+      "auth.js",
+      "github.js",
+      "org.js",
+      "auth-preload.js",
+      "setup-preload.js",
+      "auth-window.html",
+      "setup-window.html",
       "assets/**/*"
     ],
     "mac": {
