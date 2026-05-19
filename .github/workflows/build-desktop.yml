@@ -198,6 +198,23 @@ jobs:
       # Tag builds: publish to GitHub Releases so electron-updater can detect new versions.
       # CRITICAL: latest*.yml MUST be included — electron-updater reads these files to
       # determine whether the installed version is outdated.
+      - name: Ensure git tag (if auto-release)
+        if: github.ref == 'refs/heads/main'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          tag="${{ steps.tag.outputs.tag }}"
+          if gh api "repos/$GH_REPO/git/ref/tags/$tag" >/dev/null 2>&1; then
+            echo "Tag $tag already exists."
+            exit 0
+          fi
+
+          gh api "repos/$GH_REPO/git/refs" \
+            -f ref="refs/tags/$tag" \
+            -f sha="${{ github.sha }}"
+
       - name: Publish to GitHub Releases
         shell: bash
         env:
@@ -218,16 +235,3 @@ jobs:
 
           gh release delete "$tag" --yes || true
           gh release create "$tag" "${files[@]}" --title "$tag" --generate-notes "${prerelease_args[@]}"
-
-      # Create the git tag if this was triggered by a main push (not a tag push).
-      # Uses the GitHub API — GITHUB_TOKEN is sufficient for creating refs.
-      - name: Create git tag (if auto-release)
-        if: github.ref == 'refs/heads/main'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GH_REPO: ${{ github.repository }}
-        run: |
-          tag="${{ steps.tag.outputs.tag }}"
-          gh api repos/$GH_REPO/git/refs \
-            -f ref="refs/tags/$tag" \
-            -f sha="${{ github.sha }}" || echo "Tag may already exist, continuing."
