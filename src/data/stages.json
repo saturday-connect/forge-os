@@ -1,0 +1,111 @@
+{
+    "context": [
+        "00-context/product-vision.md",
+        "00-context/business-model.md",
+        "00-context/constraints.md",
+        "00-context/users-and-personas.md",
+        "00-context/competitive-analysis.md",
+        "00-context/positioning.md"
+    ],
+    "requirements": [
+        "01-requirements/brd.md",
+        "01-requirements/prd.md",
+        "01-requirements/non-functional-requirements.md",
+        "01-requirements/open-questions.md",
+        "01-requirements/success-metrics.md"
+    ],
+    "design": [
+        "02-design/design-brief.md",
+        "02-design/design-system.md",
+        "02-design/design-tokens.md",
+        "02-design/ux-principles.md",
+        "02-design/information-architecture.md",
+        "02-design/user-flows.md",
+        "02-design/page-inventory.md",
+        "02-design/screen-specs.md",
+        "02-design/component-map.md",
+        "02-design/accessibility-guidelines.md",
+        "02-design/responsive-behavior.md",
+        "02-design/design-gap-analysis.md",
+        "02-design/prototype-plan.md",
+        "02-design/figma-integration.md",
+        "02-design/design-review.md"
+    ],
+    "analysis": [
+        "03-analysis/domain-model.md",
+        "03-analysis/user-journeys.md",
+        "03-analysis/risks-and-assumptions.md",
+        "03-analysis/process-flows.md",
+        "03-analysis/dependency-analysis.md"
+    ],
+    "architecture": [
+        "04-architecture/system-architecture.md",
+        "04-architecture/api-design.md",
+        "04-architecture/data-model.md",
+        "04-architecture/security-design.md",
+        "04-architecture/deployment-architecture.md",
+        "04-architecture/observability-architecture.md"
+    ],
+    "delivery": [
+        "05-delivery/roadmap.md",
+        "05-delivery/epics.md",
+        "05-delivery/user-stories.md",
+        "05-delivery/sprint-plan.md",
+        "05-delivery/milestones.md",
+        "05-delivery/release-roadmap.md"
+    ],
+    "engineering": [
+        "06-engineering/backend-spec.md",
+        "06-engineering/frontend-spec.md",
+        "06-engineering/integration-spec.md",
+        "06-engineering/observability.md",
+        "06-engineering/error-handling.md",
+        "06-engineering/coding-guidelines.md",
+        "06-engineering/implementation-plan.md"
+    ],
+    "qa": [
+        "07-quality/test-strategy.md",
+        "07-quality/acceptance-tests.md",
+        "07-quality/regression-suite.md",
+        "07-quality/performance-tests.md",
+        "07-quality/security-tests.md",
+        "07-quality/accessibility-tests.md"
+    ],
+    "operations": [
+        "08-operations/monitoring.md",
+        "08-operations/runbook.md",
+        "08-operations/rollback-plan.md",
+        "08-operations/incident-response.md",
+        "08-operations/backup-recovery.md",
+        "08-operations/support-handbook.md"
+    ],
+    "release": [
+        "09-release/release-notes.md",
+        "09-release/production-readiness-review.md",
+        "09-release/go-live-plan.md",
+        "09-release/rollout-strategy.md",
+        "09-release/post-release-checklist.md"
+    ],
+    "marketing": [
+        "10-marketing/marketing-strategy.md",
+        "10-marketing/product-positioning.md",
+        "10-marketing/target-audience.md",
+        "10-marketing/ideal-customer-profile.md",
+        "10-marketing/messaging-framework.md",
+        "10-marketing/brand-guidelines.md",
+        "10-marketing/launch-plan.md",
+        "10-marketing/go-to-market-plan.md",
+        "10-marketing/pricing-strategy.md",
+        "10-marketing/competitive-comparison.md",
+        "10-marketing/website-copy.md",
+        "10-marketing/landing-page-copy.md",
+        "10-marketing/blog-content-plan.md",
+        "10-marketing/social-media-plan.md",
+        "10-marketing/email-campaigns.md",
+        "10-marketing/seo-strategy.md",
+        "10-marketing/content-calendar.md",
+        "10-marketing/analytics-kpis.md",
+        "10-marketing/campaign-performance.md",
+        "10-marketing/customer-feedback-insights.md"
+    ]
+}
