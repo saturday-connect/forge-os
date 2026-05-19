@@ -142,6 +142,7 @@ jobs:
             desktop/dist/*.zip
             desktop/dist/latest*.yml
           generate_release_notes: true
+          overwrite_files: true
           draft: false
           prerelease: ${{ contains(github.ref, '-beta') || contains(github.ref, '-rc') }}
         env:
@@ -155,6 +156,7 @@ jobs:
             desktop/dist/*.exe
             desktop/dist/latest*.yml
           generate_release_notes: false
+          overwrite_files: true
           draft: false
           prerelease: ${{ contains(github.ref, '-beta') || contains(github.ref, '-rc') }}
         env:
@@ -168,6 +170,7 @@ jobs:
             desktop/dist/*.AppImage
             desktop/dist/latest-linux.yml
           generate_release_notes: false
+          overwrite_files: true
           draft: false
           prerelease: ${{ contains(github.ref, '-beta') || contains(github.ref, '-rc') }}
         env:
