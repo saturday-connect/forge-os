@@ -138,6 +138,26 @@ logging.basicConfig(
 logger = logging.getLogger("forge.server")
 
 # ---------------------------------------------------------------------------
+# PATH augmentation — Electron launches with a minimal macOS PATH that omits
+# Homebrew, NVM, and user-local bin dirs. Prepend known locations so that
+# shutil.which() and all subprocess calls can find gemini, claude, codex, etc.
+# ---------------------------------------------------------------------------
+import glob as _glob
+_extra_paths = [
+    "/opt/homebrew/bin",
+    "/opt/homebrew/sbin",
+    "/usr/local/bin",
+    *_glob.glob(os.path.expanduser("~/.nvm/versions/node/*/bin")),
+    os.path.expanduser("~/.npm-global/bin"),
+    os.path.expanduser("~/.npm/bin"),
+    os.path.expanduser("~/.local/bin"),
+]
+os.environ["PATH"] = os.pathsep.join(
+    [p for p in _extra_paths if os.path.isdir(p)] + [os.environ.get("PATH", "")]
+)
+logger.info("PATH augmented: %s", os.environ["PATH"])
+
+# ---------------------------------------------------------------------------
 # Thread safety
 # ---------------------------------------------------------------------------
 _state_lock    = threading.Lock()

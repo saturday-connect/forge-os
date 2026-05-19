@@ -308,7 +308,6 @@ def _hot_deploy_runtime():
     import glob, shutil
     src_dir = os.path.dirname(__file__)
     dashboard_src = os.path.join(src_dir, DASHBOARD_OUTPUT_FILE)
-    server_src = os.path.join(src_dir, RUNTIME_DIR_NAME, RUNTIME_SERVER_FILE)
     constants_src = os.path.join(src_dir, RUNTIME_DIR_NAME, RUNTIME_CONSTANTS_FILE)
     repo_root = os.path.normpath(os.path.join(src_dir, ".."))
     parent_dir = os.path.dirname(repo_root)
@@ -322,15 +321,19 @@ def _hot_deploy_runtime():
     if os.path.isdir(home_forge_scripts):
         scripts_dirs.append(home_forge_scripts)
 
-    deploy_sources = [dashboard_src, server_src, constants_src]
     copied = 0
     for sd in scripts_dirs:
         sd = os.path.normpath(sd)
         if not os.path.isdir(sd):
             continue
         try:
-            for src_file, target_name in zip(deploy_sources, HOT_DEPLOY_FILES):
-                shutil.copy2(src_file, os.path.join(sd, target_name))
+            # dashboard.html — copy file directly
+            shutil.copy2(dashboard_src, os.path.join(sd, HOT_DEPLOY_FILES[0]))
+            # server.py — write the injected content (KNOWN_TOOLS populated), not the raw source
+            with open(os.path.join(sd, HOT_DEPLOY_FILES[1]), "w", encoding=FILE_ENCODING) as _sf:
+                _sf.write(SERVER_PY_CONTENT)
+            # constants.py — copy file directly
+            shutil.copy2(constants_src, os.path.join(sd, HOT_DEPLOY_FILES[2]))
             copied += 1
         except Exception:
             pass
