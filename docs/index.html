@@ -1075,7 +1075,9 @@
 
         <div class="platform-install-note">
           Download and run the installer. The installer automatically configures the app to run on your system.<br /><br />
-          <strong style="color:var(--accent);font-weight:600;">"Unidentified developer" fix:</strong> macOS may block the installer because it is not yet notarized. To bypass this, <strong>right-click</strong> the <span class="inline-code">.pkg</span> file, select <em>Open</em>, and click <em>Open</em> again.
+          <strong style="color:var(--accent);font-weight:600;">Current beta Gatekeeper fix:</strong> until the app is Apple notarized, macOS may show <span class="inline-code">"Forge OS" is damaged and can't be opened</span>. After installing, run this once in Terminal:
+          <span class="code-block">xattr -cr "/Applications/Forge OS.app"
+open "/Applications/Forge OS.app"</span>
         </div>
       </div>
 
