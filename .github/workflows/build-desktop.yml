@@ -102,6 +102,7 @@ jobs:
         with:
           name: forge-os-${{ runner.os }}
           retention-days: 14
+          overwrite: true
           path: |
             desktop/dist/*.dmg
             desktop/dist/*.pkg
@@ -114,6 +115,7 @@ jobs:
         with:
           name: forge-os-${{ runner.os }}
           retention-days: 14
+          overwrite: true
           path: |
             desktop/dist/*.exe
             desktop/dist/latest*.yml
@@ -124,6 +126,7 @@ jobs:
         with:
           name: forge-os-${{ runner.os }}
           retention-days: 14
+          overwrite: true
           path: |
             desktop/dist/*.AppImage
             desktop/dist/latest-linux.yml
