@@ -212,6 +212,9 @@ class RunState:
 
 state = RunState()
 
+AGENT_PROMPT_TEMPLATE = r'''__FORGE_AGENT_PROMPT__'''
+DISTILL_PROMPT_TEMPLATE = r'''__FORGE_DISTILL_PROMPT__'''
+
 def log_error(msg):
     print(f"[ERROR] {{msg}}")
 
@@ -283,88 +286,58 @@ def resolve_inputs(stage, raw_input):
     return inputs
 
 def build_prompt(agent_path, inputs, output_file, critique=None):
-    prompt_parts = []
-    
-    prompt_parts.append(f"You are an AI generating content for the file: {{output_file}}\n")
-    if critique:
-        prompt_parts.append(f"CRITICAL MISSION: The user has reviewed the previous version of this file and provided the following critique/feedback:\n")
-        prompt_parts.append(f"\"{{critique}}\"\n")
-        prompt_parts.append(f"You MUST completely rewrite the file incorporating this feedback.\n\n")
-    prompt_parts.append("CRITICAL SYSTEM INSTRUCTION: DO NOT USE ANY TOOLS. DO NOT READ FILES. DO NOT RUN COMMANDS. DO NOT WRITE FILES USING TOOLS. DO NOT USE write_file OR read_file.\n")
-    prompt_parts.append("You must simply print the raw markdown text for the file directly to stdout.\n\n")
-    prompt_parts.append("=== AGENT CONTRACT ===\n")
-
     with open(agent_path, 'r', encoding='utf-8') as f:
-        prompt_parts.append(f.read())
+        agent_contract = f.read()
 
-    # Org context injection
+    critique_section = ""
+    if critique:
+        critique_section = f'CRITICAL MISSION: The user has reviewed the previous version of this file and provided the following critique/feedback:\n"{{critique}}"\nYou MUST completely rewrite the file incorporating this feedback.\n\n'
+
+    org_context = ""
     if os.environ.get("FORGE_SKIP_ORG_CONTEXT", "") != "1":
         _knowledge, _patterns, _agent_files = _list_org_context_files()
         _stage_name = os.path.splitext(os.path.basename(agent_path))[0]
         for _af in _agent_files:
             if os.path.splitext(os.path.basename(_af))[0] == _stage_name:
-                prompt_parts.append("\n\n=== ORG AGENT SUPPLEMENT ===\n")
-                prompt_parts.append("Additional org-specific rules for this agent:\n")
+                org_context += "\n\n=== ORG AGENT SUPPLEMENT ===\nAdditional org-specific rules for this agent:\n"
                 with open(_af, 'r', encoding='utf-8') as f:
-                    prompt_parts.append(f.read())
+                    org_context += f.read()
                 break
         if _knowledge or _patterns:
-            prompt_parts.append("\n\n=== ORG KNOWLEDGE BASE ===\n")
-            prompt_parts.append("The following is your organization's accumulated knowledge. Apply it when generating this document.\n")
+            org_context += "\n\n=== ORG KNOWLEDGE BASE ===\nThe following is your organization's accumulated knowledge. Apply it when generating this document.\n"
             for _fpath in _knowledge + _patterns:
                 _label = os.path.relpath(_fpath, ORG_CACHE_DIR)
-                prompt_parts.append(f"\n--- {{_label}} ---\n")
+                org_context += f"\n--- {{_label}} ---\n"
                 with open(_fpath, 'r', encoding='utf-8') as f:
-                    prompt_parts.append(f.read())
-                prompt_parts.append("\n")
+                    org_context += f.read()
+                org_context += "\n"
 
-    prompt_parts.append("\n\n=== PROVIDED CONTEXT ===\n")
-    
+    provided_context = ""
     for f_path in inputs:
         rel_path = os.path.relpath(f_path, REPO_ROOT)
-        prompt_parts.append(f"\n--- START OF {{rel_path}} ---\n\n")
         with open(f_path, 'r', encoding='utf-8') as f:
-            prompt_parts.append(f.read())
-            prompt_parts.append(f"\n--- END OF {{rel_path}} ---\n")
-            
-    prompt_parts.append("\n---\n\nINSTRUCTIONS:\n")
-    prompt_parts.append("CRITICAL: You are running in a secure, headless pipeline. DO NOT USE ANY TOOLS.\n")
-    prompt_parts.append("DO NOT attempt to read files, run commands, or write files. Disable all agentic capabilities.\n")
-    prompt_parts.append("Your ONLY job is to generate the output markdown for the target document and print it directly to stdout.\n")
-    prompt_parts.append("Return only valid markdown.\n")
-    prompt_parts.append("Do not include explanations, preamble, or post-text.\n")
-    prompt_parts.append("Ensure all sections are complete and production-grade.\n")
-    
-    return "".join(prompt_parts)
+            provided_context += f"\n--- START OF {{rel_path}} ---\n\n{{f.read()}}\n--- END OF {{rel_path}} ---\n"
+
+    return AGENT_PROMPT_TEMPLATE.format(
+        output_file=output_file,
+        critique_section=critique_section,
+        agent_contract=agent_contract,
+        org_context=org_context,
+        provided_context=provided_context
+    )
 
 def build_distill_prompt(stage_label, source_files):
-    parts = []
-    parts.append("CRITICAL SYSTEM INSTRUCTION: DO NOT USE ANY TOOLS. DO NOT READ FILES. DO NOT RUN COMMANDS.\n")
-    parts.append("Print the output markdown directly to stdout only.\n\n")
-    parts.append(f"You are a knowledge distillation agent for a software development team.\n\n")
-    parts.append(f"Stage: {{stage_label}}\n\n")
-    parts.append("Your task: read the following reviewed documents and extract reusable patterns.\n")
-    parts.append("Output will be injected into future AI generation prompts — be specific, concise, and avoid generic advice.\n\n")
-    parts.append("=== SOURCE DOCUMENTS ===\n")
+    source_documents = ""
     for _fp in source_files:
         if os.path.isfile(_fp):
-            parts.append(f"\n--- {{os.path.basename(_fp)}} ---\n")
+            source_documents += f"\n--- {{os.path.basename(_fp)}} ---\n"
             with open(_fp, "r", encoding="utf-8") as _f:
-                parts.append(_f.read())
-    parts.append("\n\n=== DISTILLATION INSTRUCTIONS ===\n")
-    parts.append("Produce a structured markdown document with exactly these sections:\n\n")
-    parts.append("## Key Decisions\n")
-    parts.append("Important product, architectural, or process decisions from these documents.\n")
-    parts.append("For each: what was decided, why, and any alternatives rejected.\n\n")
-    parts.append("## Reusable Patterns\n")
-    parts.append("Patterns, templates, or approaches that should apply to future projects.\n")
-    parts.append("Use the team's actual terminology. Be concrete, not generic.\n\n")
-    parts.append("## Constraints and Anti-Patterns\n")
-    parts.append("Constraints, limitations, or things to avoid specific to this team or domain.\n\n")
-    parts.append("## Team Conventions\n")
-    parts.append("Naming conventions, structural patterns, or process standards present in these documents.\n\n")
-    parts.append("Rules:\n- Total output: under 600 words.\n- Use the team's actual language.\n- Omit sections with nothing specific to add.\n- Return only markdown. No preamble.\n")
-    return "".join(parts)
+                source_documents += _f.read()
+
+    return DISTILL_PROMPT_TEMPLATE.format(
+        stage_label=stage_label,
+        source_documents=source_documents
+    )
 
 def run_distill_mode(args):
     if not args.distill_stage or not args.distill_output:

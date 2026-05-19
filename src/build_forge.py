@@ -40,6 +40,11 @@ from build_constants import (
     PLACEHOLDER_KNOWN_TOOLS,
     PLACEHOLDER_BUILD_STEPS,
     PLACEHOLDER_SERVER_PY,
+    PLACEHOLDER_AGENT_PROMPT,
+    PLACEHOLDER_DISTILL_PROMPT,
+    PROMPTS_DIR_NAME,
+    AGENT_PROMPT_FILE,
+    DISTILL_PROMPT_FILE,
     CODEGEN_KNOWN_TOOLS,
     CODEGEN_ALLOWED_MODELS_OPEN,
     CODEGEN_ALLOWED_MODELS_CLOSE,
@@ -282,7 +287,20 @@ def _render_template():
         AGENTS_LIST_CODE=_agents_list_code(),
         GATES_LIST_CODE=_gates_list_code(),
     )
-    return forge_content.replace(PLACEHOLDER_SERVER_PY, SERVER_PY_CONTENT)
+
+    with open(os.path.join(_DATA_DIR, PROMPTS_DIR_NAME, AGENT_PROMPT_FILE), encoding=FILE_ENCODING) as f:
+        agent_prompt = f.read()
+
+    with open(os.path.join(_DATA_DIR, PROMPTS_DIR_NAME, DISTILL_PROMPT_FILE), encoding=FILE_ENCODING) as f:
+        distill_prompt = f.read()
+
+    return forge_content.replace(
+        PLACEHOLDER_SERVER_PY, SERVER_PY_CONTENT
+    ).replace(
+        PLACEHOLDER_AGENT_PROMPT, agent_prompt
+    ).replace(
+        PLACEHOLDER_DISTILL_PROMPT, distill_prompt
+    )
 
 
 def _hot_deploy_runtime():

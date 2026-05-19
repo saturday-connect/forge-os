@@ -30,6 +30,7 @@ GATES_DIR_NAME = "gates"
 DASHBOARD_DIR_NAME = "dashboard"
 SCRIPTS_DIR_NAME = "scripts"
 RUNTIME_DIR_NAME = "runtime"
+PROMPTS_DIR_NAME = "prompts"
 
 # ---------------------------------------------------------------------------
 # Data file names (inside data/)
@@ -38,6 +39,12 @@ TOOLS_DATA_FILE = "tools.json"
 BUILD_STEPS_DATA_FILE = "build_steps.json"
 STAGES_DATA_FILE = "stages.json"
 STAGE_PIPELINE_DATA_FILE = "stage_pipeline.json"
+
+# ---------------------------------------------------------------------------
+# Prompt files (inside data/prompts/)
+# ---------------------------------------------------------------------------
+AGENT_PROMPT_FILE = "agent_prompt.md"
+DISTILL_PROMPT_FILE = "distill_prompt.md"
 
 # ---------------------------------------------------------------------------
 # Data JSON keys
@@ -85,6 +92,8 @@ DASHBOARD_SCRIPT_MARKER_TEMPLATE = "<!-- FORGE_DASHBOARD_SCRIPT:{name} -->"
 PLACEHOLDER_KNOWN_TOOLS = "KNOWN_TOOLS = {}  # __FORGE_KNOWN_TOOLS__"
 PLACEHOLDER_BUILD_STEPS = "STEPS = {}  # __FORGE_BUILD_STEPS__"
 PLACEHOLDER_SERVER_PY = "__FORGE_SERVER_PY__"
+PLACEHOLDER_AGENT_PROMPT = "__FORGE_AGENT_PROMPT__"
+PLACEHOLDER_DISTILL_PROMPT = "__FORGE_DISTILL_PROMPT__"
 
 # ---------------------------------------------------------------------------
 # Code generation variable names (emitted into the built forge binary)
