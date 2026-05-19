@@ -178,20 +178,22 @@ USER_FILE = os.path.expanduser(USER_FILE_PATH)
 def set_project_root(project_root, data_dir=None):
     global REPO_ROOT, FORGE_DIR, REVIEWS_FILE, STATE_FILE, RAW_INPUT_DIR
     REPO_ROOT = os.path.abspath(project_root)
-    _dd = data_dir
+    _dd = None
+    # 1. Dotfile always takes priority — it is the authoritative pointer written by forge init.
+    dotfile = os.path.join(REPO_ROOT, ".forge")
+    if os.path.isfile(dotfile):
+        try:
+            _meta = json.loads(open(dotfile, "r", encoding="utf-8").read())
+            _dd = os.path.expanduser(_meta.get("data_dir", ""))
+        except (OSError, json.JSONDecodeError, ValueError):
+            pass
+    # 2. Caller-supplied data_dir (from index entry) — fallback when dotfile is missing.
+    if not _dd and data_dir:
+        _dd = os.path.expanduser(data_dir) if data_dir.startswith("~") else data_dir
+        logger.info("set_project_root: dotfile missing, using index data_dir: %s", _dd)
+    # 3. Inherited env var — last resort; stale after the first project switch.
     if not _dd:
-        # Prefer the project's own .forge dotfile over the inherited FORGE_DATA_DIR env var.
-        # The env var points to the server's startup project and becomes stale when a
-        # managed project is selected — reading the dotfile gives the correct data_dir.
-        dotfile = os.path.join(REPO_ROOT, ".forge")
-        if os.path.isfile(dotfile):
-            try:
-                _meta = json.loads(open(dotfile, "r", encoding="utf-8").read())
-                _dd = os.path.expanduser(_meta.get("data_dir", ""))
-            except (OSError, json.JSONDecodeError, ValueError):
-                pass
-        if not _dd:
-            _dd = os.environ.get("FORGE_DATA_DIR", "")
+        _dd = os.environ.get("FORGE_DATA_DIR", "")
     FORGE_DIR = os.path.abspath(_dd) if _dd else os.path.join(REPO_ROOT, ".forge")
 
     # Recover gracefully when data_dir was deleted (e.g. manual cleanup, broken
@@ -1058,7 +1060,7 @@ def initialize_active_project():
     index_data = sync_registry_from_disk(load_projects_index())
     active = get_active_project(index_data)
     if active and os.path.isdir(active.get("path", "")):
-        set_project_root(active["path"])
+        set_project_root(active["path"], data_dir=active.get("data_dir", ""))
         return
     if os.path.isdir(FORGE_DIR):
         return
@@ -1069,7 +1071,7 @@ def initialize_active_project():
     if projects:
         index_data["active_project_id"] = projects[0].get("id", "")
         save_projects_index(index_data)
-        set_project_root(projects[0].get("path", REPO_ROOT))
+        set_project_root(projects[0].get("path", REPO_ROOT), data_dir=projects[0].get("data_dir", ""))
 
 
 initialize_active_project()
@@ -1563,12 +1565,23 @@ class ForgeHandler(BaseHTTPRequestHandler):
             if init_result.returncode != 0:
                 self._json_response(500, {"error": "project init failed", "details": init_result.stderr or init_result.stdout})
                 return
+            # Read the data_dir that forge init wrote into the dotfile and store it in the
+            # index entry. This gives set_project_root a reliable fallback if the dotfile
+            # is ever missing (e.g. the slug dir was accidentally deleted and re-created).
+            _project_data_dir = ""
+            try:
+                _dotfile = os.path.join(project_root, ".forge")
+                _meta = json.loads(open(_dotfile, "r", encoding="utf-8").read())
+                _project_data_dir = _meta.get("data_dir", "")
+            except (OSError, json.JSONDecodeError, ValueError):
+                pass
             now = datetime.now().isoformat()
             entry = {
                 "id": project_id,
                 "name": name,
                 "slug": slug,
                 "path": project_root,
+                "data_dir": _project_data_dir,
                 "created_at": now,
                 "updated_at": now,
                 "last_opened_at": now,
@@ -1604,7 +1617,7 @@ class ForgeHandler(BaseHTTPRequestHandler):
             target["updated_at"] = target["last_opened_at"]
             index_data["active_project_id"] = project_id
             save_projects_index(index_data)
-            set_project_root(target["path"])
+            set_project_root(target["path"], data_dir=target.get("data_dir", ""))
             # Backfill project_name into state file if missing
             try:
                 _pstate = load_project_state()

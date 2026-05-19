@@ -1961,32 +1961,39 @@ if (!app.requestSingleInstanceLock()) {
     const homeDir = app.getPath('home')
     const projectsRoot = path.join(homeDir, '.forge', 'projects')
 
-    // Find the best available data dir.
-    // Priority: (1) index.json active_project_id, (2) any non-archived index project,
-    // (3) most-recently-modified UUID dir with scripts (deterministic across restarts).
+    // Find the orchestrator data dir. Resolution order:
+    // (1) config.json saved dir — persists across reinstalls, most reliable
+    // (2) scan for UUID-formatted dir names with scripts/server.py
+    //     (user project IDs use proj-<ms> format; orchestrator uses raw UUID)
+    // (3) mtime fallback — last resort if (2) finds nothing
+    function isUuidDir(name) {
+      return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(name)
+    }
+    function hasOrchestratorMarker(dir) {
+      return fs.existsSync(path.join(dir, 'scripts', 'server.py')) &&
+             fs.existsSync(path.join(dir, '.forge_orchestrator'))
+    }
+    function hasServerPy(dir) {
+      return fs.existsSync(path.join(dir, 'scripts', 'server.py'))
+    }
     function resolveOrchestratorDataDir() {
       if (!fs.existsSync(projectsRoot)) return null
-      const indexPath = path.join(projectsRoot, 'index.json')
-      if (fs.existsSync(indexPath)) {
-        try {
-          const idx = JSON.parse(fs.readFileSync(indexPath, 'utf8'))
-          const activeId = idx.active_project_id
-          if (activeId) {
-            const candidate = path.join(projectsRoot, activeId)
-            if (fs.existsSync(path.join(candidate, 'scripts', 'server.py'))) return candidate
-          }
-          for (const p of (idx.projects || [])) {
-            if (p.status === 'archived') continue
-            const candidate = path.join(projectsRoot, p.id)
-            if (fs.existsSync(path.join(candidate, 'scripts', 'server.py'))) return candidate
-          }
-        } catch (_) {}
-      }
-      // Fallback: scan dirs, pick the most recently modified one with server.py
-      // (avoids random inode-order selection that varies across OS restarts)
+      // (1) Persisted from a previous run — most reliable across reinstalls
+      const cfg = readConfig()
+      if (cfg.orchestratorDir && hasServerPy(cfg.orchestratorDir)) return cfg.orchestratorDir
+      // (2) Scan for dirs with the orchestrator marker file (UUID-named dirs only)
+      try {
+        for (const entry of fs.readdirSync(projectsRoot)) {
+          if (!isUuidDir(entry)) continue
+          const candidate = path.join(projectsRoot, entry)
+          if (hasOrchestratorMarker(candidate)) return candidate
+        }
+      } catch (_) {}
+      // (3) Any UUID-named dir with server.py, picked by most recent mtime
       let best = null, bestMtime = 0
       try {
         for (const entry of fs.readdirSync(projectsRoot)) {
+          if (!isUuidDir(entry)) continue
           const candidate = path.join(projectsRoot, entry)
           const serverPy = path.join(candidate, 'scripts', 'server.py')
           if (!fs.existsSync(serverPy)) continue
@@ -2032,6 +2039,11 @@ if (!app.requestSingleInstanceLock()) {
       dialog.showErrorBox('Forge OS', 'Could not initialize Forge data directory.\nPlease reinstall the app.')
       app.exit(1); return
     }
+
+    // Write orchestrator marker so future startups identify this dir unambiguously.
+    // Also persist to config.json (survives reinstall without needing the marker scan).
+    try { fs.writeFileSync(path.join(forgeDataDir, '.forge_orchestrator'), '', { mode: 0o600 }) } catch (_) {}
+    writeConfig({ ...readConfig(), orchestratorDir: forgeDataDir })
 
     // Run forge upgrade first — updates server.py, build_runner.py etc.
     // Dashboard.html is overwritten AFTER upgrade so it always wins.
