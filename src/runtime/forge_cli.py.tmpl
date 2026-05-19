@@ -134,6 +134,7 @@ def main():
                     "message": err_msg,
                     "timestamp": __import__("datetime").datetime.now().isoformat()
                 }}
+                break
 
         print(f"[STAGE-RUNNER] Stage complete. Success: {{success_count}}, Failed: {{failed_count}}")
         if os.path.exists("runs"):
@@ -170,6 +171,7 @@ import json
 import urllib.request
 import urllib.error
 import shutil
+import time
 from datetime import datetime, timezone
 
 # Configuration
@@ -182,6 +184,17 @@ AGENTS_DIR = os.path.join(FORGE_DIR, "11-agents")
 VERSIONS_DIR = os.path.join(FORGE_DIR, "versions")
 GATES_DIR = os.path.join(FORGE_DIR, "12-gates")
 RUNS_LOG = os.path.join(FORGE_DIR, "runs/run-log.md")
+AI_RAW_LOG = os.path.join(FORGE_DIR, "runs/ai-output.log")
+AI_GENERATION_TIMEOUT_SECS = int(os.environ.get("FORGE_AI_TIMEOUT_SECS", "600"))
+GEMINI_AUTH_PROMPT_MARKERS = [
+    "opening authentication page",
+    "do you want to continue",
+]
+ERROR_GEMINI_AUTH_REQUIRED = "Gemini CLI is waiting for browser authentication. Run `gemini` once in Terminal and complete login, or configure Gemini API credentials, then retry generation."
+ERROR_AI_QUOTA_LIMIT = "The AI request failed because the model quota or rate limit was reached. Wait a few minutes, then retry."
+ERROR_AI_GENERATION_TIMEOUT = "The AI model did not respond before the generation timeout. Check Gemini CLI authentication or quota, then retry."
+ERROR_AI_GENERATION_FAILED = "The AI model returned an error. It may have reached its usage limit. Wait a minute and try again."
+ERROR_AI_EMPTY_OUTPUT = "The AI model did not return generated content."
 
 FORGE_ORG = os.environ.get("FORGE_ORG", "")
 ORG_CACHE_DIR = os.path.expanduser(f"~/.forge/org-cache/{{FORGE_ORG}}") if FORGE_ORG else ""
@@ -221,6 +234,33 @@ def log_error(msg):
 
 def log_info(msg):
     print(f"[Forge] {{msg}}")
+
+def append_ai_log(output_path, tool, model_id, stdout_text, stderr_text):
+    try:
+        os.makedirs(os.path.dirname(AI_RAW_LOG), exist_ok=True)
+        with open(AI_RAW_LOG, "a", encoding="utf-8") as f:
+            f.write(f"\\n--- {{datetime.now(timezone.utc).isoformat()}} {{tool}} {{model_id or '(default)'}} {{output_path}} ---\\n")
+            if stdout_text:
+                f.write("[stdout]\\n")
+                f.write(stdout_text)
+                if not stdout_text.endswith("\\n"):
+                    f.write("\\n")
+            if stderr_text:
+                f.write("[stderr]\\n")
+                f.write(stderr_text)
+                if not stderr_text.endswith("\\n"):
+                    f.write("\\n")
+    except Exception:
+        pass
+
+def normalize_model_failure(output_text, fallback_message):
+    text = (output_text or "").strip()
+    lowered = text.lower()
+    if any(marker in lowered for marker in GEMINI_AUTH_PROMPT_MARKERS):
+        return ERROR_GEMINI_AUTH_REQUIRED
+    if "quota" in lowered or "rate limit" in lowered or "too many requests" in lowered or "usage limit" in lowered:
+        return ERROR_AI_QUOTA_LIMIT
+    return fallback_message
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Forge Pipeline Runner")
@@ -391,15 +431,58 @@ def invoke_model(prompt, output_path):
             if model_id:
                 cmd += ["-m", model_id]
             cmd += ["-p", prompt]
-            subprocess.run(cmd, stdout=open(tmp_path, 'w', encoding='utf-8'), check=True)
+            with open(tmp_path, 'w', encoding='utf-8') as out_f:
+                proc = subprocess.Popen(
+                    cmd,
+                    stdin=subprocess.DEVNULL,
+                    stdout=out_f,
+                    stderr=subprocess.STDOUT,
+                    text=True
+                )
+                started_at = time.time()
+                auth_prompted = False
+                while proc.poll() is None:
+                    if time.time() - started_at > AI_GENERATION_TIMEOUT_SECS:
+                        proc.kill()
+                        proc.wait()
+                        with open(tmp_path, 'r', encoding='utf-8') as f:
+                            timeout_output = f.read()
+                        append_ai_log(output_path, tool, model_id, timeout_output, "")
+                        msg = normalize_model_failure(timeout_output, ERROR_AI_GENERATION_TIMEOUT)
+                        _write_run_error(output_path, msg)
+                        log_error(msg)
+                        sys.exit(1)
+                    out_f.flush()
+                    with open(tmp_path, 'r', encoding='utf-8') as f:
+                        partial_output = f.read()
+                    if any(marker in partial_output.lower() for marker in GEMINI_AUTH_PROMPT_MARKERS):
+                        auth_prompted = True
+                        proc.terminate()
+                        try:
+                            proc.wait(timeout=2)
+                        except subprocess.TimeoutExpired:
+                            proc.kill()
+                            proc.wait()
+                        break
+                    time.sleep(0.5)
+                returncode = proc.returncode if proc.returncode is not None else 1
+            with open(tmp_path, 'r', encoding='utf-8') as f:
+                stdout_text = f.read()
+            append_ai_log(output_path, tool, model_id, stdout_text, "")
+            if returncode != 0 or auth_prompted:
+                msg = normalize_model_failure(stdout_text, ERROR_AI_GENERATION_FAILED)
+                _write_run_error(output_path, msg)
+                log_error(msg)
+                sys.exit(1)
         elif tool == "claude":
-            subprocess.run(["claude"], input=prompt, text=True, stdout=open(tmp_path, 'w', encoding='utf-8'), check=True)
+            with open(tmp_path, 'w', encoding='utf-8') as out_f:
+                subprocess.run(["claude"], input=prompt, text=True, stdout=out_f, timeout=AI_GENERATION_TIMEOUT_SECS, check=True)
         elif tool == "codex":
             cmd = ["codex", "exec", "--dangerously-bypass-approvals-and-sandbox", "--ephemeral",
                    "-o", tmp_path]
             if model_id:
                 cmd += ["-m", model_id]
-            subprocess.run(cmd, input=prompt, text=True, check=True)
+            subprocess.run(cmd, input=prompt, text=True, timeout=AI_GENERATION_TIMEOUT_SECS, check=True)
         elif tool == "openai":
             api_key = os.environ.get("OPENAI_API_KEY")
             if not api_key:
@@ -439,6 +522,11 @@ def invoke_model(prompt, output_path):
 
         if not result_content.strip():
             log_error(f"Model returned empty output for: {{output_path}}")
+            sys.exit(1)
+        if any(marker in result_content.lower() for marker in GEMINI_AUTH_PROMPT_MARKERS):
+            msg = normalize_model_failure(result_content, ERROR_AI_EMPTY_OUTPUT)
+            _write_run_error(output_path, msg)
+            log_error(msg)
             sys.exit(1)
             
         # Save existing content as a version before overwriting
@@ -515,7 +603,12 @@ def main():
         if e.returncode == 127:
             msg = "AI tool not found — make sure it is installed and available in your terminal."
         else:
-            msg = "The AI model returned an error. It may have reached its usage limit — wait a minute and try again."
+            msg = ERROR_AI_GENERATION_FAILED
+        log_error(msg)
+        _write_run_error(output_file, msg)
+        sys.exit(1)
+    except subprocess.TimeoutExpired:
+        msg = ERROR_AI_GENERATION_TIMEOUT
         log_error(msg)
         _write_run_error(output_file, msg)
         sys.exit(1)
@@ -529,7 +622,7 @@ def main():
     log_info("Stage complete.")
 
 def _write_run_error(output_file, message):
-    err_path = os.path.join(REPO_ROOT, "runs", "last-run-error.json")
+    err_path = os.path.join(FORGE_DIR, "runs", "last-run-error.json")
     try:
         os.makedirs(os.path.dirname(err_path), exist_ok=True)
         with open(err_path, "w", encoding='utf-8') as f:
