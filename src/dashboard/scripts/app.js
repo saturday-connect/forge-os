@@ -213,6 +213,8 @@ const PROJECT_UI_TEXT = {
   projectsButton: 'Projects'
 };
 
+const PROJECT_HOME_FOCUS_IDS = ['project-create-name', 'project-search'];
+
 // ============================================================
 // Core
 // ============================================================
@@ -269,6 +271,7 @@ function startPolling() {
 function renderProjectsHome() {
   const shell = document.getElementById('projects-shell');
   if (!shell) return;
+  const focusSnapshot = captureProjectHomeFocus();
   const projects = projectsState.projects || [];
   const activeProjects = projects.filter((p) => (p.status || 'active') === 'active');
   const archivedProjects = projects.filter((p) => p.status === 'archived');
@@ -420,6 +423,27 @@ function renderProjectsHome() {
     </main>
   `;
   bindProjectHomeEvents();
+  restoreProjectHomeFocus(focusSnapshot);
+}
+
+function captureProjectHomeFocus() {
+  const activeElement = document.activeElement;
+  if (!activeElement || !PROJECT_HOME_FOCUS_IDS.includes(activeElement.id)) return null;
+  return {
+    id: activeElement.id,
+    start: typeof activeElement.selectionStart === 'number' ? activeElement.selectionStart : null,
+    end: typeof activeElement.selectionEnd === 'number' ? activeElement.selectionEnd : null,
+  };
+}
+
+function restoreProjectHomeFocus(snapshot) {
+  if (!snapshot) return;
+  const input = document.getElementById(snapshot.id);
+  if (!input) return;
+  input.focus();
+  if (snapshot.start !== null && snapshot.end !== null && typeof input.setSelectionRange === 'function') {
+    input.setSelectionRange(snapshot.start, snapshot.end);
+  }
 }
 
 function openProjectsHome() {
@@ -450,11 +474,6 @@ function onProjectDraftChange(value) {
 function onProjectSearch(value) {
   projectSearchTerm = value || '';
   renderProjectsHome();
-  const input = document.getElementById('project-search');
-  if (input) {
-    input.focus();
-    input.setSelectionRange(input.value.length, input.value.length);
-  }
 }
 
 function setProjectListMode(mode) {
