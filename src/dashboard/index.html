@@ -253,15 +253,15 @@
       <div class="view-header">
         <div>
           <div class="view-title">Generate</div>
-          <div class="view-subtitle">AI-powered document generation across all pipeline stages</div>
+          <div class="view-subtitle" id="generate-subtitle">11 stages · AI-powered document generation</div>
         </div>
         <button class="btn btn-primary" id="btn-generate-all" onclick="generate('all')">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
             <path d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z"/>
           </svg>
-          Generate All Stages
+          Generate All
         </button>
-        <button class="btn btn-danger btn-sm" id="btn-stop-generate" style="display:none;" onclick="stopGeneration()">
+        <button class="btn btn-ghost btn-sm" id="btn-stop-generate" style="display:none;" onclick="stopGeneration()">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" stroke="none">
             <rect x="4" y="4" width="16" height="16" rx="2"/>
           </svg>
@@ -271,7 +271,8 @@
       <div class="view-body">
         <div id="generate-gate" style="display:none;"></div>
         <div class="generate-top">
-          <div id="generate-status-bar" style="font-size:12px;color:var(--text-2);">Select a stage to generate or run all at once.</div>
+          <div id="pipeline-summary" style="display:none;"></div>
+          <div id="generate-status-bar" style="font-size:12px;color:var(--text-2);">Ready to generate. Run all stages or trigger individual stages below.</div>
           <div id="generate-error-bar" style="display:none;">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
             <span id="generate-error-text" style="flex:1;"></span>

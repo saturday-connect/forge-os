@@ -1308,7 +1308,51 @@ function renderGenerate() {
     errBar.style.display = 'none';
   }
 
-  // Determine which stages are "done" (have generated content)
+  // ── Pipeline summary bar ─────────────────────────────────────────────────
+  const totalStages    = STAGES.length;
+  const totalGenerated = STAGES.filter(s => (summary[s.dir] || {}).generated > 0).length;
+  const totalReviewed  = STAGES.filter(s => {
+    const st = summary[s.dir] || {};
+    return st.total > 0 && st.reviewed === st.total;
+  }).length;
+  const genPct = Math.round((totalGenerated / totalStages) * 100);
+  const revPct = Math.round((totalReviewed  / totalStages) * 100);
+
+  const summaryEl = document.getElementById('pipeline-summary');
+  if (summaryEl && hasInputs) {
+    summaryEl.style.display = '';
+    summaryEl.innerHTML = `
+      <div class="pipeline-summary-row">
+        <span class="pipeline-summary-label">Generated</span>
+        <div class="pipeline-summary-bar"><div class="pipeline-summary-fill pipeline-summary-fill--generated" style="width:${genPct}%"></div></div>
+        <span class="pipeline-summary-count">${totalGenerated} / ${totalStages}</span>
+      </div>
+      <div class="pipeline-summary-row">
+        <span class="pipeline-summary-label">Reviewed</span>
+        <div class="pipeline-summary-bar"><div class="pipeline-summary-fill pipeline-summary-fill--reviewed" style="width:${revPct}%"></div></div>
+        <span class="pipeline-summary-count">${totalReviewed} / ${totalStages}</span>
+      </div>`;
+  } else if (summaryEl) {
+    summaryEl.style.display = 'none';
+  }
+
+  // ── Dynamic subtitle ──────────────────────────────────────────────────────
+  const subtitleEl = document.getElementById('generate-subtitle');
+  if (subtitleEl) {
+    if (isRunning) {
+      const stageObj = STAGES.find(s => s.key === processing.stage);
+      const lbl = stageObj ? stageObj.label : 'pipeline';
+      subtitleEl.textContent = `Generating ${lbl}…`;
+    } else if (totalGenerated > 0) {
+      const parts = [`${totalStages} stages`, `${totalGenerated} generated`];
+      if (totalReviewed > 0) parts.push(`${totalReviewed} reviewed`);
+      subtitleEl.textContent = parts.join(' · ');
+    } else {
+      subtitleEl.textContent = `${totalStages} stages · AI-powered document generation`;
+    }
+  }
+
+  // ── Status bar ────────────────────────────────────────────────────────────
   const runningIdx = PIPELINE_STAGE_ORDER.indexOf(processing.stage);
 
   if (isRunning) {
@@ -1321,10 +1365,9 @@ function renderGenerate() {
         <span style="color:var(--text-3);">— other stages queued</span>
       </span>`;
   } else {
-    const totalDone = STAGES.filter(s => (summary[s.dir] || {}).generated > 0).length;
-    document.getElementById('generate-status-bar').innerHTML = totalDone > 0
-      ? `<span style="color:var(--green);">${icon('check',12)} ${totalDone} stage${totalDone!==1?'s':''} generated</span> <span style="color:var(--text-3);margin-left:8px;">Ready to generate more or proceed to Review.</span>`
-      : `Ready to generate. Run all stages or trigger individual stages below.`;
+    document.getElementById('generate-status-bar').innerHTML = totalGenerated > 0
+      ? `<span style="color:var(--primary);">${icon('check',12)} ${totalGenerated} stage${totalGenerated!==1?'s':''} generated</span><span style="color:var(--text-3);margin-left:8px;">${totalReviewed > 0 ? `${totalReviewed} reviewed · ` : ''}Ready to proceed to Review.</span>`
+      : `Run all stages at once or generate individual stages below.`;
   }
 
   const grid = document.getElementById('stage-grid');
@@ -1343,20 +1386,15 @@ function renderGenerate() {
     const needsReview   = hasContent && !allReviewed;
     const hasError      = !isRunning && processing.last_error?.stage === s.key;
 
-    // Card class drives border/bg
     const cardClass = isThisRunning ? 'running' : (allReviewed ? 'reviewed' : (needsReview ? 'needs-review' : (hasError ? 'error' : '')));
-
-    // Progress bar colour
     const progressColor = allReviewed ? 'green' : (isThisRunning ? 'amber' : '');
 
-    // Per-file progress from stage_runner
     const fileIdx   = isThisRunning ? (processing.file_index || 1) : 0;
     const fileTotal = isThisRunning ? (processing.file_total  || total || 1) : 0;
     const fileName  = isThisRunning ? (processing.file || '') : '';
     const fileBase  = fileName.split('/').pop().replace(/\.md$/, '');
     const filePct   = isThisRunning && fileTotal > 0 ? Math.round(((fileIdx - 1) / fileTotal) * 100) : pct;
 
-    // Top-right badge
     let statusBadge = '';
     if (isThisRunning) {
       statusBadge = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--amber)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="animation:spin 1.2s linear infinite;flex-shrink:0"><path d="M21 12a9 9 0 11-6.219-8.56"/></svg>`;
@@ -1368,28 +1406,34 @@ function renderGenerate() {
       statusBadge = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--amber)" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z"/><path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>`;
     }
 
-    // Stats label
     const statsLabel = isThisRunning
-      ? `${fileIdx}/${fileTotal} files`
+      ? `${fileIdx} / ${fileTotal} files`
       : needsReview
-        ? `${reviewed}/${total} reviewed`
-        : `${generated}/${total} files`;
+        ? `${reviewed} / ${total} reviewed`
+        : generated > 0
+          ? `${generated} / ${total} files`
+          : `${total} files`;
 
-    // Subtitle
     const subtitle = isThisRunning && fileBase
       ? fileBase
       : hasError
         ? (processing.last_error?.file || '').split('/').pop().replace(/\.md$/, '') || 'failed'
-        : s.desc;
+        : needsReview
+          ? 'Needs review'
+          : s.desc;
+
+    const stageNum = String(idx + 1).padStart(2, '0');
+    const btnLabel = isThisRunning ? 'Generating…' : (generated > 0 ? 'Regenerate' : 'Generate');
 
     grid.insertAdjacentHTML('beforeend', `
-      <div class="stage-card ${cardClass}" style="${isQueued ? 'opacity:0.45;pointer-events:none' : ''}">
+      <div class="stage-card ${cardClass}" style="${isQueued ? 'opacity:0.4;pointer-events:none' : ''}">
         <div class="stage-card-header">
-          <div>
+          <div style="min-width:0;">
+            <div class="stage-number">${stageNum}</div>
             <div class="stage-name">${s.label}</div>
-            <div class="stage-subtitle" style="${needsReview ? 'color:var(--amber);' : ''}">${needsReview ? 'Needs review' : subtitle}</div>
+            <div class="stage-subtitle" style="${needsReview ? 'color:var(--amber);' : ''}">${subtitle}</div>
           </div>
-          <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;">
+          <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex-shrink:0;">
             ${statusBadge}
             <div class="stage-stats">${statsLabel}</div>
           </div>
@@ -1399,7 +1443,7 @@ function renderGenerate() {
         </div>
         <button class="btn btn-secondary btn-sm" ${(isRunning || !hasInputs) ? 'disabled' : ''} onclick="generate('${s.key}')">
           ${icon('sparkles', 12)}
-          ${isThisRunning ? 'Generating...' : 'Regenerate'}
+          ${btnLabel}
         </button>
       </div>
     `);
