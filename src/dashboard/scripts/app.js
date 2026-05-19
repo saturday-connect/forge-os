@@ -735,7 +735,7 @@ function renderOverview() {
   document.getElementById('overview-subtitle').textContent = 'Product Lifecycle';
 
   // Phase badge
-  const phaseBadgeColors = { input: 'var(--text-3)', generate: 'var(--accent)', review: 'var(--amber)', build: 'var(--blue)', deploy: 'var(--green)' };
+  const phaseBadgeColors = { input: 'var(--text-3)', generate: 'var(--primary)', review: 'var(--amber)', build: 'var(--primary)', deploy: 'var(--primary)' };
   document.getElementById('overview-phase-badge').innerHTML =
     `<span style="font-size:10px;font-weight:700;padding:3px 10px;border-radius:20px;background:var(--bg-2);border:1px solid var(--border);color:${phaseBadgeColors[phase] || 'var(--text-2)'};">${(phase || '').toUpperCase()}</span>`;
 
