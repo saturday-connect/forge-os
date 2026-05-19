@@ -599,6 +599,10 @@ BUILD_RUNNER_PY = r"""{BUILD_RUNNER_PY_CONTENT}"""
 
 CONSTANTS_PY = r"""{CONSTANTS_PY_CONTENT}"""
 
+{AGENT_CONTENT_CODE}
+
+{GATE_CONTENT_CODE}
+
 # -------------------------------------------------------------------------
 # Commands
 # -------------------------------------------------------------------------
@@ -678,7 +682,16 @@ Define this agent's responsibility.
 - Are risks captured?
 - Are next steps clear?
 """
-{AGENT_CODE}
+    for agent in agents:
+        agent_path = os.path.join(FORGE_DIR, f"11-agents/{{agent}}.md")
+        needs_write = not os.path.exists(agent_path)
+        if not needs_write:
+            with open(agent_path, encoding="utf-8") as _af:
+                _content = _af.read()
+            needs_write = "Define this agent" in _content or "TBD" in _content
+        if needs_write:
+            with open(agent_path, "w", encoding="utf-8") as f:
+                f.write(AGENT_CONTENT.get(agent, agent_template.format(agent=agent)))
 
     # Gates
 {GATES_LIST_CODE}
@@ -701,7 +714,11 @@ PENDING
 ## Reviewer Notes
 - TBD
 """
-{GATE_CODE}
+    for gate in gates:
+        gate_path = os.path.join(FORGE_DIR, f"12-gates/{{gate}}.md")
+        if not os.path.exists(gate_path):
+            with open(gate_path, "w", encoding="utf-8") as f:
+                f.write(GATE_CONTENT.get(gate, gate_template.format(gate=gate)))
 
     with open(os.path.join(FORGE_DIR, "13-decisions/decision-log.md"), "w", encoding='utf-8') as f:
         f.write("# Decision Log\n\n| Date | Decision | Context | Owner | Status |\n|---|---|---|---|---|\n")

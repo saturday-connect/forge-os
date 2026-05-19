@@ -161,48 +161,27 @@ def _gates_list_code():
 with open(os.path.join(_HERE, 'runtime', 'forge_cli.py.tmpl'), 'r', encoding='utf-8') as _f:
     TEMPLATE = _f.read()
 
-def _generate_agent_code():
+def _agent_content_code():
     all_agents = {**AGENTS, **CODE_AGENTS}
-    code = ('    for agent in agents:\n'
-            '        agent_path = os.path.join(FORGE_DIR, f"11-agents/{agent}.md")\n'
-            '        needs_write = not os.path.exists(agent_path)\n'
-            '        if not needs_write:\n'
-            '            with open(agent_path, encoding="utf-8") as _af:\n'
-            '                _content = _af.read()\n'
-            '            needs_write = "Define this agent" in _content or "TBD" in _content\n'
-            '        if needs_write:\n'
-            '            with open(agent_path, "w", encoding="utf-8") as f:\n')
-    first = True
+    lines = ["AGENT_CONTENT = {"]
     for agent, text in all_agents.items():
-        if first:
-            code += f'                if agent == "{agent}":\n                    f.write("""{text}""")\n'
-            first = False
-        else:
-            code += f'                elif agent == "{agent}":\n                    f.write("""{text}""")\n'
-    code += '                else:\n                    f.write(agent_template.format(agent=agent))\n'
-    return code
+        lines.append(f"    {repr(agent)}: {repr(text)},")
+    lines.append("}")
+    return "\n".join(lines)
 
-def _generate_gate_code():
-    code = ('    for gate in gates:\n'
-            '        gate_path = os.path.join(FORGE_DIR, f"12-gates/{gate}.md")\n'
-            '        if not os.path.exists(gate_path):\n'
-            '            with open(gate_path, "w", encoding="utf-8") as f:\n')
-    first = True
+def _gate_content_code():
+    lines = ["GATE_CONTENT = {"]
     for gate, text in GATES.items():
-        if first:
-            code += f'                if gate == "{gate}":\n                    f.write("""{text}""")\n'
-            first = False
-        else:
-            code += f'                elif gate == "{gate}":\n                    f.write("""{text}""")\n'
-    code += '                else:\n                    f.write(gate_template.format(gate=gate))\n'
-    return code
+        lines.append(f"    {repr(gate)}: {repr(text)},")
+    lines.append("}")
+    return "\n".join(lines)
 
 def _render_template():
     forge_content = TEMPLATE.format(
         STAGE_MULTI_OUTPUTS=STAGE_MULTI_OUTPUTS,
         FILES_TO_TOUCH=FILES_TO_TOUCH,
-        AGENT_CODE=_generate_agent_code(),
-        GATE_CODE=_generate_gate_code(),
+        AGENT_CONTENT_CODE=_agent_content_code(),
+        GATE_CONTENT_CODE=_gate_content_code(),
         DASHBOARD_HTML_CONTENT=DASHBOARD_HTML_CONTENT,
         FORGE_VERSION=FORGE_VERSION,
         BUILD_RUNNER_PY_CONTENT=BUILD_RUNNER_PY_CONTENT,
