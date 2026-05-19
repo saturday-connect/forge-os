@@ -1176,6 +1176,21 @@
     return null
   }
 
+  function detectArch() {
+    var ua = (navigator.userAgent || '').toLowerCase()
+    var uaData = navigator.userAgentData
+    if (uaData && Array.isArray(uaData.brands)) {
+      var platform = (uaData.platform || '').toLowerCase()
+      var arches = Array.isArray(uaData.architecture) ? uaData.architecture : [uaData.architecture]
+      var archText = arches.filter(Boolean).join(' ').toLowerCase()
+      if (platform.includes('mac') && (archText.includes('arm') || archText.includes('aarch'))) return 'arm64'
+      if (archText.includes('x86') || archText.includes('amd64') || archText.includes('x64')) return 'x64'
+    }
+    if (ua.includes('arm64') || ua.includes('aarch64') || ua.includes('apple silicon')) return 'arm64'
+    if (ua.includes('x86_64') || ua.includes('win64') || ua.includes('x64') || ua.includes('amd64')) return 'x64'
+    return null
+  }
+
   function isAppleSilicon() {
     try {
       var gl = document.createElement('canvas').getContext('webgl')
@@ -1183,6 +1198,39 @@
       if (!ext) return false
       return (gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) || '').includes('Apple')
     } catch(e) { return false }
+  }
+
+  function pickAsset(assets, patterns) {
+    for (var i = 0; i < patterns.length; i += 1) {
+      var regex = patterns[i]
+      var found = assets.find(function(a){ return regex.test(a.name) })
+      if (found) return found
+    }
+    return null
+  }
+
+  function getPreferredAssets(assets) {
+    var byId = {
+      macArm: pickAsset(assets, [/arm64.*\.dmg$/i, /arm64.*\.pkg$/i, /arm64.*\.zip$/i]),
+      macIntel: pickAsset(assets, [/(x64|amd64).*\.(dmg|pkg)$/i, /(x64|amd64).*\.zip$/i, /\.dmg$/i, /\.pkg$/i]),
+      win: pickAsset(assets, [/(x64|amd64).*\.exe$/i, /\.exe$/i, /(x64|amd64).*\.msi$/i, /\.msi$/i]),
+      linux: pickAsset(assets, [/(x64|amd64).*\.AppImage$/i, /\.AppImage$/i, /(x64|amd64).*\.(deb|rpm|tar\.gz)$/i, /\.(deb|rpm|tar\.gz)$/i])
+    }
+
+    var os = detectOS()
+    var arch = detectArch()
+    var primary = null
+
+    if (os === 'mac') {
+      var preferArm = arch === 'arm64' || (arch == null && isAppleSilicon())
+      primary = preferArm ? (byId.macArm || byId.macIntel) : (byId.macIntel || byId.macArm)
+    } else if (os === 'win') {
+      primary = byId.win
+    } else if (os === 'linux') {
+      primary = byId.linux
+    }
+
+    return { byId: byId, primary: primary }
   }
 
   function setBtn(id, asset, fallback) {
@@ -1202,20 +1250,32 @@
       var release = await res.json()
       var assets = release.assets || []
       var tag = release.tag_name || ''
+      var preferred = getPreferredAssets(assets)
+      var byId = preferred.byId
 
-      var arm   = assets.find(function(a){ return /arm64.*\.pkg$/i.test(a.name) })
-      var intel = assets.find(function(a){ return /\.pkg$/i.test(a.name) && !/arm64/i.test(a.name) })
-      var win   = assets.find(function(a){ return /\.exe$/i.test(a.name) })
-      var linux = assets.find(function(a){ return /\.AppImage$/i.test(a.name) })
+      setBtn('btn-mac-arm',   byId.macArm,   fallback)
+      setBtn('btn-mac-intel', byId.macIntel, fallback)
+      setBtn('btn-win',       byId.win,      fallback)
+      setBtn('btn-linux',     byId.linux,    fallback)
+      setBtn('dl-mac-arm',    byId.macArm,   fallback)
+      setBtn('dl-mac-intel',  byId.macIntel, fallback)
+      setBtn('dl-win',        byId.win,      fallback)
+      setBtn('dl-linux',      byId.linux,    fallback)
 
-      setBtn('btn-mac-arm',   arm,   fallback)
-      setBtn('btn-mac-intel', intel, fallback)
-      setBtn('btn-win',       win,   fallback)
-      setBtn('btn-linux',     linux, fallback)
-      setBtn('dl-mac-arm',    arm,   fallback)
-      setBtn('dl-mac-intel',  intel, fallback)
-      setBtn('dl-win',        win,   fallback)
-      setBtn('dl-linux',      linux, fallback)
+      if (preferred.primary) {
+        var primaryIds = ['btn-mac-arm', 'btn-mac-intel', 'btn-win', 'btn-linux']
+        for (var i = 0; i < primaryIds.length; i += 1) {
+          var candidate = document.getElementById(primaryIds[i])
+          if (candidate && candidate.href === preferred.primary.browser_download_url) {
+            candidate.classList.remove('btn-secondary')
+            candidate.classList.add('btn-primary', 'recommended')
+            if (candidate.parentElement) candidate.parentElement.prepend(candidate)
+            var sub = candidate.querySelector('.btn-sub')
+            if (sub) sub.textContent = 'Recommended for your system'
+            break
+          }
+        }
+      }
 
       var note = document.getElementById('version-note')
       if (note && tag) {
@@ -1231,27 +1291,7 @@
     }
   }
 
-  function highlightPlatform() {
-    var os = detectOS()
-    if (!os) return
-    var mapPrimary = {
-      mac: isAppleSilicon() ? 'btn-mac-arm' : 'btn-mac-intel',
-      win: 'btn-win',
-      linux: 'btn-linux'
-    }
-    var primaryId = mapPrimary[os]
-    if (!primaryId) return
-    var el = document.getElementById(primaryId)
-    if (!el) return
-    el.classList.remove('btn-secondary')
-    el.classList.add('btn-primary', 'recommended')
-    el.parentElement.prepend(el)
-    var span = el.querySelector('.btn-sub')
-    if (span) span.textContent = 'Recommended for your system'
-  }
-
   loadRelease()
-  highlightPlatform()
 </script>
 </body>
 </html>
