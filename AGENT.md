@@ -26,6 +26,19 @@ Do not manually edit generated runtime files. The next `upgrade` overwrites them
 
 ---
 
+## Build System Architecture
+
+`src/build_forge.py` is a pure compiler (~260 lines). All build-time string constants live in `src/build_constants.py`. All AI tool/model config lives in `src/data/tools.json`. All pipeline config (stage agents, gates, inputs, directories) lives in `src/data/stage_pipeline.json`.
+
+The compiler:
+1. Reads data from `src/data/*.json`, `src/data/agents/*.md`, `src/data/gates/*.md`, `src/data/prompts/`
+2. Injects generated Python dicts into `server.py` and `build_runner.py` via placeholder sentinels
+3. Renders `src/runtime/forge_cli.py.tmpl` via `str.format()` with all injected blocks
+4. Writes `./forge`
+5. Hot-deploys `server.py`, `dashboard.html`, `constants.py` to all live `.forge/scripts/` directories
+
+---
+
 ## Command Playbook
 
 All commands run from repo root unless stated.
@@ -76,7 +89,7 @@ git push origin main
 
 ## Hot-Deploy Behaviour
 
-`python3 src/build_forge.py` copies `server.py` and `dashboard.html` to ALL live `.forge/scripts/` directories it finds, including:
+`python3 src/build_forge.py` copies `server.py`, `dashboard.html`, and `constants.py` to ALL live `.forge/scripts/` directories it finds, including:
 - `<repo_root>/.forge/scripts/`
 - `<repo_root>/.projects/*/.forge/scripts/`
 - `<repo_root>/test-projects/*/.forge/scripts/`
@@ -89,13 +102,12 @@ git push origin main
 
 ## Adding A New AI Model
 
-1. Add to `KNOWN_TOOLS[tool]["models"]` in `src/runtime/server.py`
-2. Add to `_ALLOWED_MODELS[tool]` in `src/runtime/forge_cli.py.tmpl`
-3. Rebuild: `python3 src/build_forge.py`
-4. Upgrade: `./forge upgrade`
-5. Restart dashboard
+1. Edit `src/data/tools.json` — add the model ID to the relevant tool's `models` array
+2. Rebuild: `python3 src/build_forge.py`
+3. Upgrade: `./forge upgrade`
+4. Restart dashboard
 
-Both steps 1 and 2 are required. If only step 1 is done, the server UI will show the model but the generation runtime will reject it with "Unsupported model".
+Both `KNOWN_TOOLS` (server) and `_ALLOWED_MODELS` (runtime) are generated from the same `tools.json` source. No manual edits to `server.py` or `forge_cli.py.tmpl` are needed.
 
 ---
 
@@ -145,8 +157,10 @@ Version handlers validate `ver_id` with `re.fullmatch(r'\d{8}-\d{6}', ver_id)` a
 
 ### Model Allowlist
 Two-layer validation:
-1. Server: `KNOWN_TOOLS` in `server.py`
-2. Runtime: `_ALLOWED_MODELS` in `forge_cli.py.tmpl`
+1. Server: `KNOWN_TOOLS` in `server.py` (generated from `src/data/tools.json`)
+2. Runtime: `_ALLOWED_MODELS` in compiled `forge` binary (also generated from `src/data/tools.json`)
+
+Both layers are compiled from the same source — editing `tools.json` and rebuilding updates both.
 
 ### Electron IPC
 - `setup-git-config`: type + length + email format checks
@@ -198,7 +212,9 @@ Critical rule: marketing design contracts cannot be applied literally to a dense
 
 ## Desktop App (Electron)
 
-The Electron app spawns `server.py` from `~/.forge/scripts/server.py` (not from the repo). Environment:
+The Electron app wrapper lives in `desktop/` — **not** `electron/`. The `electron/` directory name conflicts with Node.js package resolution and causes `not a file` errors in electron-builder.
+
+The app spawns `server.py` from `~/.forge/scripts/server.py` (not from the repo). Environment:
 - `FORGE_DATA_DIR` → active project's `.forge/` directory
 - `FORGE_PROJECTS_ROOT` → `~/.forge/projects/`
 - `FORGE_ORCHESTRATOR_ROOT` → `~/.forge/`
@@ -207,15 +223,30 @@ This means server fixes only reach Electron users when:
 1. `~/.forge/scripts/server.py` is updated via hot-deploy (automatic on rebuild if dir exists), OR
 2. The user runs `./forge upgrade` manually
 
+### Asar Bundle
+`desktop/package.json` `files` is an explicit allowlist. Every module required at runtime must appear:
+```json
+"files": [
+  "main.js", "preload.js", "auth.js", "github.js", "org.js",
+  "auth-preload.js", "setup-preload.js", "auth-window.html", "setup-window.html",
+  "assets/**/*"
+]
+```
+Omitting a file from this list silently excludes it from the asar bundle and causes a `Cannot find module` crash at runtime.
+
 ### macOS Distribution
+
+macOS builds three targets: `dmg`, `pkg`, `zip`.
+
+The `.pkg` installer runs `desktop/scripts/pkg/postinstall` which automatically executes `xattr -cr` on the installed app — users who install via `.pkg` get a working app with no manual intervention.
 
 `entitlements.mac.plist` **must exist** at `desktop/assets/entitlements.mac.plist`. Its absence causes a malformed bundle and the "damaged" Gatekeeper error.
 
 Required entitlements: JIT, unsigned memory, library validation disable, network client+server, file access.
 
-Notarization: `desktop/scripts/notarize.js` is wired as `afterSign` hook. It is silent unless `APPLE_ID`, `APPLE_ID_PASSWORD`, `APPLE_TEAM_ID` are set in the environment (GitHub secrets).
+Notarization: `desktop/scripts/notarize.js` is wired as `afterSign` hook. It is silent unless `APPLE_ID`, `APPLE_ID_PASSWORD`, `APPLE_TEAM_ID` are set in the environment (GitHub secrets). The hook also checks `CSC_LINK` is non-empty before notarizing.
 
-User workaround for unsigned builds: `xattr -cr "/Applications/Forge OS.app"`
+User workaround for unsigned builds: `xattr -cr "/Applications/Forge OS.app"` or install via `.pkg`.
 
 ### Windows Distribution
 
@@ -229,10 +260,14 @@ Current file: 6 sizes (16/32/48/64/128/256 px), PNG-compressed, 32-bit RGBA.
 
 Single workflow: `.github/workflows/build-desktop.yml`
 
-Matrix builds: macOS (arm64 + x64 DMG + ZIP), Windows (x64 NSIS), Linux (AppImage).
+Working directory: `desktop/` (not `electron/`).
+
+macOS arch targets (arm64 + x64) are built **sequentially** — not in a parallel matrix — to avoid pkg packaging race conditions.
 
 Non-tag pushes → upload workflow artifacts (14-day retention).
 Tag pushes (`v*`) → publish to GitHub Releases.
+
+CI guard for empty `CSC_LINK`: `CSC_IDENTITY_AUTO_DISCOVERY: false` in workflow env prevents electron-builder from crashing when no signing certificate is configured.
 
 **GitHub Pages**: branch-based from `/docs`. No Actions workflow. `static.yml` was deleted — having both caused duplicate deployments.
 
@@ -296,22 +331,60 @@ Acceptable finding: project absolute paths intentionally ellipsized in cards.
 - Fix: 3-level fallback + `~/.forge/scripts/` in hot-deploy + backfill on select
 
 **New model not visible in tool selector**
-- Cause: model added to one tool in `KNOWN_TOOLS` but not another (e.g., Codex vs OpenAI), or not added to `_ALLOWED_MODELS` in template
-- Fix: always update BOTH `server.py` KNOWN_TOOLS AND `forge_cli.py.tmpl` `_ALLOWED_MODELS` for every tool the model applies to
+- Old pattern: model added to `server.py` but not `forge_cli.py.tmpl` (or vice versa)
+- Current: both generated from `src/data/tools.json` — one edit + rebuild fixes both
+- If a model is invisible: check `tools.json` entry, rebuild, upgrade
 
 **macOS "Forge OS is damaged and can't be opened"**
 - Cause: missing `entitlements.mac.plist` → malformed bundle; plus unsigned/unnotarized app quarantined by Gatekeeper
-- Fix: create plist, add notarize hook, configure Apple secrets; user workaround: `xattr -cr`
+- Fix: create plist, add notarize hook, configure Apple secrets; auto-cleared by `.pkg` postinstall; user workaround: `xattr -cr`
 
 **Git worktree config compatibility**
 - Symptom: `core.repositoryformatversion does not support extension: worktreeconfig`
 - Takeaway: prefer operating in main repo; only use worktrees if necessary
+
+**Template extraction escape bug**
+- Symptom: `SyntaxError: unexpected character after line continuation character` in generated `forge`
+- Cause: raw file slicing preserves escaped bytes (`r\"\"\"`) instead of decoded values (`r"""`)
+- Fix: use `ast.literal_eval()` to properly decode Python string escapes when extracting embedded string content
+
+**`{agent}` KeyError in template format()**
+- Symptom: `KeyError: 'agent'` during `python3 src/build_forge.py`
+- Cause: `{agent}` inside template was consumed by `str.format()` before the f-string context could use it
+- Fix: double all literal braces in `forge_cli.py.tmpl` that should pass through format(): `{{agent}}`, `{{gate}}`
+
+**Electron `not a file` CI error**
+- Symptom: `⨯ /path/forge-os/electron not a file` in electron-builder CI output
+- Cause: directory named `electron/` conflicts with Node.js module resolution
+- Fix: renamed to `desktop/`; any name except `electron/` works
+
+**Missing asar modules (Cannot find module)**
+- Symptom: Electron launches then crashes with `Error: Cannot find module './auth'`
+- Cause: `package.json` `files` array is an explicit allowlist; unlisted modules are silently excluded
+- Fix: add all required modules to `files`: auth.js, github.js, org.js, auth-preload.js, setup-preload.js, auth-window.html, setup-window.html
+
+**Empty CSC_LINK electron-builder crash**
+- Symptom: CI signing step crashes even when no certificate is intended
+- Cause: empty string `CSC_LINK` env var treated as invalid certificate input
+- Fix: `CSC_IDENTITY_AUTO_DISCOVERY: false` in CI env; notarize hook checks `process.env.CSC_LINK` non-empty
+
+**macOS arch build race condition (pkg)**
+- Symptom: arm64 and x64 pkg builds corrupt each other in parallel CI matrix
+- Cause: shared pkg staging directories
+- Fix: build arch targets sequentially in CI
 
 ---
 
 ## Success Log
 
 - Modular source layout; single built `forge` artifact
+- `build_forge.py` is a ~260-line pure compiler — no magic strings, no inline templates
+- `build_constants.py` centralizes all build-time constants
+- `forge_cli.py.tmpl` is the real CLI template, fully wired
+- `src/data/tools.json` is the single source for all AI tool/model config
+- `src/data/stage_pipeline.json` centralizes all stage agent/gate/input/directory config
+- AI prompts extracted to `src/data/prompts/` and injected at build time
+- Data-driven `AGENT_CONTENT` and `GATE_CONTENT` dicts replace 24-branch if/elif chains
 - Project-first dashboard with full create/select/archive/restore/delete lifecycle
 - Thread-safe state I/O with three module-level locks
 - Security hardening: path traversal, model allowlist, IPC validation, 4 MB request cap
@@ -322,9 +395,14 @@ Acceptable finding: project absolute paths intentionally ellipsized in cards.
 - Design system cleanup: tokens normalized, hero typography scaled down for dashboard
 - GPT-5.5 in Codex and OpenAI tool selectors with allowlist enforcement
 - macOS: `entitlements.mac.plist` created, notarization hook ready for Apple secrets
+- macOS: `.pkg` installer with postinstall script auto-clears quarantine
 - Windows: proper 6-size ICO (16/32/48/64/128/256 px)
 - GitHub Pages: single clean deployment from `/docs` branch (no Actions workflow)
-- README, LICENSE, CLAUDE.md, AGENT.md all production-grade
+- `desktop/` rename resolves Node.js module name conflict permanently
+- All Electron modules listed in asar `files` allowlist
+- macOS CI: sequential arch builds prevent pkg race condition
+- Beta release infrastructure: versioned tags, asset overwrite, download page auto-detection
+- README, LICENSE, CLAUDE.md, AGENT.md, GEMINI.md all production-grade
 
 ---
 
@@ -344,13 +422,17 @@ curl -sS http://127.0.0.1:8080/api/state | python3 -c "import sys,json; d=json.l
 ```
 
 Inspect:
-- `src/build_forge.py` — compiler, KNOWN_TOOLS, stage config
+- `src/build_forge.py` — compiler entry point
+- `src/build_constants.py` — all build-time constants
+- `src/data/tools.json` — AI tool and model registry
+- `src/data/stage_pipeline.json` — stage agents, gates, inputs, directories
+- `src/runtime/forge_cli.py.tmpl` — CLI template, `invoke_model()`, agent/gate loops
 - `src/runtime/server.py` — API handlers, security controls, thread locks
-- `src/runtime/forge_cli.py.tmpl` — `_ALLOWED_MODELS`, `invoke_model()`
+- `src/runtime/constants.py` — all runtime constants (shared by server, build_runner, template)
 - `src/dashboard/DESIGN.md` — design contract
 - `src/dashboard/styles.css` — design tokens
 - `.projects/index.json` — registered projects and active selection
-- `desktop/package.json` — build config, afterSign hook, notarize dep
+- `desktop/package.json` — build config, files allowlist, targets, afterSign hook
 
 Security check before sharing any state artifact:
 - `.projects/<slug>/.forge/project-state.json` may contain tokens from testing

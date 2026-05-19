@@ -1479,7 +1479,7 @@ class ForgeHandler(BaseHTTPRequestHandler):
             os.makedirs(project_root, exist_ok=True)
             forge_script = FORGE_SCRIPT or os.path.abspath(os.path.join(ORCHESTRATOR_ROOT, "forge"))
             init_result = subprocess.run(
-                [forge_script, "--project", project_root, "init"],
+                [sys.executable, forge_script, "--project", project_root, "init"],
                 cwd=ORCHESTRATOR_ROOT,
                 capture_output=True,
                 text=True,
@@ -1631,12 +1631,12 @@ class ForgeHandler(BaseHTTPRequestHandler):
                         skip_env = {**base_env, "FORGE_SKIP_EXISTING": "1"}
                         for s in pipeline_stages:
                             set_processing(STATUS_RUNNING, s)
-                            cmd = [forge_script, "generate", s]
+                            cmd = [sys.executable, forge_script, "generate", s]
                             if tmp_combined and s == "context":
                                 cmd.append(tmp_combined)
                             subprocess.run(cmd, cwd=REPO_ROOT, env=skip_env)
                     else:
-                        cmd = [forge_script, "generate", stage]
+                        cmd = [sys.executable, forge_script, "generate", stage]
                         if tmp_combined and stage == "context":
                             cmd.append(tmp_combined)
                         subprocess.run(cmd, cwd=REPO_ROOT, env=base_env)
@@ -2361,7 +2361,6 @@ class ForgeHandler(BaseHTTPRequestHandler):
                 self._json_response(400, {"error": "no reviewed files in this stage"})
                 return
             _proj = load_project_state()
-            _forge_script = FORGE_SCRIPT or os.path.abspath(os.path.join(FORGE_DIR, "..", "..", "forge"))
 
             def _run_distill():
                 _status_file = os.path.join(FORGE_DIR, FILE_STATUS)
