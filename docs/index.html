@@ -1074,8 +1074,10 @@
         </div>
 
         <div class="platform-install-note">
-          Open the DMG, drag Forge OS to Applications. macOS will ask to allow on first launch — click Open.<br /><br />
-          <strong style="color:var(--text-2);font-weight:500;">Unsigned builds</strong> — Gatekeeper may warn on first open. Right-click &rarr; Open to bypass.
+          Open the DMG, drag Forge OS to Applications, then double-click to launch.<br /><br />
+          <strong style="color:var(--accent);font-weight:600;">"Forge OS is damaged" fix</strong> — macOS quarantines apps downloaded from the web that aren't yet notarized. Run this once in Terminal, then relaunch:
+          <div class="code-block" style="margin-top:8px;">xattr -cr "/Applications/Forge OS.app"</div>
+          Alternatively: right-click the app &rarr; <em>Open</em> &rarr; <em>Open Anyway</em>.
         </div>
       </div>
 

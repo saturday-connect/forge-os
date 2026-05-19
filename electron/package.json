@@ -15,9 +15,11 @@
   },
   "devDependencies": {
     "electron": "^31.0.0",
-    "electron-builder": "^24.13.0"
+    "electron-builder": "^24.13.0",
+    "@electron/notarize": "^2.5.0"
   },
   "build": {
+    "afterSign": "scripts/notarize.js",
     "appId": "com.forgeos.desktop",
     "productName": "Forge OS",
     "artifactName": "forge-os-${version}-${arch}-${os}.${ext}",

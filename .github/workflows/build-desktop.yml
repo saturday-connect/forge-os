@@ -61,9 +61,17 @@ jobs:
         if: runner.os == 'macOS'
         run: npm run build:mac -- --publish never
         working-directory: electron
-        # Code signing: add CSC_LINK + CSC_KEY_PASSWORD secrets when Apple Developer cert is ready
         env:
-          CSC_IDENTITY_AUTO_DISCOVERY: false   # skip signing until cert is configured
+          # Signing: set CSC_LINK (base64 .p12) + CSC_KEY_PASSWORD to enable code signing.
+          # Notarization: set APPLE_ID, APPLE_ID_PASSWORD (app-specific), APPLE_TEAM_ID.
+          # Until secrets are configured the app builds unsigned — users must run:
+          #   xattr -cr "/Applications/Forge OS.app"
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
 
       - name: Build desktop app (Windows)
         if: runner.os == 'Windows'
