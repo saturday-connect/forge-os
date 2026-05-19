@@ -20,6 +20,11 @@
   },
   "build": {
     "afterSign": "scripts/notarize.js",
+    "directories": {
+      "app": ".",
+      "buildResources": "assets",
+      "output": "dist"
+    },
     "appId": "com.forgeos.desktop",
     "productName": "Forge OS",
     "artifactName": "forge-os-${version}-${arch}-${os}.${ext}",
