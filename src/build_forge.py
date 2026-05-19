@@ -2529,11 +2529,13 @@ def build_forge():
     server_src = os.path.join(src_dir, "runtime", "server.py")
     repo_root = os.path.normpath(os.path.join(src_dir, ".."))
     parent_dir = os.path.dirname(repo_root)
+    home_forge_scripts = os.path.join(os.path.expanduser("~"), ".forge", "scripts")
     scripts_dirs = (
         glob.glob(os.path.join(repo_root, ".forge/scripts"))
         + glob.glob(os.path.join(repo_root, ".projects/*/.forge/scripts"))
         + glob.glob(os.path.join(repo_root, "test-projects/*/.forge/scripts"))
         + glob.glob(os.path.join(parent_dir, "*/.forge/scripts"))
+        + ([home_forge_scripts] if os.path.isdir(home_forge_scripts) else [])
     )
     copied = 0
     for sd in scripts_dirs:

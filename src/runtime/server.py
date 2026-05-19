@@ -69,9 +69,10 @@ KNOWN_TOOLS = {
     "codex": {
         "label": "Codex CLI",
         "models": [
-            {"id": "o4-mini",    "label": "o4 Mini (recommended)"},
-            {"id": "o3",         "label": "o3"},
-            {"id": "gpt-4.1",    "label": "GPT-4.1"},
+            {"id": "o4-mini",      "label": "o4 Mini (recommended)"},
+            {"id": "o3",           "label": "o3"},
+            {"id": "gpt-5.5",      "label": "GPT-5.5"},
+            {"id": "gpt-4.1",      "label": "GPT-4.1"},
             {"id": "gpt-4.1-mini", "label": "GPT-4.1 Mini"},
         ]
     },
@@ -1498,6 +1499,14 @@ class ForgeHandler(BaseHTTPRequestHandler):
             index_data["active_project_id"] = project_id
             save_projects_index(index_data)
             set_project_root(target["path"])
+            # Backfill project_name into state file if missing
+            try:
+                _pstate = load_project_state()
+                if not _pstate.get("project_name") and target.get("name"):
+                    _pstate["project_name"] = target["name"]
+                    save_project_state(_pstate)
+            except OSError as exc:
+                logger.warning("select backfill project_name: %s", exc)
             self._json_response(200, {"status": "selected", "project": target})
             return
 
