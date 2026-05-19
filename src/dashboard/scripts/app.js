@@ -166,6 +166,12 @@ const STAGES = [
   { key: 'marketing', label: 'Marketing', dir: '10-marketing', desc: 'GTM, positioning' },
 ];
 
+const STAGE_DIR_TO_LABEL = Object.fromEntries(STAGES.map(s => [s.dir, s.label]));
+
+function _fmtFileName(name) {
+  return name.replace(/\.md$/, '').replace(/[-_]/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+}
+
 const PROJECT_UI_TEXT = {
   eyebrow: 'Workspace Control Plane',
   title: 'Projects',
@@ -1561,15 +1567,37 @@ function renderReview() {
   const activeView = REVIEW_VIEWS.find(v => v.id === reviewViewFilter) || REVIEW_VIEWS[0];
   treeEl.innerHTML = '';
 
-  let totalVisible = 0;
+  let totalVisible = 0, totalReviewedVisible = 0;
+
+  // Compute overall progress for the tree header progress bar
+  Object.entries(tree).forEach(([dir, files]) => {
+    if (activeView.dirs && !activeView.dirs.some(d => dir.startsWith(d))) return;
+    files.forEach(f => {
+      if (f.size === 0) return;
+      totalVisible++;
+      if (f.status === 'reviewed') totalReviewedVisible++;
+    });
+  });
+  const progressEl = document.getElementById('review-tree-progress');
+  if (progressEl) {
+    if (totalVisible > 0) {
+      const pct = Math.round((totalReviewedVisible / totalVisible) * 100);
+      progressEl.innerHTML = `
+        <div class="review-tree-progress-bar"><div class="review-tree-progress-fill" style="width:${pct}%"></div></div>
+        <span class="review-tree-progress-label">${totalReviewedVisible} / ${totalVisible}</span>`;
+      progressEl.style.display = 'flex';
+    } else {
+      progressEl.style.display = 'none';
+    }
+  }
+
+  totalVisible = 0;
 
   Object.entries(tree).forEach(([dir, files]) => {
-    // View filter: skip dirs not in the active view
     if (activeView.dirs && !activeView.dirs.some(d => dir.startsWith(d))) return;
 
-    // Apply search + status filters
     const filtered = files.filter(f => {
-      if (searchVal && !f.name.toLowerCase().includes(searchVal)) return false;
+      if (searchVal && !f.name.toLowerCase().includes(searchVal) && !_fmtFileName(f.name).toLowerCase().includes(searchVal)) return false;
       if (reviewStatusFilter !== 'all') {
         const isReviewed = f.status === 'reviewed';
         if (reviewStatusFilter === 'reviewed' && !isReviewed) return false;
@@ -1581,11 +1609,20 @@ function renderReview() {
     totalVisible += filtered.length;
 
     const summary = state.stageReviewSummary?.[dir] || {};
+    const stageLabel = STAGE_DIR_TO_LABEL[dir] || dir;
+    const rev = summary.reviewed || 0;
+    const gen = summary.generated || 0;
+    const grpPct = gen > 0 ? Math.round((rev / gen) * 100) : 0;
+    const grpDone = rev === gen && gen > 0;
+
     treeEl.insertAdjacentHTML('beforeend', `
       <div class="stage-group">
         <div class="stage-group-header">
-          <span>${dir}</span>
-          <span style="font-size:9px;color:var(--text-3)">${summary.reviewed||0}/${summary.generated||0}</span>
+          <span>${stageLabel}</span>
+          <div class="stage-group-progress">
+            <div class="stage-group-progress-bar"><div class="stage-group-progress-fill${grpDone ? ' done' : ''}" style="width:${grpPct}%"></div></div>
+            <span class="stage-group-count">${rev}/${gen}</span>
+          </div>
         </div>
         ${filtered.map(f => {
           const path = `${dir}/${f.name}`;
@@ -1595,7 +1632,7 @@ function renderReview() {
           return `
             <div class="tree-file-item ${isActive ? 'active' : ''}" onclick="openReviewFile('${path}','${f.status}',${f.size},${f.modifiedAt})">
               <span class="tree-file-dot ${dotClass}"></span>
-              ${f.name.replace('.md','')}
+              ${_fmtFileName(f.name)}
             </div>
           `;
         }).join('')}
@@ -1678,12 +1715,23 @@ async function openReviewFile(path, status, size, modifiedAt) {
   document.getElementById('btn-needs-review').style.opacity = '';
   document.getElementById('btn-needs-review').style.pointerEvents = '';
 
-  document.getElementById('viewer-filename').textContent = path;
+  const _pathParts = path.split('/');
+  const _stageDir  = _pathParts[0] || '';
+  const _fileName  = _pathParts.slice(1).join('/');
+  const _stageLabel = STAGE_DIR_TO_LABEL[_stageDir] || _stageDir;
+  const _statusDot = `<span class="viewer-status-dot ${status}" title="${status.replace('_',' ')}"></span>`;
+  document.getElementById('viewer-filename').innerHTML = `
+    <div class="viewer-breadcrumb">
+      ${_statusDot}
+      <span class="viewer-breadcrumb-stage">${_stageLabel}</span>
+      <span class="viewer-breadcrumb-sep">›</span>
+      <span class="viewer-breadcrumb-file">${_fmtFileName(_fileName)}</span>
+    </div>`;
   document.getElementById('btn-mark-reviewed').style.display = '';
   document.getElementById('btn-needs-review').style.display = '';
   document.getElementById('viewer-mode-toggle').style.display = '';
 
-  document.getElementById('meta-path').textContent = path;
+  document.getElementById('meta-path').textContent = STAGE_DIR_TO_LABEL[path.split('/')[0]] || path.split('/')[0];
   document.getElementById('meta-status').innerHTML = `<span class="badge badge-${status.replace('_','-')}">${status.replace('_',' ')}</span>`;
   document.getElementById('meta-size').textContent = size > 0 ? `${(size/1024).toFixed(1)} KB` : '0 bytes';
   document.getElementById('meta-modified').textContent = modifiedAt ? new Date(modifiedAt * 1000).toLocaleString() : '—';
@@ -3551,7 +3599,7 @@ async function resetPipeline() {
     currentReviewFile = null;
     document.getElementById('viewer-content').innerHTML = VIEWER_DEFAULT_HTML;
     document.getElementById('viewer-raw-pre').textContent = '';
-    document.getElementById('viewer-filename').textContent = 'Select a file';
+    document.getElementById('viewer-filename').innerHTML = '<span style="font-size:12px;color:var(--text-3);">Select a document to review</span>';
     document.getElementById('btn-mark-reviewed').style.display = 'none';
     document.getElementById('btn-needs-review').style.display = 'none';
     document.getElementById('viewer-mode-toggle').style.display = 'none';

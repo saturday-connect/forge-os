@@ -289,6 +289,7 @@
         <div class="review-tree">
           <div class="review-tree-header">
             <div class="review-view-filters" id="review-view-filters"></div>
+            <div id="review-tree-progress" class="review-tree-progress" style="display:none;"></div>
             <div class="review-status-filters">
               <button class="review-status-btn active" id="rsf-all"      onclick="setReviewStatus('all')">All</button>
               <button class="review-status-btn status-pending"  id="rsf-pending"  onclick="setReviewStatus('pending')">Pending</button>
@@ -300,7 +301,7 @@
         </div>
         <div class="review-viewer">
           <div class="review-viewer-header">
-            <span id="viewer-filename" style="font-size:12px;font-weight:600;font-family:var(--mono);color:var(--text-2);">Select a file</span>
+            <div id="viewer-filename" style="font-size:12px;color:var(--text-3);">Select a document to review</div>
             <div style="display:flex;gap:8px;align-items:center;">
               <div class="viewer-mode-toggle" id="viewer-mode-toggle" style="display:none;">
                 <button class="toggle-btn active" id="btn-mode-rendered" onclick="setViewerMode('rendered')">Rendered</button>
@@ -331,20 +332,19 @@
         </div>
         <div class="review-panel">
           <div class="review-panel-section">
-            <div class="review-panel-label">AI Critique</div>
+            <div class="review-panel-label">Request Changes</div>
             <textarea id="critique-textarea" placeholder="Describe what needs to be improved..."></textarea>
+            <button id="btn-fix-regenerate" class="btn btn-secondary" style="width:100%;margin-top:8px;" onclick="submitFix()">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"/>
+              </svg>
+              Regenerate with Critique
+            </button>
           </div>
-          <button id="btn-fix-regenerate" class="btn btn-secondary" style="width:100%" onclick="submitFix()">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"/>
-            </svg>
-            Regenerate with Critique
-          </button>
-          <div class="divider"></div>
           <div class="review-panel-section">
             <div class="review-panel-label">File Info</div>
             <div class="file-meta-info" id="file-meta-info">
-              <div class="file-meta-row"><span class="file-meta-key">Path</span><span id="meta-path">—</span></div>
+              <div class="file-meta-row"><span class="file-meta-key">Stage</span><span id="meta-path">—</span></div>
               <div class="file-meta-row"><span class="file-meta-key">Status</span><span id="meta-status">—</span></div>
               <div class="file-meta-row"><span class="file-meta-key">Size</span><span id="meta-size">—</span></div>
               <div class="file-meta-row"><span class="file-meta-key">Modified</span><span id="meta-modified">—</span></div>
@@ -354,7 +354,6 @@
             <div class="review-panel-label">Gates</div>
             <div id="review-gates-summary"></div>
           </div>
-          <div class="divider"></div>
           <div class="review-panel-section">
             <div class="review-panel-label" id="versions-label">Version History</div>
             <div id="version-list" class="version-list">
