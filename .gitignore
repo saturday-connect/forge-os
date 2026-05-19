@@ -1,15 +1,62 @@
+# ── Build artifacts ───────────────────────────────────────────────────────────
+forge
+src/dashboard.html
+
+# ── Runtime state (generated, project-specific, may contain tokens) ───────────
 .forge/
 .projects/
 test-projects/
 raw-input.md
-forge
-.claude/
-__pycache__/
-*.pyc
-node_modules/
-electron/package-lock.json
-.DS_Store
-*.log
-dist/
+
+# ── Electron build output ─────────────────────────────────────────────────────
 electron/dist/
 electron/out/
+electron/dev-app-update.yml
+electron/package-lock.json
+
+# ── Python ────────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+venv/
+.venv/
+.pytest_cache/
+*.egg-info/
+.eggs/
+build/
+coverage/
+.coverage
+htmlcov/
+
+# ── Node / npm ────────────────────────────────────────────────────────────────
+node_modules/
+dist/
+
+# ── Secrets and credentials ───────────────────────────────────────────────────
+.env
+.env.*
+*.env
+*.pem
+*.p12
+*.p8
+*.key
+*.crt
+*.cer
+
+# ── Claude Code local config ──────────────────────────────────────────────────
+.claude/
+
+# ── OS and editor noise ───────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# ── Logs and temp ─────────────────────────────────────────────────────────────
+*.log
+*.tmp
+*.temp
+/tmp/
