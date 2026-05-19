@@ -1,0 +1,5 @@
+#!/bin/bash
+# Quit Forge OS before installation so the installer can overwrite the running app bundle.
+osascript -e 'quit app "Forge OS"' 2>/dev/null || true
+sleep 2
+exit 0
