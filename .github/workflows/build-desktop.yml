@@ -157,14 +157,11 @@ jobs:
             prerelease_args=(--prerelease)
           fi
 
-          if ! gh release view "$tag" >/dev/null 2>&1; then
-            gh release create "$tag" --title "$tag" --generate-notes "${prerelease_args[@]}"
-          fi
-
           mapfile -t files < <(find release-artifacts -type f | sort)
           if [ "${#files[@]}" -eq 0 ]; then
             echo "No release artifacts found."
             exit 1
           fi
 
-          gh release upload "$tag" "${files[@]}" --clobber
+          gh release delete "$tag" --yes || true
+          gh release create "$tag" "${files[@]}" --title "$tag" --generate-notes "${prerelease_args[@]}"
