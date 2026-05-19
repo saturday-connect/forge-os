@@ -1222,6 +1222,8 @@ function renderGenerate() {
       </div>`;
     generateTopEl.style.display = 'none';
     document.getElementById('btn-generate-all').disabled = true;
+    document.getElementById('btn-generate-all').style.display = isRunning ? 'none' : '';
+    document.getElementById('btn-stop-generate').style.display = isRunning ? '' : 'none';
     // Render locked stage cards to show the user what they're about to unlock
     stageGridEl.style.opacity = '0.35';
     stageGridEl.style.pointerEvents = 'none';
@@ -1231,6 +1233,8 @@ function renderGenerate() {
     stageGridEl.style.opacity = '';
     stageGridEl.style.pointerEvents = '';
     document.getElementById('btn-generate-all').disabled = isRunning;
+    document.getElementById('btn-generate-all').style.display = isRunning ? 'none' : '';
+    document.getElementById('btn-stop-generate').style.display = isRunning ? '' : 'none';
   }
 
   // Error bar — show when there's an unacknowledged error from the last run
@@ -1361,6 +1365,20 @@ async function generate(stage) {
     optimisticRunning = null;
     renderGenerate();
     showToast('Generate request failed', 'error');
+  }
+}
+
+async function stopGeneration() {
+  const btn = document.getElementById('btn-stop-generate');
+  if (btn) { btn.disabled = true; btn.textContent = 'Stopping…'; }
+  try {
+    await apiFetch('/api/generate/cancel', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+    showToast('Generation stopped', 'info');
+  } catch (e) {
+    showToast('Could not stop generation', 'error');
+  } finally {
+    if (btn) { btn.disabled = false; }
+    loadState();
   }
 }
 

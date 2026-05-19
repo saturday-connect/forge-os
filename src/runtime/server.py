@@ -140,9 +140,11 @@ logger = logging.getLogger("forge.server")
 # ---------------------------------------------------------------------------
 # Thread safety
 # ---------------------------------------------------------------------------
-_state_lock   = threading.Lock()
-_reviews_lock = threading.Lock()
-_index_lock   = threading.Lock()
+_state_lock    = threading.Lock()
+_reviews_lock  = threading.Lock()
+_index_lock    = threading.Lock()
+_generate_lock = threading.Lock()   # guards _active_generate_proc
+_active_generate_proc = None        # current Popen for the running forge-generate subprocess
 
 # Module-level security constants — read from env at startup
 FORGE_TOKEN = os.environ.get("FORGE_TOKEN", "")
@@ -1686,7 +1688,23 @@ class ForgeHandler(BaseHTTPRequestHandler):
                 except (OSError, json.JSONDecodeError) as exc:
                     logger.debug("status_file_check: %s", exc)
 
+            def _run_stage_proc(cmd, cwd, env):
+                """Launch one forge-generate subprocess, register it for cancel, wait for it."""
+                global _active_generate_proc
+                kwargs = {"cwd": cwd, "env": env}
+                if hasattr(os, "setsid"):
+                    kwargs["start_new_session"] = True  # own process group → clean SIGKILL
+                proc = subprocess.Popen(cmd, **kwargs)
+                with _generate_lock:
+                    _active_generate_proc = proc
+                proc.wait()
+                with _generate_lock:
+                    if _active_generate_proc is proc:
+                        _active_generate_proc = None
+                return proc.returncode
+
             def run_generate():
+                global _active_generate_proc
                 set_processing(STATUS_RUNNING, stage)
                 tmp_combined = None
                 try:
@@ -1708,15 +1726,17 @@ class ForgeHandler(BaseHTTPRequestHandler):
                             cmd = [sys.executable, forge_script, "generate", s]
                             if tmp_combined and s == "context":
                                 cmd.append(tmp_combined)
-                            result = subprocess.run(cmd, cwd=REPO_ROOT, env=skip_env)
-                            if result.returncode != 0:
+                            rc = _run_stage_proc(cmd, REPO_ROOT, skip_env)
+                            if rc != 0:
                                 break
                     else:
                         cmd = [sys.executable, forge_script, "generate", stage]
                         if tmp_combined and stage == "context":
                             cmd.append(tmp_combined)
-                        subprocess.run(cmd, cwd=REPO_ROOT, env=base_env)
+                        _run_stage_proc(cmd, REPO_ROOT, base_env)
                 finally:
+                    with _generate_lock:
+                        _active_generate_proc = None
                     set_processing(STATUS_IDLE)
                     if tmp_combined and os.path.exists(tmp_combined):
                         try:
@@ -1727,6 +1747,47 @@ class ForgeHandler(BaseHTTPRequestHandler):
             t = threading.Thread(target=run_generate, daemon=True)
             t.start()
             self._json_response(200, {"status": "started", "stage": stage})
+            return
+
+        if path == "/api/generate/cancel":
+            global _active_generate_proc
+            with _generate_lock:
+                proc = _active_generate_proc
+            if proc is None:
+                self._json_response(200, {"status": "not_running"})
+                return
+            try:
+                if hasattr(os, "killpg"):
+                    import signal as _signal
+                    try:
+                        os.killpg(os.getpgid(proc.pid), _signal.SIGTERM)
+                    except (ProcessLookupError, PermissionError):
+                        proc.terminate()
+                else:
+                    proc.terminate()
+                logger.info("generate cancel: sent SIGTERM to pid %s", proc.pid)
+            except Exception as exc:
+                logger.warning("generate cancel: %s", exc)
+            # Write cancelled status immediately so the UI updates without waiting
+            # for the thread's finally block to run.
+            status_file = os.path.join(FORGE_DIR, FILE_STATUS)
+            runs_dir = os.path.join(FORGE_DIR, "runs")
+            if os.path.exists(runs_dir):
+                try:
+                    with open(status_file, "w") as _sf:
+                        json.dump({
+                            "status": STATUS_IDLE,
+                            "stage": "",
+                            "last_error": {
+                                "stage": "",
+                                "file": "",
+                                "message": "Generation stopped by user.",
+                                "timestamp": datetime.now().isoformat(),
+                            }
+                        }, _sf)
+                except OSError as exc:
+                    logger.warning("generate cancel status write: %s", exc)
+            self._json_response(200, {"status": "cancelled"})
             return
 
         if path == "/api/build-review":
