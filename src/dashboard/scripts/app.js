@@ -123,6 +123,7 @@ let projectListMode = 'active';
 let pendingDeleteProjectId = '';
 let currentView = 'overview';
 let currentInputFile = null;
+let inputFileModified = false;
 let currentReviewFile = null;
 let runtimeInitialized = false;
 let pollInterval = null;
@@ -1032,7 +1033,41 @@ function updateFilePreview() {
   document.getElementById('new-file-preview').textContent = full;
 }
 
+function _initInputEditorEvents() {
+  const ta = document.getElementById('input-editor');
+  if (!ta || ta._forgeEventsWired) return;
+  ta._forgeEventsWired = true;
+  ta.addEventListener('input', () => {
+    if (!inputFileModified) _setInputUnsaved(true);
+    _updateEditorStats();
+  });
+  ta.addEventListener('keydown', e => {
+    if ((e.metaKey || e.ctrlKey) && e.key === 's') {
+      e.preventDefault();
+      saveCurrentFile();
+    }
+  });
+}
+
+function _setInputUnsaved(dirty) {
+  inputFileModified = dirty;
+  const dot = document.getElementById('editor-unsaved-dot');
+  const lbl = document.getElementById('editor-unsaved-label');
+  if (dot) dot.style.display = dirty ? '' : 'none';
+  if (lbl) lbl.style.display = dirty ? '' : 'none';
+}
+
+function _updateEditorStats() {
+  const el = document.getElementById('editor-stats');
+  if (!el) return;
+  const text = document.getElementById('input-editor')?.value || '';
+  const words = text.trim() ? text.trim().split(/\s+/).length : 0;
+  const lines = text.split('\n').length;
+  el.textContent = `${words} words · ${lines} lines`;
+}
+
 function renderInput() {
+  _initInputEditorEvents();
   const rawInputs = state.rawInputs || [];
   const count = rawInputs.length;
 
@@ -1090,6 +1125,10 @@ function renderInput() {
       `);
     });
   });
+  // Auto-open first file if none is currently selected
+  if (count > 0 && !currentInputFile) {
+    openInputFile(rawInputs[0].name);
+  }
 }
 
 function escHtmlJs(s) {
@@ -1101,9 +1140,11 @@ async function openInputFile(name) {
   document.getElementById('input-empty-state').style.display = 'none';
   const container = document.getElementById('input-editor-container');
   container.style.display = 'flex';
-  // Show just the filename portion in the header (not the full path)
-  const displayName = name.includes('/') ? name : name;
-  document.getElementById('editing-filename').textContent = displayName;
+  const parts = name.split('/');
+  document.getElementById('editing-filename').textContent = parts[parts.length - 1];
+  const pathEl = document.getElementById('editor-path');
+  if (pathEl) pathEl.textContent = parts.length > 1 ? name : '';
+  _setInputUnsaved(false);
 
   renderInput(); // re-render to update active highlight
 
@@ -1111,6 +1152,7 @@ async function openInputFile(name) {
     const res = await apiFetch(`/api/raw-input?name=${encodeURIComponent(name)}`);
     const text = await res.text();
     document.getElementById('input-editor').value = text;
+    _updateEditorStats();
   } catch (e) {
     showToast('Failed to load file', 'error');
   }
@@ -1126,6 +1168,7 @@ async function saveCurrentFile() {
       body: JSON.stringify({ name: currentInputFile, content })
     });
     showToast('File saved', 'success');
+    _setInputUnsaved(false);
     loadState();
   } catch (e) {
     showToast('Save failed', 'error');

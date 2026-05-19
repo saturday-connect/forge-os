@@ -225,14 +225,22 @@
             </div>
             <div id="input-editor-container" style="display:none;flex:1;flex-direction:column;height:100%;">
               <div class="file-edit-header">
-                <span id="editing-filename" style="font-size:12px;font-weight:600;font-family:var(--mono);color:var(--text);">untitled.md</span>
-                <div style="display:flex;gap:8px;">
-                  <button class="btn btn-danger btn-sm" onclick="deleteCurrentFile()">Delete</button>
-                  <button class="btn btn-primary btn-sm" onclick="saveCurrentFile()">Save</button>
+                <div class="file-edit-title">
+                  <span id="editing-filename" style="font-size:12px;font-weight:600;font-family:var(--mono);color:var(--text);">untitled.md</span>
+                  <span id="editor-unsaved-dot" class="editor-unsaved-dot" style="display:none;" title="Unsaved changes"></span>
+                </div>
+                <div style="display:flex;gap:8px;align-items:center;">
+                  <span id="editor-unsaved-label" style="display:none;font-size:10px;color:var(--text-3);">Unsaved</span>
+                  <button class="btn btn-ghost btn-sm" onclick="deleteCurrentFile()">Delete</button>
+                  <button class="btn btn-primary btn-sm" onclick="saveCurrentFile()" title="Save (⌘S)">Save</button>
                 </div>
               </div>
               <div class="file-edit-body">
-                <textarea id="input-editor" placeholder="# My Product Idea&#10;&#10;Describe your product here..."></textarea>
+                <textarea id="input-editor" spellcheck="false" placeholder="# My Product Idea&#10;&#10;Describe your product here..."></textarea>
+              </div>
+              <div class="file-edit-footer">
+                <span id="editor-stats" style="font-variant-numeric:tabular-nums;"></span>
+                <span id="editor-path" style="color:var(--text-3);font-family:var(--mono);font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:200px;"></span>
               </div>
             </div>
           </div>
