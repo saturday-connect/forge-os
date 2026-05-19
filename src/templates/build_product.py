@@ -4,39 +4,54 @@ import subprocess
 import sys
 from datetime import datetime, timezone
 
+from template_constants import (
+    DEFAULT_CONTEXT_DIRECTORIES,
+    ERROR_ISSUE_NOT_FOUND,
+    ERROR_UNSUPPORTED_TOOL,
+    FILE_ENCODING,
+    FILE_ISSUES,
+    FILE_RUNTIME_CONFIG,
+    FILE_STATUS,
+    GEMINI_ARGS_BASE,
+    CODEX_ARGS_BASE,
+    ISO_TIMESTAMP_FORMAT,
+    MARKDOWN_EXTENSION,
+    MAX_CONTEXT_FILES,
+    PROMPT_BASELINE_HEADER,
+    PROMPT_CONTEXT_FILE_END,
+    PROMPT_CONTEXT_FILE_START,
+    PROMPT_CONTEXT_FILES_LABEL,
+    PROMPT_ISSUE_HEADER,
+    PROMPT_RETURN_SUMMARY,
+    STATUS_BUILDING,
+    STATUS_COMPLETED,
+    STATUS_FAILED,
+    STATUS_KIND_BUILD,
+    TOOL_CODEX,
+    TOOL_GEMINI,
+    USAGE_BUILD_PRODUCT,
+)
+
 FORGE_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 REPO_ROOT = os.path.dirname(FORGE_ROOT)
-ISSUES_FILE = os.path.join(FORGE_ROOT, "issues", "issues.json")
-RUNTIME_CONFIG_FILE = os.path.join(FORGE_ROOT, "runtime-config.json")
-STATUS_FILE = os.path.join(FORGE_ROOT, "runs", "status.json")
-MAX_CONTEXT_FILES = 12
-TOOL_GEMINI = "gemini"
-TOOL_CODEX = "codex"
-STATUS_BUILDING = "building"
-STATUS_FAILED = "failed"
-DEFAULT_CONTEXT_DIRECTORIES = [
-    "06-engineering",
-    "04-architecture",
-    "05-delivery",
-    "01-requirements",
-    "02-design",
-    "03-analysis",
-]
+ISSUES_FILE = os.path.join(FORGE_ROOT, FILE_ISSUES)
+RUNTIME_CONFIG_FILE = os.path.join(FORGE_ROOT, FILE_RUNTIME_CONFIG)
+STATUS_FILE = os.path.join(FORGE_ROOT, FILE_STATUS)
 
 
 def now_iso():
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return datetime.now(timezone.utc).strftime(ISO_TIMESTAMP_FORMAT)
 
 
 def load_json(path, default_value):
     if not os.path.exists(path):
         return default_value
-    with open(path, "r", encoding="utf-8") as f:
+    with open(path, "r", encoding=FILE_ENCODING) as f:
         return json.load(f)
 
 
 def write_json(path, value):
-    with open(path, "w", encoding="utf-8") as f:
+    with open(path, "w", encoding=FILE_ENCODING) as f:
         json.dump(value, f, indent=2)
 
 
@@ -61,7 +76,7 @@ def find_issue(issue_id):
     for issue in issues:
         if issue.get("id") == issue_id:
             return issues, issue
-    raise SystemExit(f"Issue not found: {issue_id}")
+    raise SystemExit(ERROR_ISSUE_NOT_FOUND.format(issue_id=issue_id))
 
 
 def collect_context_files(issue=None):
@@ -81,7 +96,7 @@ def collect_context_files(issue=None):
         if not os.path.isdir(directory):
             continue
         for filename in sorted(os.listdir(directory)):
-            if not filename.endswith(".md"):
+            if not filename.endswith(MARKDOWN_EXTENSION):
                 continue
             full_path = os.path.join(directory, filename)
             if full_path in seen_paths:
@@ -93,51 +108,35 @@ def collect_context_files(issue=None):
     return context_files
 
 
+def _append_context_files(prompt_parts, context_file_list):
+    prompt_parts.append(PROMPT_CONTEXT_FILES_LABEL)
+    for path in context_file_list:
+        rel_path = os.path.relpath(path, REPO_ROOT)
+        with open(path, "r", encoding=FILE_ENCODING) as f:
+            prompt_parts.append(PROMPT_CONTEXT_FILE_START.format(rel_path=rel_path))
+            prompt_parts.append(f.read())
+            prompt_parts.append(PROMPT_CONTEXT_FILE_END.format(rel_path=rel_path))
+    prompt_parts.append(PROMPT_RETURN_SUMMARY)
+
+
 def build_issue_prompt(issue):
-    prompt_parts = []
-    prompt_parts.append("Implement the requested product change in this repository.\n")
-    prompt_parts.append("Use the documentation context below as the source of truth.\n")
-    prompt_parts.append("If code changes are required, edit the codebase directly.\n")
-    prompt_parts.append("Do not rewrite documentation unless it is necessary to keep code and docs aligned.\n")
-    prompt_parts.append("Prefer minimal, working changes.\n\n")
+    prompt_parts = [PROMPT_ISSUE_HEADER]
     prompt_parts.append(f"Issue ID: {issue['id']}\n")
     prompt_parts.append(f"Title: {issue['title']}\n")
     prompt_parts.append(f"Stage: {issue['stage']}\n")
     prompt_parts.append(f"Description:\n{issue['description']}\n\n")
-    prompt_parts.append("Context files:\n")
-
-    for path in collect_context_files(issue):
-        rel_path = os.path.relpath(path, REPO_ROOT)
-        with open(path, "r", encoding="utf-8") as f:
-            prompt_parts.append(f"\n--- START OF {rel_path} ---\n")
-            prompt_parts.append(f.read())
-            prompt_parts.append(f"\n--- END OF {rel_path} ---\n")
-
-    prompt_parts.append("\nReturn a concise summary of what changed when done.\n")
+    _append_context_files(prompt_parts, collect_context_files(issue))
     return "".join(prompt_parts)
 
 
 def build_baseline_prompt():
-    prompt_parts = []
-    prompt_parts.append("Implement the product described by the current Forge documentation.\n")
-    prompt_parts.append("Use the generated documentation as the source of truth.\n")
-    prompt_parts.append("Edit the codebase directly and keep documentation aligned when necessary.\n")
-    prompt_parts.append("Prefer the smallest working implementation that satisfies the documented plan.\n\n")
-    prompt_parts.append("Context files:\n")
-
-    for path in collect_context_files():
-        rel_path = os.path.relpath(path, REPO_ROOT)
-        with open(path, "r", encoding="utf-8") as f:
-            prompt_parts.append(f"\n--- START OF {rel_path} ---\n")
-            prompt_parts.append(f.read())
-            prompt_parts.append(f"\n--- END OF {rel_path} ---\n")
-
-    prompt_parts.append("\nReturn a concise summary of what changed when done.\n")
+    prompt_parts = [PROMPT_BASELINE_HEADER]
+    _append_context_files(prompt_parts, collect_context_files())
     return "".join(prompt_parts)
 
 
 def run_gemini(prompt, model_name):
-    command = ["gemini", "--skip-trust", "--approval-mode", "auto_edit"]
+    command = list(GEMINI_ARGS_BASE)
     if model_name:
         command.extend(["--model", model_name])
     command.extend(["--prompt", prompt])
@@ -145,15 +144,7 @@ def run_gemini(prompt, model_name):
 
 
 def run_codex(prompt, model_name):
-    command = [
-        "codex",
-        "--ask-for-approval",
-        "never",
-        "exec",
-        "--skip-git-repo-check",
-        "--sandbox",
-        "workspace-write",
-    ]
+    command = list(CODEX_ARGS_BASE)
     if model_name:
         command.extend(["--model", model_name])
     command.append(prompt)
@@ -162,7 +153,7 @@ def run_codex(prompt, model_name):
 
 def main():
     if len(sys.argv) > 2:
-        raise SystemExit("Usage: python3 scripts/build_product.py [issue-id]")
+        raise SystemExit(USAGE_BUILD_PRODUCT)
 
     issue_id = sys.argv[1] if len(sys.argv) == 2 else ""
     issues = None
@@ -177,7 +168,7 @@ def main():
     update_status(
         {
             "status": STATUS_BUILDING,
-            "kind": "build",
+            "kind": STATUS_KIND_BUILD,
             "issueId": issue_id,
             "tool": tool_name,
             "model": model_name,
@@ -190,10 +181,10 @@ def main():
     elif tool_name == TOOL_CODEX:
         result = run_codex(prompt, model_name)
     else:
-        raise SystemExit(f"Selected tool does not support code build orchestration: {tool_name}")
+        raise SystemExit(ERROR_UNSUPPORTED_TOOL.format(tool_name=tool_name))
 
     if issue is not None:
-        issue["buildStatus"] = "completed" if result.returncode == 0 else STATUS_FAILED
+        issue["buildStatus"] = STATUS_COMPLETED if result.returncode == 0 else STATUS_FAILED
         issue["updatedAt"] = now_iso()
         save_issues(issues)
 

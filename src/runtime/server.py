@@ -13,7 +13,115 @@ import urllib.request
 import urllib.error
 from datetime import datetime
 from http.server import HTTPServer, BaseHTTPRequestHandler
-from constants import *
+from constants import (
+    AI_POLL_TIMEOUT_SECS,
+    ALL_GATE_NAMES,
+    ALL_STAGE_DIRS,
+    BUILD_STATUS_COMMITTED,
+    BUILD_STATUS_PUSHED,
+    BUILD_STATUS_PR_CREATED,
+    BUILD_STATUS_MERGED,
+    BUILD_STEP_DIRS,
+    BUILD_STEP_KEYS,
+    CACHE_CONTROL_NO_CACHE,
+    CONTENT_TYPE_HTML,
+    CONTENT_TYPE_JSON,
+    CONTENT_TYPE_PLAIN,
+    CORS_ALLOW_HEADERS,
+    CORS_ALLOW_METHODS,
+    CORS_ALLOW_ORIGIN,
+    DEFAULT_BRANCH,
+    DEFAULT_BRANCH_PREFIX,
+    DEFAULT_PORT,
+    DEFAULT_TOOL,
+    DELIVERY_SCAN_DIRS,
+    DELIVERY_SCAN_FILES,
+    DEPARTMENTS,
+    DESCRIPTION_MAX_LEN,
+    DIFF_CHAR_LIMIT,
+    DIFF_HEADER_LINES,
+    DIR_AGENTS,
+    DIR_BUILD,
+    DIR_GATES,
+    DIR_RAW_INPUT,
+    ERROR_PREVIEW_LEN,
+    FILE_BUILD_IN_PROGRESS,
+    FILE_BUILD_REVIEW,
+    FILE_BUILD_SYSTEM,
+    FILE_DISTILL_RESULT,
+    FILE_ENCODING,
+    FILE_PROJECT_STATE,
+    FILE_REVIEWS,
+    FILE_STATUS,
+    GATE_STAGE_MAP,
+    GATE_STATUS_APPROVED,
+    GATE_STATUS_PASSED,
+    GATE_STATUS_PENDING,
+    GEMINI_ARG_MODEL,
+    GEMINI_ARG_PROMPT,
+    GEMINI_ARG_SKIP_TRUST,
+    GENERATE_TIMEOUT_SECS,
+    GIT_COMMIT_EMAIL,
+    GIT_COMMIT_NAME,
+    GIT_TIMEOUT_SECS,
+    GITHUB_ACCEPT_HEADER,
+    GITHUB_ACCEPT_V3_HEADER,
+    GITHUB_API_VERSION,
+    GITHUB_CONTENT_TYPE,
+    GITHUB_USER_AGENT,
+    HTTP_CHECK_TIMEOUT_SECS,
+    ISSUE_DEFAULT_PRIORITY,
+    ISSUE_DEFAULT_TYPE,
+    ISSUE_ID_PREFIX,
+    ISSUE_STATUS_OPEN,
+    LARGE_CHANGESET_THRESHOLD,
+    MARKDOWN_EXTENSION,
+    MAX_BODY_BYTES,
+    NETWORK_TIMEOUT_SECS,
+    ORG_SUBDIRS,
+    PAT_SIGNAL_PATH,
+    PHASE_BUILD,
+    PHASE_DEPLOY,
+    PHASE_GENERATE,
+    PHASE_INPUT,
+    PHASE_REVIEW,
+    PHASE_STATUS_ACTIVE,
+    PHASE_STATUS_BUILT,
+    PHASE_STATUS_DEPLOYED,
+    PHASE_STATUS_PENDING,
+    PIPELINE_STAGE_NAMES,
+    PROJECT_STATUS_ACTIVE,
+    PROJECT_STATUS_ARCHIVED,
+    QUOTA_ERROR_MARKERS,
+    REVIEW_EMPTY,
+    REVIEW_NEEDS_REVIEW,
+    REVIEW_REVIEWED,
+    SECRETS_SEARCH_PATHS,
+    SOURCE_MARKER,
+    SOURCE_MARKER_END,
+    SPEC_FILES_FOR_REVIEW,
+    SPEC_SNIPPET_MAX_CHARS,
+    STAGE_DIR_MAP,
+    STATUS_DISTILLING,
+    STATUS_ERROR,
+    STATUS_FIXING,
+    STATUS_IDLE,
+    STATUS_PENDING,
+    STATUS_RUNNING,
+    TOOL_CLAUDE,
+    TOOL_GEMINI,
+    USER_FILE_PATH,
+    VALID_STAGE_PREFIX_COUNT,
+    VERDICT_APPROVE,
+    VERDICT_APPROVE_WITH_NOTES,
+    VERDICT_ERROR,
+    VERDICT_REQUEST_CHANGES,
+    VERDICT_UNKNOWN,
+    CLAUDE_ARG_PROMPT,
+    CLAUDE_ARG_OUTPUT_FORMAT,
+    CLAUDE_OUTPUT_TEXT,
+    VERSION_TIMESTAMP_FORMAT,
+)
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -45,28 +153,17 @@ FORGE_DIR = os.path.abspath(_data_dir) if _data_dir else os.path.join(REPO_ROOT,
 _projects_root_override = os.environ.get("FORGE_PROJECTS_ROOT", "")
 PROJECTS_ROOT = os.path.abspath(os.path.expanduser(_projects_root_override)) if _projects_root_override else os.path.join(ORCHESTRATOR_ROOT, ".projects")
 PROJECTS_INDEX_FILE = os.path.join(PROJECTS_ROOT, "index.json")
-PROJECT_STATUS_ACTIVE = "active"
-PROJECT_STATUS_ARCHIVED = "archived"
 
 KNOWN_TOOLS = {}  # __FORGE_KNOWN_TOOLS__
 
-REVIEWS_FILE = os.path.join(FORGE_DIR, "reviews.json")
-STATE_FILE = os.path.join(FORGE_DIR, "project-state.json")
-RAW_INPUT_DIR = os.path.join(FORGE_DIR, "00-raw-input")
+REVIEWS_FILE = os.path.join(FORGE_DIR, FILE_REVIEWS)
+STATE_FILE = os.path.join(FORGE_DIR, FILE_PROJECT_STATE)
+RAW_INPUT_DIR = os.path.join(FORGE_DIR, DIR_RAW_INPUT)
 FORGE_VERSION = os.environ.get("FORGE_VERSION", "unknown")
 FORGE_SCRIPT = os.environ.get("FORGE_SCRIPT", "")
 
 # Phase 4+5: user profile
-USER_FILE = os.path.expanduser("~/.forge/user.json")
-
-DEPARTMENTS = {
-    "all":         list(range(11)),
-    "product":     [0, 1],
-    "design":      [2, 3],
-    "engineering": [4, 5, 6, 7],
-    "operations":  [8, 9],
-    "marketing":   [10],
-}
+USER_FILE = os.path.expanduser(USER_FILE_PATH)
 
 
 # ---------------------------------------------------------------------------
@@ -78,9 +175,9 @@ def set_project_root(project_root, data_dir=None):
     REPO_ROOT = os.path.abspath(project_root)
     _dd = data_dir or os.environ.get("FORGE_DATA_DIR", "")
     FORGE_DIR = os.path.abspath(_dd) if _dd else os.path.join(REPO_ROOT, ".forge")
-    REVIEWS_FILE = os.path.join(FORGE_DIR, "reviews.json")
-    STATE_FILE = os.path.join(FORGE_DIR, "project-state.json")
-    RAW_INPUT_DIR = os.path.join(FORGE_DIR, "00-raw-input")
+    REVIEWS_FILE = os.path.join(FORGE_DIR, FILE_REVIEWS)
+    STATE_FILE = os.path.join(FORGE_DIR, FILE_PROJECT_STATE)
+    RAW_INPUT_DIR = os.path.join(FORGE_DIR, DIR_RAW_INPUT)
     os.environ["AEOS_REPO_ROOT"] = REPO_ROOT
     os.environ["FORGE_REPO_ROOT"] = REPO_ROOT
 
@@ -202,24 +299,24 @@ def sync_registry_from_disk(index_data):
 # ---------------------------------------------------------------------------
 
 def invoke_ai(prompt, tool, model_id):
-    with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".txt", encoding="utf-8") as t:
+    with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".txt", encoding=FILE_ENCODING) as t:
         tmp_path = t.name
     try:
-        if tool == "gemini":
-            cmd = ["gemini", "--skip-trust"]
+        if tool == TOOL_GEMINI:
+            cmd = [TOOL_GEMINI, GEMINI_ARG_SKIP_TRUST]
             if model_id:
-                cmd += ["-m", model_id]
-            cmd += ["-p", prompt]
-        elif tool == "claude":
-            cmd = ["claude", "-p", prompt, "--output-format", "text"]
+                cmd += [GEMINI_ARG_MODEL, model_id]
+            cmd += [GEMINI_ARG_PROMPT, prompt]
+        elif tool == TOOL_CLAUDE:
+            cmd = [TOOL_CLAUDE, CLAUDE_ARG_PROMPT, prompt, CLAUDE_ARG_OUTPUT_FORMAT, CLAUDE_OUTPUT_TEXT]
         else:
-            cmd = ["gemini", "--skip-trust", "-p", prompt]
+            cmd = [TOOL_GEMINI, GEMINI_ARG_SKIP_TRUST, GEMINI_ARG_PROMPT, prompt]
         with open(tmp_path, "w") as out_f:
             result = subprocess.run(cmd, stdout=out_f, stderr=subprocess.PIPE, timeout=GENERATE_TIMEOUT_SECS)
         if result.returncode != 0:
-            err = result.stderr.decode("utf-8", errors="replace") if result.stderr else "AI call failed"
+            err = result.stderr.decode(FILE_ENCODING, errors="replace") if result.stderr else "AI call failed"
             return None, normalize_ai_error(err)
-        with open(tmp_path, encoding="utf-8") as f:
+        with open(tmp_path, encoding=FILE_ENCODING) as f:
             return f.read(), None
     except subprocess.TimeoutExpired:
         return None, "The request timed out after 10 minutes. Try again."
@@ -233,32 +330,11 @@ def invoke_ai(prompt, tool, model_id):
 def normalize_ai_error(raw_error):
     text = (raw_error or "").strip()
     lowered = text.lower()
-    quota_markers = [
-        "you've hit your limit",
-        "hit your limit",
-        "usage limit",
-        "quota",
-        "rate limit",
-        "too many requests",
-        "status 429",
-    ]
-    if any(marker in lowered for marker in quota_markers):
+    if any(marker in lowered for marker in QUOTA_ERROR_MARKERS):
         return "The AI request failed. Wait a few minutes, then retry."
     if not text:
         return "The AI model returned an error. Retry the request."
     return text.splitlines()[0][:ERROR_PREVIEW_LEN]
-
-
-GATE_STAGE_MAP = {
-    "context-gate": "00-context",
-    "prd-gate": "01-requirements",
-    "design-gate": "02-design",
-    "architecture-gate": "04-architecture",
-    "engineering-gate": "06-engineering",
-    "qa-gate": "07-quality",
-    "release-gate": "09-release",
-    "marketing-gate": "10-marketing",
-}
 
 
 # ---------------------------------------------------------------------------
@@ -299,10 +375,10 @@ def _default_state():
         },
         "environments": {
             "staging": {"url": "", "branch": "staging", "status": "not_deployed", "deployed_at": ""},
-            "production": {"url": "", "branch": "main", "status": "not_deployed", "deployed_at": ""}
+            "production": {"url": "", "branch": DEFAULT_BRANCH, "status": "not_deployed", "deployed_at": ""}
         },
-        "tool": "gemini",
-        "model": "gemini"
+        "tool": DEFAULT_TOOL,
+        "model": DEFAULT_TOOL
     }
 
 
@@ -347,9 +423,8 @@ import re as _re
 
 def _parse_phases_from_docs():
     # Scan delivery docs for phase/MVP headings and return an ordered list.
-    scan_dirs = ["05-delivery", "01-requirements", "03-analysis"]
-    scan_files = ["roadmap.md", "milestones.md", "epics.md", "release-roadmap.md",
-                  "sprint-plan.md", "brd.md", "user-stories.md"]
+    scan_dirs = DELIVERY_SCAN_DIRS
+    scan_files = DELIVERY_SCAN_FILES
 
     # Patterns that signal a phase heading (case-insensitive)
     phase_re = _re.compile(
@@ -372,7 +447,7 @@ def _parse_phases_from_docs():
         # Prefer the curated list, then fall back to any .md in the dir
         candidates = scan_files + [
             f for f in os.listdir(dir_path)
-            if f.endswith(".md") and f not in scan_files
+            if f.endswith(MARKDOWN_EXTENSION) and f not in scan_files
         ]
         for fname in candidates:
             fpath = os.path.join(dir_path, fname)
@@ -445,7 +520,7 @@ def sync_phases(proj):
                 "name":        dp["name"],
                 "description": dp["description"],
                 "order":       dp["order"],
-                "status":      "pending",
+                "status":      PHASE_STATUS_PENDING,
                 "doc_source":  dp["source"],
                 "issue_ids":   [],
                 "created_at":  datetime.now().isoformat(),
@@ -475,10 +550,10 @@ def _build_org_context_meta():
         return {"active": False, "org": "", "fileCount": 0}
     _cache = os.path.expanduser(f"~/.forge/org-cache/{_org}")
     _count = 0
-    for _sub in ("knowledge", "patterns"):
+    for _sub in ORG_SUBDIRS:
         _d = os.path.join(_cache, _sub)
         if os.path.isdir(_d):
-            _count += sum(1 for _f in os.listdir(_d) if _f.endswith(".md"))
+            _count += sum(1 for _f in os.listdir(_d) if _f.endswith(MARKDOWN_EXTENSION))
     return {"active": _count > 0, "org": _org, "fileCount": _count}
 
 
@@ -502,11 +577,11 @@ def _list_knowledge_entries():
         return []
     _cache = os.path.expanduser(f"~/.forge/org-cache/{_org}")
     _entries = []
-    for _sub in ("knowledge", "patterns"):
+    for _sub in ORG_SUBDIRS:
         _d = os.path.join(_cache, _sub)
         if os.path.isdir(_d):
             for _fname in sorted(os.listdir(_d)):
-                if _fname.endswith(".md"):
+                if _fname.endswith(MARKDOWN_EXTENSION):
                     _fpath = os.path.join(_d, _fname)
                     _st = os.stat(_fpath)
                     _entries.append({
@@ -549,8 +624,8 @@ def _push_distill_to_kb(kb_repo_url, token, file_path, stage, ts):
         os.makedirs(_dest_dir, exist_ok=True)
         _fname = os.path.basename(file_path)
         shutil.copy2(file_path, os.path.join(_dest_dir, _fname))
-        subprocess.run(["git", "config", "user.email", "forge-os@forge-os.local"], cwd=_work_dir, capture_output=True)
-        subprocess.run(["git", "config", "user.name", "Forge OS"], cwd=_work_dir, capture_output=True)
+        subprocess.run(["git", "config", "user.email", GIT_COMMIT_EMAIL], cwd=_work_dir, capture_output=True)
+        subprocess.run(["git", "config", "user.name", GIT_COMMIT_NAME], cwd=_work_dir, capture_output=True)
         subprocess.run(["git", "add", "."], cwd=_work_dir, capture_output=True)
         _commit_r = subprocess.run(
             ["git", "commit", "-m", f"distill({stage}): add distilled patterns from {ts}"],
@@ -579,10 +654,10 @@ def _push_distill_to_kb(kb_repo_url, token, file_path, stage, ts):
             data=_pr_body,
             headers={
                 "Authorization": f"Bearer {token}",
-                "Accept": "application/vnd.github+json",
-                "Content-Type": "application/json",
-                "X-GitHub-Api-Version": "2022-11-28",
-                "User-Agent": "forge-os",
+                "Accept": GITHUB_ACCEPT_HEADER,
+                "Content-Type": GITHUB_CONTENT_TYPE,
+                "X-GitHub-Api-Version": GITHUB_API_VERSION,
+                "User-Agent": GITHUB_USER_AGENT,
             }
         )
         with urllib.request.urlopen(_req, timeout=GIT_TIMEOUT_SECS) as _resp:
@@ -598,7 +673,7 @@ def _push_distill_to_kb(kb_repo_url, token, file_path, stage, ts):
 
 
 def _load_distill_result():
-    _path = os.path.join(FORGE_DIR, "runs/distill-result.json")
+    _path = os.path.join(FORGE_DIR, FILE_DISTILL_RESULT)
     if not os.path.exists(_path):
         return None
     try:
@@ -667,11 +742,11 @@ def build_file_entry(stage_dir, filename, reviews):
     if reviews is None:
         reviews = {}
     if file_size == 0:
-        status = "empty"
-    elif reviews.get(rel_path) == "reviewed":
-        status = "reviewed"
+        status = REVIEW_EMPTY
+    elif reviews.get(rel_path) == REVIEW_REVIEWED:
+        status = REVIEW_REVIEWED
     else:
-        status = "needs_review"
+        status = REVIEW_NEEDS_REVIEW
     return {
         "name": filename,
         "status": status,
@@ -688,29 +763,29 @@ def parse_gate_status(content):
             in_status = True
             continue
         if in_status and stripped:
-            return "PASSED" if stripped.upper() in ("PASSED", "APPROVED") else "PENDING"
-    return "PENDING"
+            return GATE_STATUS_PASSED if stripped.upper() in (GATE_STATUS_PASSED, GATE_STATUS_APPROVED) else GATE_STATUS_PENDING
+    return GATE_STATUS_PENDING
 
 
 def evaluate_gate(gate_name):
     stage_dir_name = GATE_STAGE_MAP.get(gate_name)
     if not stage_dir_name:
-        return "PENDING"
+        return GATE_STATUS_PENDING
     reviews = load_reviews()
     stage_path = os.path.join(FORGE_DIR, stage_dir_name)
     if not os.path.exists(stage_path):
-        return "PENDING"
-    md_files = [f for f in os.listdir(stage_path) if f.endswith(".md") and os.path.getsize(os.path.join(stage_path, f)) > 0]
+        return GATE_STATUS_PENDING
+    md_files = [f for f in os.listdir(stage_path) if f.endswith(MARKDOWN_EXTENSION) and os.path.getsize(os.path.join(stage_path, f)) > 0]
     if not md_files:
-        return "PENDING"
+        return GATE_STATUS_PENDING
     for fname in md_files:
-        if reviews.get(f"{stage_dir_name}/{fname}") != "reviewed":
-            return "PENDING"
-    return "PASSED"
+        if reviews.get(f"{stage_dir_name}/{fname}") != REVIEW_REVIEWED:
+            return GATE_STATUS_PENDING
+    return GATE_STATUS_PASSED
 
 
 def save_build_progress(entry):
-    progress_file = os.path.join(FORGE_DIR, "runs", "build-in-progress.json")
+    progress_file = os.path.join(FORGE_DIR, FILE_BUILD_IN_PROGRESS)
     try:
         with open(progress_file, "w") as f:
             json.dump(entry, f)
@@ -719,7 +794,7 @@ def save_build_progress(entry):
 
 
 def clear_build_progress():
-    progress_file = os.path.join(FORGE_DIR, "runs", "build-in-progress.json")
+    progress_file = os.path.join(FORGE_DIR, FILE_BUILD_IN_PROGRESS)
     try:
         if os.path.exists(progress_file):
             os.remove(progress_file)
@@ -728,13 +803,13 @@ def clear_build_progress():
 
 
 def set_processing(status, stage=""):
-    status_file = os.path.join(FORGE_DIR, "runs/status.json")
+    status_file = os.path.join(FORGE_DIR, FILE_STATUS)
     runs_dir = os.path.join(FORGE_DIR, "runs")
     if os.path.exists(runs_dir):
         try:
             data = {"status": status, "stage": stage}
             # When transitioning to idle, preserve any last_error written by stage_runner
-            if status == "idle" and os.path.exists(status_file):
+            if status == STATUS_IDLE and os.path.exists(status_file):
                 try:
                     with open(status_file, "r") as sf:
                         existing = json.load(sf)
@@ -752,10 +827,10 @@ def compute_full_state():
     if not os.path.isdir(FORGE_DIR):
         return {
             "version": FORGE_VERSION,
-            "phase": "input",
+            "phase": PHASE_INPUT,
             "gates": {},
             "tree": {},
-            "processing": {"status": "idle"},
+            "processing": {"status": STATUS_IDLE},
             "stageReviewSummary": {},
             "allReviewed": False,
             "rawInputs": [],
@@ -763,8 +838,8 @@ def compute_full_state():
             "issues": [],
             "environments": {},
             "git": {},
-            "tool": "gemini",
-            "model": "gemini",
+            "tool": DEFAULT_TOOL,
+            "model": DEFAULT_TOOL,
             "project_name": "",
             "skip_org_context": False,
             "orgContext": _build_org_context_meta(),
@@ -786,11 +861,11 @@ def compute_full_state():
 
     # Gates
     gates = {}
-    gates_dir = os.path.join(FORGE_DIR, "12-gates")
+    gates_dir = os.path.join(FORGE_DIR, DIR_GATES)
     if os.path.exists(gates_dir):
         for g in os.listdir(gates_dir):
-            if g.endswith(".md"):
-                gate_name = g.replace(".md", "")
+            if g.endswith(MARKDOWN_EXTENSION):
+                gate_name = g.replace(MARKDOWN_EXTENSION, "")
                 if gate_name in GATE_STAGE_MAP:
                     gates[gate_name] = evaluate_gate(gate_name)
                 else:
@@ -799,24 +874,24 @@ def compute_full_state():
                     gates[gate_name] = parse_gate_status(content)
 
     # File tree
-    VALID_STAGE_PREFIXES = {f"{i:02d}" for i in range(11)}
+    VALID_STAGE_PREFIXES = {f"{i:02d}" for i in range(VALID_STAGE_PREFIX_COUNT)}
     files_tree = {}
     stage_review_summary = {}
     for d in sorted(os.listdir(FORGE_DIR)):
         d_path = os.path.join(FORGE_DIR, d)
-        if os.path.isdir(d_path) and d[:2] in VALID_STAGE_PREFIXES and d != "00-raw-input":
+        if os.path.isdir(d_path) and d[:2] in VALID_STAGE_PREFIXES and d != DIR_RAW_INPUT:
             files_tree[d] = []
             reviewed_count = 0
             generated_count = 0
             total_count = 0
             for fname in sorted(os.listdir(d_path)):
-                if fname.endswith(".md"):
+                if fname.endswith(MARKDOWN_EXTENSION):
                     entry = build_file_entry(d_path, fname, reviews)
                     files_tree[d].append(entry)
                     total_count += 1
-                    if entry["status"] != "empty":
+                    if entry["status"] != REVIEW_EMPTY:
                         generated_count += 1
-                    if entry["status"] == "reviewed":
+                    if entry["status"] == REVIEW_REVIEWED:
                         reviewed_count += 1
             stage_review_summary[d] = {
                 "reviewed": reviewed_count,
@@ -825,8 +900,8 @@ def compute_full_state():
             }
 
     # Processing status
-    processing_status = {"status": "idle"}
-    status_file = os.path.join(FORGE_DIR, "runs/status.json")
+    processing_status = {"status": STATUS_IDLE}
+    status_file = os.path.join(FORGE_DIR, FILE_STATUS)
     if os.path.exists(status_file):
         try:
             with open(status_file, "r") as sf:
@@ -839,7 +914,7 @@ def compute_full_state():
         for s in stage_review_summary.values()
     ) if stage_review_summary else False
 
-    all_gates_passed = all(v == "PASSED" for v in gates.values()) if gates else False
+    all_gates_passed = all(v == GATE_STATUS_PASSED for v in gates.values()) if gates else False
 
     raw_inputs = list_raw_inputs()
 
@@ -849,7 +924,7 @@ def compute_full_state():
     builds = proj.get("builds", [])
 
     # Merge any in-progress build so the dashboard sees it immediately
-    progress_file = os.path.join(FORGE_DIR, "runs", "build-in-progress.json")
+    progress_file = os.path.join(FORGE_DIR, FILE_BUILD_IN_PROGRESS)
     if os.path.exists(progress_file):
         try:
             with open(progress_file) as _pf:
@@ -862,19 +937,19 @@ def compute_full_state():
     last_build = builds[-1] if builds else None
 
     if not raw_inputs:
-        phase = "input"
+        phase = PHASE_INPUT
     elif total_generated == 0:
-        phase = "generate"
+        phase = PHASE_GENERATE
     elif total_generated < total_docs:
-        phase = "generate"
+        phase = PHASE_GENERATE
     elif not all_reviewed:
-        phase = "review"
-    elif not builds or (last_build and last_build.get("status") not in ("pushed", "committed")):
-        phase = "build"
-    elif last_build and last_build.get("status") in ("pushed", "committed"):
-        phase = "deploy"
+        phase = PHASE_REVIEW
+    elif not builds or (last_build and last_build.get("status") not in (BUILD_STATUS_PUSHED, BUILD_STATUS_COMMITTED)):
+        phase = PHASE_BUILD
+    elif last_build and last_build.get("status") in (BUILD_STATUS_PUSHED, BUILD_STATUS_COMMITTED):
+        phase = PHASE_DEPLOY
     else:
-        phase = "review"
+        phase = PHASE_REVIEW
 
     return {
         "version": FORGE_VERSION,
@@ -891,8 +966,8 @@ def compute_full_state():
         "active_phase_id": proj.get("active_phase_id"),
         "environments": proj.get("environments", {}),
         "git": proj.get("git", {}),
-        "tool": proj.get("tool", "gemini"),
-        "model": proj.get("model", "gemini"),
+        "tool": proj.get("tool", DEFAULT_TOOL),
+        "model": proj.get("model", DEFAULT_TOOL),
         "project_name": proj.get("project_name", ""),
         "skip_org_context": proj.get("skip_org_context", False),
         "orgContext": _build_org_context_meta(),
@@ -933,15 +1008,15 @@ class ForgeHandler(BaseHTTPRequestHandler):
         pass  # silence access logs
 
     def _send_cors_headers(self):
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type, X-Forge-Token")
+        self.send_header("Access-Control-Allow-Origin", CORS_ALLOW_ORIGIN)
+        self.send_header("Access-Control-Allow-Methods", CORS_ALLOW_METHODS)
+        self.send_header("Access-Control-Allow-Headers", CORS_ALLOW_HEADERS)
 
     def _json_response(self, code, data):
         body = json.dumps(data).encode()
         self.send_response(code)
         self._send_cors_headers()
-        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Type", CONTENT_TYPE_JSON)
         self.end_headers()
         self.wfile.write(body)
 
@@ -973,8 +1048,8 @@ class ForgeHandler(BaseHTTPRequestHandler):
                 content = content.replace("</head>", inject + "</head>", 1)
                 encoded = content.encode("utf-8")
                 self.send_response(200)
-                self.send_header("Content-Type", "text/html; charset=utf-8")
-                self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
+                self.send_header("Content-Type", CONTENT_TYPE_HTML)
+                self.send_header("Cache-Control", CACHE_CONTROL_NO_CACHE)
                 self.send_header("Pragma", "no-cache")
                 self.end_headers()
                 self.wfile.write(encoded)
@@ -1028,7 +1103,7 @@ class ForgeHandler(BaseHTTPRequestHandler):
             if os.path.exists(abs_path):
                 self.send_response(200)
                 self._send_cors_headers()
-                self.send_header("Content-Type", "text/plain; charset=utf-8")
+                self.send_header("Content-Type", CONTENT_TYPE_PLAIN)
                 self.end_headers()
                 with open(abs_path, "rb") as f:
                     self.wfile.write(f.read())
@@ -1048,7 +1123,7 @@ class ForgeHandler(BaseHTTPRequestHandler):
             if os.path.exists(fpath):
                 self.send_response(200)
                 self._send_cors_headers()
-                self.send_header("Content-Type", "text/plain; charset=utf-8")
+                self.send_header("Content-Type", CONTENT_TYPE_PLAIN)
                 self.end_headers()
                 with open(fpath, "rb") as f:
                     self.wfile.write(f.read())
@@ -1097,7 +1172,7 @@ class ForgeHandler(BaseHTTPRequestHandler):
             if not file_path:
                 self._json_response(400, {"error": "missing path"})
                 return
-            stem = file_path[:-3] if file_path.endswith(".md") else file_path
+            stem = file_path[:-3] if file_path.endswith(MARKDOWN_EXTENSION) else file_path
             ver_dir = os.path.normpath(os.path.join(FORGE_DIR, "versions", stem))
             _versions_base = os.path.join(FORGE_DIR, "versions") + os.sep
             if not ver_dir.startswith(_versions_base) and ver_dir != os.path.join(FORGE_DIR, "versions"):
@@ -1110,7 +1185,7 @@ class ForgeHandler(BaseHTTPRequestHandler):
                         fpath = os.path.join(ver_dir, fname)
                         ts_raw = fname[:-3]
                         try:
-                            dt = datetime.strptime(ts_raw, "%Y%m%d-%H%M%S")
+                            dt = datetime.strptime(ts_raw, VERSION_TIMESTAMP_FORMAT)
                             ts_iso = dt.isoformat()
                         except ValueError:
                             ts_iso = ts_raw
@@ -1141,13 +1216,13 @@ class ForgeHandler(BaseHTTPRequestHandler):
                 content = f.read()
             self.send_response(200)
             self._send_cors_headers()
-            self.send_header("Content-Type", "text/plain; charset=utf-8")
+            self.send_header("Content-Type", CONTENT_TYPE_PLAIN)
             self.end_headers()
             self.wfile.write(content.encode("utf-8"))
             return
 
         if path == "/api/build-system":
-            build_status_file = os.path.join(FORGE_DIR, "runs", "build-system.json")
+            build_status_file = os.path.join(FORGE_DIR, FILE_BUILD_SYSTEM)
             build_status = {}
             if os.path.exists(build_status_file):
                 try:
@@ -1160,7 +1235,7 @@ class ForgeHandler(BaseHTTPRequestHandler):
             for key in step_keys:
                 st = build_status.get(key, {})
                 steps_out[key] = {
-                    "status": st.get("status", "idle"),
+                    "status": st.get("status", STATUS_IDLE),
                     "files": st.get("files", []),
                     "generated_at": st.get("generated_at", ""),
                     "error": st.get("error"),
@@ -1174,14 +1249,8 @@ class ForgeHandler(BaseHTTPRequestHandler):
             if not step or not rel:
                 self._json_response(400, {"error": "Missing step or path"})
                 return
-            step_dirs = {
-                "backend": "15-build/backend",
-                "frontend": "15-build/frontend",
-                "integration": "15-build/integration",
-                "tests": "15-build/tests",
-                "infra": "15-build/infra",
-            }
-            base = step_dirs.get(step, "15-build/" + step)
+            step_dirs = BUILD_STEP_DIRS
+            base = step_dirs.get(step, DIR_BUILD + "/" + step)
             parts = [p for p in rel.replace("\\", "/").split("/") if p and p != ".."]
             full_path = os.path.join(FORGE_DIR, base, *parts)
             if not os.path.exists(full_path):
@@ -1206,7 +1275,7 @@ class ForgeHandler(BaseHTTPRequestHandler):
             try:
                 curl_r = subprocess.run([
                     "curl", "-s", *auth_header,
-                    "-H", "Accept: application/vnd.github.v3+json",
+                    "-H", f"Accept: {GITHUB_ACCEPT_V3_HEADER}",
                     f"https://api.github.com/repos/{gh_owner}/{gh_repo}/pulls/{pr_num}"
                 ], capture_output=True, text=True, timeout=GIT_TIMEOUT_SECS)
                 pr_data = json.loads(curl_r.stdout)
@@ -1217,8 +1286,8 @@ class ForgeHandler(BaseHTTPRequestHandler):
                 if merged:
                     updated = False
                     for b in proj.get("builds", []):
-                        if b.get("pr_url", "").rstrip("/") == pr_url.rstrip("/") and b.get("status") != "merged":
-                            b["status"] = "merged"
+                        if b.get("pr_url", "").rstrip("/") == pr_url.rstrip("/") and b.get("status") != BUILD_STATUS_MERGED:
+                            b["status"] = BUILD_STATUS_MERGED
                             b["merged_at"] = merged_at
                             b["merged_by"] = merged_by
                             branch_ref = b.get("branch", "")
@@ -1243,16 +1312,16 @@ class ForgeHandler(BaseHTTPRequestHandler):
             return
 
         if path == "/api/build-review":
-            review_file = os.path.join(FORGE_DIR, "runs", "build-review.json")
+            review_file = os.path.join(FORGE_DIR, FILE_BUILD_REVIEW)
             if os.path.exists(review_file):
                 try:
                     with open(review_file) as f:
                         self._json_response(200, json.load(f))
                 except (OSError, json.JSONDecodeError) as exc:
                     logger.debug("build-review load: %s", exc)
-                    self._json_response(200, {"status": "idle"})
+                    self._json_response(200, {"status": STATUS_IDLE})
             else:
-                self._json_response(200, {"status": "idle"})
+                self._json_response(200, {"status": STATUS_IDLE})
             return
 
         if path == "/api/secrets":
@@ -1532,26 +1601,26 @@ class ForgeHandler(BaseHTTPRequestHandler):
             forge_script = FORGE_SCRIPT or os.path.abspath(os.path.join(FORGE_DIR, "..", "..", "forge"))
 
             # Concurrent operation guard
-            status_file_check = os.path.join(FORGE_DIR, "runs/status.json")
+            status_file_check = os.path.join(FORGE_DIR, FILE_STATUS)
             if os.path.exists(status_file_check):
                 try:
                     with open(status_file_check) as _scf:
                         processing_status = json.load(_scf)
-                    if processing_status.get("status") == "running":
+                    if processing_status.get("status") == STATUS_RUNNING:
                         self._json_response(409, {"error": "A generation is already in progress"})
                         return
                 except (OSError, json.JSONDecodeError) as exc:
                     logger.debug("status_file_check: %s", exc)
 
             def run_generate():
-                set_processing("running", stage)
+                set_processing(STATUS_RUNNING, stage)
                 tmp_combined = None
                 try:
                     tmp_combined = get_combined_raw_input_path()
                     proj = load_project_state()
                     base_env = {
                         **os.environ,
-                        "FORGE_TOOL": proj.get("tool", "gemini"),
+                        "FORGE_TOOL": proj.get("tool", DEFAULT_TOOL),
                         "FORGE_MODEL": proj.get("model", ""),
                     }
                     if stage == "all":
@@ -1561,7 +1630,7 @@ class ForgeHandler(BaseHTTPRequestHandler):
                         ]
                         skip_env = {**base_env, "FORGE_SKIP_EXISTING": "1"}
                         for s in pipeline_stages:
-                            set_processing("running", s)
+                            set_processing(STATUS_RUNNING, s)
                             cmd = [forge_script, "generate", s]
                             if tmp_combined and s == "context":
                                 cmd.append(tmp_combined)
@@ -1572,7 +1641,7 @@ class ForgeHandler(BaseHTTPRequestHandler):
                             cmd.append(tmp_combined)
                         subprocess.run(cmd, cwd=REPO_ROOT, env=base_env)
                 finally:
-                    set_processing("idle")
+                    set_processing(STATUS_IDLE)
                     if tmp_combined and os.path.exists(tmp_combined):
                         try:
                             os.remove(tmp_combined)
@@ -1586,9 +1655,9 @@ class ForgeHandler(BaseHTTPRequestHandler):
 
         if path == "/api/build-review":
             proj = load_project_state()
-            tool = proj.get("tool", "gemini")
+            tool = proj.get("tool", DEFAULT_TOOL)
             model_id = proj.get("model", "")
-            review_file = os.path.join(FORGE_DIR, "runs", "build-review.json")
+            review_file = os.path.join(FORGE_DIR, FILE_BUILD_REVIEW)
 
             def _load_review():
                 if os.path.exists(review_file):
@@ -1751,12 +1820,12 @@ class ForgeHandler(BaseHTTPRequestHandler):
                     with _tmp.NamedTemporaryFile(mode="w", delete=False, suffix=".txt", encoding="utf-8") as t:
                         tmp_path = t.name
 
-                    if tool == "gemini":
-                        cmd = ["gemini", "--skip-trust"] + (["-m", model_id] if model_id else []) + ["-p", prompt]
-                    elif tool == "claude":
-                        cmd = ["claude", "-p", prompt, "--output-format", "text"]
+                    if tool == TOOL_GEMINI:
+                        cmd = [TOOL_GEMINI, GEMINI_ARG_SKIP_TRUST] + ([GEMINI_ARG_MODEL, model_id] if model_id else []) + [GEMINI_ARG_PROMPT, prompt]
+                    elif tool == TOOL_CLAUDE:
+                        cmd = [TOOL_CLAUDE, CLAUDE_ARG_PROMPT, prompt, CLAUDE_ARG_OUTPUT_FORMAT, CLAUDE_OUTPUT_TEXT]
                     else:
-                        cmd = ["gemini", "--skip-trust", "-p", prompt]
+                        cmd = [TOOL_GEMINI, GEMINI_ARG_SKIP_TRUST, GEMINI_ARG_PROMPT, prompt]
 
                     with open(tmp_path, "w") as out_f:
                         ai_proc = subprocess.Popen(cmd, stdout=out_f, stderr=subprocess.PIPE)
@@ -2237,14 +2306,14 @@ class ForgeHandler(BaseHTTPRequestHandler):
                         issue["updated_at"] = datetime.now().isoformat()
                         break
             else:
-                new_id = f"ISSUE-{len(issues) + 1:03d}"
+                new_id = f"{ISSUE_ID_PREFIX}{len(issues) + 1:03d}"
                 new_issue = {
                     "id": new_id,
-                    "type": data.get("type", "bug"),
+                    "type": data.get("type", ISSUE_DEFAULT_TYPE),
                     "title": data.get("title", ""),
                     "description": data.get("description", ""),
-                    "priority": data.get("priority", "medium"),
-                    "status": "open",
+                    "priority": data.get("priority", ISSUE_DEFAULT_PRIORITY),
+                    "status": ISSUE_STATUS_OPEN,
                     "phase_id": data.get("phase_id", None),
                     "created_at": datetime.now().isoformat(),
                     "updated_at": datetime.now().isoformat(),
@@ -2273,14 +2342,7 @@ class ForgeHandler(BaseHTTPRequestHandler):
             if not _org:
                 self._json_response(400, {"error": "FORGE_ORG not set — connect GitHub org first"})
                 return
-            _stage_dirs = {
-                "context": "00-context", "requirements": "01-requirements",
-                "design": "02-design", "analysis": "03-analysis",
-                "architecture": "04-architecture", "delivery": "05-delivery",
-                "engineering": "06-engineering", "qa": "07-quality",
-                "operations": "08-operations", "release": "09-release",
-                "marketing": "10-marketing",
-            }
+            _stage_dirs = STAGE_DIR_MAP
             _sdir = _stage_dirs.get(stage)
             if not _sdir:
                 self._json_response(400, {"error": "invalid stage"})
@@ -2293,7 +2355,7 @@ class ForgeHandler(BaseHTTPRequestHandler):
             _reviewed = [
                 os.path.join(FORGE_DIR, _sdir, _fn)
                 for _fn in sorted(os.listdir(_stage_path))
-                if _fn.endswith(".md") and _reviews.get(os.path.join(_sdir, _fn)) == "reviewed"
+                if _fn.endswith(MARKDOWN_EXTENSION) and _reviews.get(os.path.join(_sdir, _fn)) == REVIEW_REVIEWED
             ]
             if not _reviewed:
                 self._json_response(400, {"error": "no reviewed files in this stage"})
@@ -2302,20 +2364,20 @@ class ForgeHandler(BaseHTTPRequestHandler):
             _forge_script = FORGE_SCRIPT or os.path.abspath(os.path.join(FORGE_DIR, "..", "..", "forge"))
 
             def _run_distill():
-                _status_file = os.path.join(FORGE_DIR, "runs/status.json")
-                _result_file = os.path.join(FORGE_DIR, "runs/distill-result.json")
+                _status_file = os.path.join(FORGE_DIR, FILE_STATUS)
+                _result_file = os.path.join(FORGE_DIR, FILE_DISTILL_RESULT)
                 _ts = datetime.now().strftime("%Y%m%d-%H%M%S")
                 _out_path = None
                 try:
                     if os.path.exists(os.path.join(FORGE_DIR, "runs")):
                         with open(_status_file, "w") as _sf:
-                            json.dump({"status": "distilling", "stage": stage, "updated_at": datetime.now().isoformat()}, _sf)
+                            json.dump({"status": STATUS_DISTILLING, "stage": stage, "updated_at": datetime.now().isoformat()}, _sf)
                     _out_dir = os.path.expanduser(f"~/.forge/org-cache/{_org}/patterns")
                     os.makedirs(_out_dir, exist_ok=True)
                     _out_path = os.path.join(_out_dir, f"{stage}-{_ts}.md")
                     _base_env = {
                         **os.environ,
-                        "FORGE_TOOL": _proj.get("tool", "gemini"),
+                        "FORGE_TOOL": _proj.get("tool", DEFAULT_TOOL),
                         "FORGE_MODEL": _proj.get("model", ""),
                     }
                     _cmd = [
@@ -2349,7 +2411,7 @@ class ForgeHandler(BaseHTTPRequestHandler):
                 finally:
                     if os.path.exists(os.path.join(FORGE_DIR, "runs")):
                         with open(_status_file, "w") as _sf:
-                            json.dump({"status": "idle", "stage": stage, "updated_at": datetime.now().isoformat()}, _sf)
+                            json.dump({"status": STATUS_IDLE, "stage": stage, "updated_at": datetime.now().isoformat()}, _sf)
 
             _t = threading.Thread(target=_run_distill, daemon=True)
             _t.start()
@@ -2392,7 +2454,7 @@ class ForgeHandler(BaseHTTPRequestHandler):
             # Signal Electron to persist new PAT in safeStorage (never write to disk).
             # The file is 0600, lives briefly, and is deleted by the Electron poller.
             if new_pat:
-                _signal = os.path.expanduser("~/.forge/_pat_signal")
+                _signal = os.path.expanduser(PAT_SIGNAL_PATH)
                 try:
                     _forge_dir_local = os.path.dirname(_signal)
                     os.makedirs(_forge_dir_local, exist_ok=True)
@@ -2420,11 +2482,11 @@ class ForgeHandler(BaseHTTPRequestHandler):
             if gate_name not in GATE_STAGE_MAP:
                 self._json_response(400, {"error": "invalid gate"})
                 return
-            gate_path = os.path.join(FORGE_DIR, f"12-gates/{gate_name}.md")
+            gate_path = os.path.join(FORGE_DIR, DIR_GATES, f"{gate_name}.md")
             if os.path.exists(gate_path):
                 with open(gate_path, "r") as f:
                     content = f.read()
-                content = content.replace("PENDING", "PASSED")
+                content = content.replace(GATE_STATUS_PENDING, GATE_STATUS_PASSED)
                 with open(gate_path, "w") as f:
                     f.write(content)
                 self._json_response(200, {"status": "success"})
@@ -2435,18 +2497,18 @@ class ForgeHandler(BaseHTTPRequestHandler):
         if path == "/api/review":
             file_path = data.get("path")
             status = data.get("status")
-            if not file_path or status not in ("reviewed", "needs_review"):
+            if not file_path or status not in (REVIEW_REVIEWED, REVIEW_NEEDS_REVIEW):
                 self._json_response(400, {"error": "invalid"})
                 return
             reviews = load_reviews()
-            if status == "reviewed":
-                reviews[file_path] = "reviewed"
+            if status == REVIEW_REVIEWED:
+                reviews[file_path] = REVIEW_REVIEWED
             else:
                 reviews.pop(file_path, None)
             save_reviews(reviews)
             for gate_name in GATE_STAGE_MAP:
                 gate_status = evaluate_gate(gate_name)
-                gate_path = os.path.join(FORGE_DIR, f"12-gates/{gate_name}.md")
+                gate_path = os.path.join(FORGE_DIR, DIR_GATES, f"{gate_name}.md")
                 if os.path.exists(gate_path):
                     with open(gate_path, "r") as gf:
                         lines = gf.readlines()
@@ -2484,31 +2546,31 @@ class ForgeHandler(BaseHTTPRequestHandler):
                 return
 
             # Concurrent operation guard
-            status_file_fix = os.path.join(FORGE_DIR, "runs/status.json")
+            status_file_fix = os.path.join(FORGE_DIR, FILE_STATUS)
             if os.path.exists(status_file_fix):
                 try:
                     with open(status_file_fix) as _scf:
                         _cur_status = json.load(_scf)
-                    if _cur_status.get("status") == "running":
+                    if _cur_status.get("status") == STATUS_RUNNING:
                         self._json_response(409, {"error": "A generation is already in progress"})
                         return
                 except (OSError, json.JSONDecodeError) as exc:
                     logger.debug("status_file_fix read: %s", exc)
 
             stage = file_path.split("/")[0].split("-", 1)[1] if "-" in file_path.split("/")[0] else "context"
-            status_file = os.path.join(FORGE_DIR, "runs/status.json")
+            status_file = os.path.join(FORGE_DIR, FILE_STATUS)
 
             def run_fix():
                 try:
                     if os.path.exists(os.path.join(FORGE_DIR, "runs")):
                         with open(status_file, "w") as sf:
-                            json.dump({"status": "fixing", "stage": stage, "file": file_path, "updated_at": datetime.now().isoformat()}, sf)
+                            json.dump({"status": STATUS_FIXING, "stage": stage, "file": file_path, "updated_at": datetime.now().isoformat()}, sf)
                     cmd = [sys.executable, os.path.join(FORGE_DIR, "scripts/run.py"), stage, "--output", file_path, "--critique", critique]
                     subprocess.run(cmd, cwd=REPO_ROOT)
                 finally:
                     if os.path.exists(os.path.join(FORGE_DIR, "runs")):
                         with open(status_file, "w") as sf:
-                            json.dump({"status": "idle", "stage": stage, "file": file_path, "updated_at": datetime.now().isoformat()}, sf)
+                            json.dump({"status": STATUS_IDLE, "stage": stage, "file": file_path, "updated_at": datetime.now().isoformat()}, sf)
 
             t = threading.Thread(target=run_fix, daemon=True)
             t.start()
@@ -2552,27 +2614,20 @@ class ForgeHandler(BaseHTTPRequestHandler):
             return
 
         if path == "/api/reset":
-            stage_dirs = [
-                "00-context", "01-requirements", "02-design", "03-analysis",
-                "04-architecture", "05-delivery", "06-engineering", "07-quality",
-                "08-operations", "09-release", "10-marketing"
-            ]
+            stage_dirs = ALL_STAGE_DIRS
             cleared = 0
             for d in stage_dirs:
                 dir_path = os.path.join(FORGE_DIR, d)
                 if os.path.isdir(dir_path):
                     for fname in os.listdir(dir_path):
-                        if fname.endswith(".md"):
+                        if fname.endswith(MARKDOWN_EXTENSION):
                             with open(os.path.join(dir_path, fname), "w") as f:
                                 f.write("")
                             cleared += 1
             save_reviews({})
-            gates = [
-                "context-gate", "prd-gate", "design-gate", "architecture-gate",
-                "engineering-gate", "qa-gate", "release-gate", "marketing-gate"
-            ]
+            gates = ALL_GATE_NAMES
             for gate in gates:
-                gate_path = os.path.join(FORGE_DIR, f"12-gates/{gate}.md")
+                gate_path = os.path.join(FORGE_DIR, DIR_GATES, f"{gate}.md")
                 if os.path.exists(gate_path):
                     with open(gate_path, "r") as gf:
                         lines = gf.readlines()
@@ -2585,14 +2640,14 @@ class ForgeHandler(BaseHTTPRequestHandler):
                             continue
                         if in_status and line.strip():
                             in_status = False
-                            new_lines.append("PENDING\n")
+                            new_lines.append(GATE_STATUS_PENDING + "\n")
                             continue
                         new_lines.append(line)
                     with open(gate_path, "w") as gf:
                         gf.writelines(new_lines)
-            status_file = os.path.join(FORGE_DIR, "runs/status.json")
+            status_file = os.path.join(FORGE_DIR, FILE_STATUS)
             with open(status_file, "w") as sf:
-                json.dump({"status": "idle", "stage": "", "updated_at": datetime.now().isoformat()}, sf)
+                json.dump({"status": STATUS_IDLE, "stage": "", "updated_at": datetime.now().isoformat()}, sf)
             self._json_response(200, {"status": "reset", "cleared": cleared})
             return
 
@@ -2604,22 +2659,22 @@ class ForgeHandler(BaseHTTPRequestHandler):
                 return
 
             def run_build_system():
-                set_processing("running", step)
+                set_processing(STATUS_RUNNING, step)
                 try:
                     proj = load_project_state()
                     env = {
                         **os.environ,
-                        "FORGE_TOOL": proj.get("tool", "gemini"),
+                        "FORGE_TOOL": proj.get("tool", DEFAULT_TOOL),
                         "FORGE_MODEL": proj.get("model", ""),
                         "AEOS_REPO_ROOT": REPO_ROOT,
                     }
                     steps_to_run = step_keys if step == "all" else [step]
                     build_runner = os.path.join(FORGE_DIR, "scripts", "build_runner.py")
                     for s in steps_to_run:
-                        set_processing("running", s)
+                        set_processing(STATUS_RUNNING, s)
                         subprocess.run([sys.executable, build_runner, s], cwd=REPO_ROOT, env=env)
                 finally:
-                    set_processing("idle")
+                    set_processing(STATUS_IDLE)
 
             t = threading.Thread(target=run_build_system, daemon=True)
             t.start()

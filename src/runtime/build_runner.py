@@ -5,22 +5,48 @@ Usage: python3 scripts/build_runner.py <step>
 '''
 import os, sys, json, subprocess, tempfile
 from datetime import datetime
-from constants import *
+from constants import (
+    BUILD_STEP_DIRS,
+    DIR_AGENTS,
+    DIR_BUILD,
+    FILE_API_CONTRACT,
+    FILE_BUILD_SYSTEM,
+    FILE_ENCODING,
+    GEMINI_ARG_MODEL,
+    GEMINI_ARG_PROMPT,
+    GEMINI_ARG_SKIP_TRUST,
+    CLAUDE_ARG_PROMPT,
+    CLAUDE_ARG_OUTPUT_FORMAT,
+    CLAUDE_OUTPUT_TEXT,
+    GENERATE_TIMEOUT_SECS,
+    MARKDOWN_EXTENSION,
+    SOURCE_MARKER,
+    SOURCE_MARKER_END,
+    STATUS_COMPLETE,
+    STATUS_ERROR,
+    STATUS_RUNNING,
+    TOOL_CLAUDE,
+    TOOL_GEMINI,
+    DEFAULT_TOOL,
+)
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.environ.get("FORGE_REPO_ROOT", os.path.dirname(os.path.dirname(SCRIPT_DIR)))
 _forge_data = os.environ.get("FORGE_DATA_DIR")
 FORGE_DIR = os.path.expanduser(_forge_data) if _forge_data else os.path.dirname(SCRIPT_DIR)
-BUILD_STATUS_FILE = os.path.join(FORGE_DIR, "runs", "build-system.json")
-API_CONTRACT_FILE = os.path.join(FORGE_DIR, "15-build", "api-contract.md")
+BUILD_STATUS_FILE = os.path.join(FORGE_DIR, FILE_BUILD_SYSTEM)
+API_CONTRACT_FILE = os.path.join(FORGE_DIR, FILE_API_CONTRACT)
 
 # Build order matters: backend must run before frontend/integration/tests
 STEPS = {}  # __FORGE_BUILD_STEPS__
 
+_LOG_PREFIX = "[BUILD]"
+
+
 def load_build_status():
     if os.path.exists(BUILD_STATUS_FILE):
         try:
-            with open(BUILD_STATUS_FILE, encoding='utf-8') as f:
+            with open(BUILD_STATUS_FILE, encoding=FILE_ENCODING) as f:
                 return json.load(f)
         except Exception:
             pass
@@ -32,10 +58,10 @@ def save_step_status(step, status_val, files=None, error=None):
     status[step] = {
         "status": status_val,
         "files": files if files is not None else existing.get("files", []),
-        "generated_at": datetime.now().isoformat() if status_val == "complete" else existing.get("generated_at", ""),
+        "generated_at": datetime.now().isoformat() if status_val == STATUS_COMPLETE else existing.get("generated_at", ""),
         "error": error,
     }
-    with open(BUILD_STATUS_FILE, "w", encoding='utf-8') as f:
+    with open(BUILD_STATUS_FILE, "w", encoding=FILE_ENCODING) as f:
         json.dump(status, f, indent=2)
 
 def collect_docs(meta):
@@ -44,52 +70,52 @@ def collect_docs(meta):
         dir_path = os.path.join(FORGE_DIR, dir_name)
         if os.path.isdir(dir_path):
             for fname in sorted(os.listdir(dir_path)):
-                if fname.endswith(".md"):
+                if fname.endswith(MARKDOWN_EXTENSION):
                     fpath = os.path.join(dir_path, fname)
                     if os.path.getsize(fpath) > 0:
-                        with open(fpath, encoding="utf-8") as f:
+                        with open(fpath, encoding=FILE_ENCODING) as f:
                             content = f.read()
                         docs.append(SOURCE_MARKER + dir_name + "/" + fname + SOURCE_MARKER_END + "\n" + content)
     for rel_file in meta.get("source_files", []):
         fpath = os.path.join(FORGE_DIR, rel_file)
         if os.path.exists(fpath) and os.path.getsize(fpath) > 0:
-            with open(fpath, encoding="utf-8") as f:
+            with open(fpath, encoding=FILE_ENCODING) as f:
                 content = f.read()
             docs.append(SOURCE_MARKER + rel_file + SOURCE_MARKER_END + "\n" + content)
     return "\n\n".join(docs)
 
 def load_api_contract():
     if os.path.exists(API_CONTRACT_FILE) and os.path.getsize(API_CONTRACT_FILE) > 0:
-        with open(API_CONTRACT_FILE, encoding="utf-8") as f:
+        with open(API_CONTRACT_FILE, encoding=FILE_ENCODING) as f:
             return f.read()
     return ""
 
 def load_agent(agent_name):
-    path = os.path.join(FORGE_DIR, "11-agents", agent_name + ".md")
+    path = os.path.join(FORGE_DIR, DIR_AGENTS, agent_name + MARKDOWN_EXTENSION)
     if os.path.exists(path):
-        with open(path, encoding="utf-8") as f:
+        with open(path, encoding=FILE_ENCODING) as f:
             return f.read()
     return "# Agent: " + agent_name + "\nGenerate code based on the provided specifications."
 
 def invoke_ai(prompt, tool, model_id):
-    with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".txt", encoding="utf-8") as tmp:
+    with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".txt", encoding=FILE_ENCODING) as tmp:
         tmp_path = tmp.name
     try:
-        if tool == "gemini":
-            cmd = ["gemini", "--skip-trust"]
+        if tool == TOOL_GEMINI:
+            cmd = [TOOL_GEMINI, GEMINI_ARG_SKIP_TRUST]
             if model_id:
-                cmd += ["-m", model_id]
-            cmd += ["-p", prompt]
-        elif tool == "claude":
-            cmd = ["claude", "-p", prompt, "--output-format", "text"]
+                cmd += [GEMINI_ARG_MODEL, model_id]
+            cmd += [GEMINI_ARG_PROMPT, prompt]
+        elif tool == TOOL_CLAUDE:
+            cmd = [TOOL_CLAUDE, CLAUDE_ARG_PROMPT, prompt, CLAUDE_ARG_OUTPUT_FORMAT, CLAUDE_OUTPUT_TEXT]
         else:
-            cmd = ["gemini", "--skip-trust", "-p", prompt]
-        with open(tmp_path, "w", encoding='utf-8') as out_f:
+            cmd = [TOOL_GEMINI, GEMINI_ARG_SKIP_TRUST, GEMINI_ARG_PROMPT, prompt]
+        with open(tmp_path, "w", encoding=FILE_ENCODING) as out_f:
             result = subprocess.run(cmd, stdout=out_f, stderr=subprocess.PIPE, timeout=GENERATE_TIMEOUT_SECS)
         if result.returncode != 0:
-            err = result.stderr.decode("utf-8", errors="replace") if result.stderr else "AI call failed"
+            err = result.stderr.decode(FILE_ENCODING, errors="replace") if result.stderr else "AI call failed"
             return None, err
-        with open(tmp_path, encoding="utf-8") as f:
+        with open(tmp_path, encoding=FILE_ENCODING) as f:
             return f.read(), None
     except subprocess.TimeoutExpired:
         return None, "AI call timed out after 10 minutes"
@@ -104,7 +130,7 @@ def sanitize_path(candidate):
     if " (" in p or p.endswith(")"):
         return None
     parts = p.replace("\\", "/").split("/")
-    if parts and parts[0] == "15-build":
+    if parts and parts[0] == DIR_BUILD:
         parts = parts[2:]
     if parts and parts[0] == ".forge":
         parts = parts[1:]
@@ -149,12 +175,22 @@ COMMON_FORMAT_RULE = (
     "No truncation, no '# ... rest of file', no TODO stubs.\n"
 )
 
+_SECTION_DIVIDER = "=" * 60
+
+def _section(label):
+    return _SECTION_DIVIDER + "\n" + label + "\n" + _SECTION_DIVIDER
+
+
+def _contract_block(api_contract, header):
+    if api_contract:
+        return _section(header) + "\n" + api_contract + "\n"
+    return ""
+
+
 def build_backend_prompt(persona, docs):
     return "\n\n".join([
         persona,
-        "=" * 60,
-        "SPEC COMPLIANCE RULES — NON-NEGOTIABLE",
-        "=" * 60,
+        _section("SPEC COMPLIANCE RULES — NON-NEGOTIABLE"),
         (
             "1. TECH STACK: Read the architecture documents below. Identify every technology, "
             "framework, database, and service named. Use EXACTLY those — no substitutions.\n"
@@ -184,29 +220,21 @@ def build_backend_prompt(persona, docs):
             "6. PRODUCTION QUALITY: Include proper error handling, input validation (Pydantic models), "
             "logging, CORS config, health check endpoint, and graceful startup/shutdown."
         ),
-        "=" * 60,
         COMMON_FORMAT_RULE,
-        "=" * 60,
-        "SPECIFICATION DOCUMENTS (your source of truth — follow these exactly)",
-        "=" * 60,
+        _section("SPECIFICATION DOCUMENTS (your source of truth — follow these exactly)"),
         docs,
     ])
 
 def build_frontend_prompt(persona, docs, api_contract):
     contract_block = (
-        "=" * 60 + "\n"
-        "BACKEND API CONTRACT — CONNECT TO THESE EXACT ENDPOINTS\n"
-        "=" * 60 + "\n"
-        + api_contract + "\n"
+        _contract_block(api_contract, "BACKEND API CONTRACT — CONNECT TO THESE EXACT ENDPOINTS")
         if api_contract else
         "WARNING: Backend API contract not yet generated. "
         "Infer endpoints from the engineering spec documents.\n"
     )
     return "\n\n".join([
         persona,
-        "=" * 60,
-        "SPEC COMPLIANCE RULES — NON-NEGOTIABLE",
-        "=" * 60,
+        _section("SPEC COMPLIANCE RULES — NON-NEGOTIABLE"),
         (
             "1. TECH STACK: Read the design and architecture documents below. Use EXACTLY the "
             "framework, component library, and styling system named — no substitutions.\n"
@@ -232,28 +260,17 @@ def build_frontend_prompt(persona, docs, api_contract):
             "6. PRODUCTION QUALITY: TypeScript strict mode, proper error boundaries, "
             "loading skeletons, form validation, accessible markup (ARIA where needed)."
         ),
-        "=" * 60,
         COMMON_FORMAT_RULE,
         contract_block,
-        "=" * 60,
-        "SPECIFICATION DOCUMENTS",
-        "=" * 60,
+        _section("SPECIFICATION DOCUMENTS"),
         docs,
     ])
 
 def build_integration_prompt(persona, docs, api_contract):
-    contract_block = (
-        "=" * 60 + "\n"
-        "BACKEND API CONTRACT\n"
-        "=" * 60 + "\n"
-        + api_contract + "\n"
-        if api_contract else ""
-    )
+    contract_block = _contract_block(api_contract, "BACKEND API CONTRACT")
     return "\n\n".join([
         persona,
-        "=" * 60,
-        "SPEC COMPLIANCE RULES — NON-NEGOTIABLE",
-        "=" * 60,
+        _section("SPEC COMPLIANCE RULES — NON-NEGOTIABLE"),
         (
             "1. TECH STACK: Use ONLY the third-party services and SDKs named in the integration spec.\n\n"
             "2. FULL IMPLEMENTATION: Every integration (Stripe, Slack, email, webhooks, etc.) must be "
@@ -266,28 +283,17 @@ def build_integration_prompt(persona, docs, api_contract):
             "6. PRODUCTION QUALITY: Idempotency keys for payment operations, "
             "dead-letter handling for async jobs, rate limit awareness."
         ),
-        "=" * 60,
         COMMON_FORMAT_RULE,
         contract_block,
-        "=" * 60,
-        "SPECIFICATION DOCUMENTS",
-        "=" * 60,
+        _section("SPECIFICATION DOCUMENTS"),
         docs,
     ])
 
 def build_tests_prompt(persona, docs, api_contract):
-    contract_block = (
-        "=" * 60 + "\n"
-        "BACKEND API CONTRACT — TEST THESE EXACT ENDPOINTS\n"
-        "=" * 60 + "\n"
-        + api_contract + "\n"
-        if api_contract else ""
-    )
+    contract_block = _contract_block(api_contract, "BACKEND API CONTRACT — TEST THESE EXACT ENDPOINTS")
     return "\n\n".join([
         persona,
-        "=" * 60,
-        "SPEC COMPLIANCE RULES — NON-NEGOTIABLE",
-        "=" * 60,
+        _section("SPEC COMPLIANCE RULES — NON-NEGOTIABLE"),
         (
             "1. TEST FRAMEWORK: Use ONLY the frameworks named in the quality spec "
             "(e.g. pytest for backend, Playwright or Vitest for frontend).\n\n"
@@ -305,28 +311,17 @@ def build_tests_prompt(persona, docs, api_contract):
             "6. CI READY: Tests must pass with `pytest` or `npm test` from the repo root. "
             "Include a conftest.py with DB setup/teardown."
         ),
-        "=" * 60,
         COMMON_FORMAT_RULE,
         contract_block,
-        "=" * 60,
-        "SPECIFICATION DOCUMENTS",
-        "=" * 60,
+        _section("SPECIFICATION DOCUMENTS"),
         docs,
     ])
 
 def build_infra_prompt(persona, docs, api_contract):
-    contract_block = (
-        "=" * 60 + "\n"
-        "API CONTRACT (use to derive all required env vars and service dependencies)\n"
-        "=" * 60 + "\n"
-        + api_contract + "\n"
-        if api_contract else ""
-    )
+    contract_block = _contract_block(api_contract, "API CONTRACT (use to derive all required env vars and service dependencies)")
     return "\n\n".join([
         persona,
-        "=" * 60,
-        "YOUR MISSION",
-        "=" * 60,
+        _section("YOUR MISSION"),
         (
             "Read EVERY specification document below. Identify:\n"
             "  - The deployment platform (Fly.io, Vercel, AWS, Railway, etc.)\n"
@@ -336,9 +331,7 @@ def build_infra_prompt(persona, docs, api_contract):
             "Then generate a complete, self-contained infrastructure that automates EVERYTHING "
             "except the initial one-time secret values a human must set in GitHub."
         ),
-        "=" * 60,
-        "MANDATORY OUTPUT FILES",
-        "=" * 60,
+        _section("MANDATORY OUTPUT FILES"),
         (
             "You MUST generate ALL of the following. Read the docs to fill in the specifics.\n\n"
 
@@ -389,9 +382,7 @@ def build_infra_prompt(persona, docs, api_contract):
             "   - `make setup` to get running locally in < 5 minutes\n"
             "   - Link to secrets-required.md for GitHub configuration"
         ),
-        "=" * 60,
-        "SPEC COMPLIANCE RULES",
-        "=" * 60,
+        _section("SPEC COMPLIANCE RULES"),
         (
             "1. DEPLOYMENT PLATFORM: Use EXACTLY what the operations/architecture docs specify. "
             "If docs say Fly.io, generate fly.toml. If Vercel, generate vercel.json. "
@@ -407,64 +398,65 @@ def build_infra_prompt(persona, docs, api_contract):
             "5. NO PLACEHOLDERS: Every workflow step must be complete and runnable. "
             "No `# TODO`, no `YOUR_VALUE_HERE`, no incomplete steps."
         ),
-        "=" * 60,
         COMMON_FORMAT_RULE,
         contract_block,
-        "=" * 60,
-        "SPECIFICATION DOCUMENTS (read all of these to derive the infra)",
-        "=" * 60,
+        _section("SPECIFICATION DOCUMENTS (read all of these to derive the infra)"),
         docs,
     ])
 
 def build_prompt_for_step(step, persona, docs, api_contract):
-    if step == "backend":
-        return build_backend_prompt(persona, docs)
-    elif step == "frontend":
-        return build_frontend_prompt(persona, docs, api_contract)
-    elif step == "integration":
-        return build_integration_prompt(persona, docs, api_contract)
-    elif step == "tests":
-        return build_tests_prompt(persona, docs, api_contract)
-    elif step == "infra":
-        return build_infra_prompt(persona, docs, api_contract)
+    _prompt_builders = {
+        "backend": lambda: build_backend_prompt(persona, docs),
+        "frontend": lambda: build_frontend_prompt(persona, docs, api_contract),
+        "integration": lambda: build_integration_prompt(persona, docs, api_contract),
+        "tests": lambda: build_tests_prompt(persona, docs, api_contract),
+        "infra": lambda: build_infra_prompt(persona, docs, api_contract),
+    }
+    builder = _prompt_builders.get(step)
+    if builder:
+        return builder()
     return persona + "\n\n---\n\n## Specification Documents\n\n" + docs
 
 # -----------------------------------------------------------------------
 # Step runner
 # -----------------------------------------------------------------------
 
+_API_CONTRACT_FILENAME = "api-contract.md"
+_STEPS_NEEDING_CONTRACT = ("frontend", "integration", "tests")
+
+
 def run_step(step):
     meta = STEPS.get(step)
     if not meta:
-        print("[BUILD] Unknown step: " + step)
+        print(_LOG_PREFIX + " Unknown step: " + step)
         sys.exit(1)
 
-    print("[BUILD] Running: " + meta["label"])
-    save_step_status(step, "running")
+    print(_LOG_PREFIX + " Running: " + meta["label"])
+    save_step_status(step, STATUS_RUNNING)
 
     docs = collect_docs(meta)
     if not docs.strip():
         msg = "No source documents found. Generate and review the spec docs first."
-        save_step_status(step, "error", error=msg)
-        print("[BUILD] " + msg)
+        save_step_status(step, STATUS_ERROR, error=msg)
+        print(_LOG_PREFIX + " " + msg)
         return False
 
     api_contract = load_api_contract()
-    if step in ("frontend", "integration", "tests") and not api_contract:
-        print("[BUILD] WARNING: api-contract.md not found — run backend step first for fully connected output.")
+    if step in _STEPS_NEEDING_CONTRACT and not api_contract:
+        print(_LOG_PREFIX + " WARNING: api-contract.md not found — run backend step first for fully connected output.")
 
     persona = load_agent(meta["agent"])
     prompt = build_prompt_for_step(step, persona, docs, api_contract)
 
-    tool = os.environ.get("FORGE_TOOL", "gemini")
+    tool = os.environ.get("FORGE_TOOL", DEFAULT_TOOL)
     model_id = os.environ.get("FORGE_MODEL", "")
-    print("[BUILD] Invoking AI (" + tool + " " + (model_id or "default") + ")...")
+    print(_LOG_PREFIX + " Invoking AI (" + tool + " " + (model_id or "default") + ")...")
 
     output, error = invoke_ai(prompt, tool, model_id)
     if error or not output:
         msg = error or "AI returned empty output"
-        save_step_status(step, "error", error=msg)
-        print("[BUILD] Error: " + msg)
+        save_step_status(step, STATUS_ERROR, error=msg)
+        print(_LOG_PREFIX + " Error: " + msg)
         return False
 
     parsed = parse_files(output)
@@ -477,22 +469,22 @@ def run_step(step):
     file_list = []
     for rel_path, content in parsed.items():
         # Save api-contract.md to shared location so frontend/tests can read it
-        if step == "backend" and rel_path == "api-contract.md":
+        if step == "backend" and rel_path == _API_CONTRACT_FILENAME:
             os.makedirs(os.path.dirname(API_CONTRACT_FILE), exist_ok=True)
-            with open(API_CONTRACT_FILE, "w", encoding="utf-8") as f:
+            with open(API_CONTRACT_FILE, "w", encoding=FILE_ENCODING) as f:
                 f.write(content)
-            print("[BUILD] API contract saved: " + API_CONTRACT_FILE)
+            print(_LOG_PREFIX + " API contract saved: " + API_CONTRACT_FILE)
 
         parts = rel_path.replace("\\", "/").split("/")
         full_path = os.path.join(out_dir, *parts)
         os.makedirs(os.path.dirname(full_path), exist_ok=True)
-        with open(full_path, "w", encoding="utf-8") as f:
+        with open(full_path, "w", encoding=FILE_ENCODING) as f:
             f.write(content)
         file_list.append(rel_path)
-        print("[BUILD] Written: " + rel_path)
+        print(_LOG_PREFIX + " Written: " + rel_path)
 
-    save_step_status(step, "complete", files=file_list)
-    print("[BUILD] Done. " + str(len(file_list)) + " files generated.")
+    save_step_status(step, STATUS_COMPLETE, files=file_list)
+    print(_LOG_PREFIX + " Done. " + str(len(file_list)) + " files generated.")
     return True
 
 if __name__ == "__main__":
