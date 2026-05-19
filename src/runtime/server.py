@@ -173,13 +173,27 @@ USER_FILE = os.path.expanduser(USER_FILE_PATH)
 def set_project_root(project_root, data_dir=None):
     global REPO_ROOT, FORGE_DIR, REVIEWS_FILE, STATE_FILE, RAW_INPUT_DIR
     REPO_ROOT = os.path.abspath(project_root)
-    _dd = data_dir or os.environ.get("FORGE_DATA_DIR", "")
+    _dd = data_dir
+    if not _dd:
+        # Prefer the project's own .forge dotfile over the inherited FORGE_DATA_DIR env var.
+        # The env var points to the server's startup project and becomes stale when a
+        # managed project is selected — reading the dotfile gives the correct data_dir.
+        dotfile = os.path.join(REPO_ROOT, ".forge")
+        if os.path.isfile(dotfile):
+            try:
+                _meta = json.loads(open(dotfile, "r", encoding="utf-8").read())
+                _dd = os.path.expanduser(_meta.get("data_dir", ""))
+            except (OSError, json.JSONDecodeError, ValueError):
+                pass
+        if not _dd:
+            _dd = os.environ.get("FORGE_DATA_DIR", "")
     FORGE_DIR = os.path.abspath(_dd) if _dd else os.path.join(REPO_ROOT, ".forge")
     REVIEWS_FILE = os.path.join(FORGE_DIR, FILE_REVIEWS)
     STATE_FILE = os.path.join(FORGE_DIR, FILE_PROJECT_STATE)
     RAW_INPUT_DIR = os.path.join(FORGE_DIR, DIR_RAW_INPUT)
     os.environ["AEOS_REPO_ROOT"] = REPO_ROOT
     os.environ["FORGE_REPO_ROOT"] = REPO_ROOT
+    os.environ["FORGE_DATA_DIR"] = FORGE_DIR
 
 
 def ensure_projects_root():
@@ -808,8 +822,9 @@ def set_processing(status, stage=""):
     if os.path.exists(runs_dir):
         try:
             data = {"status": status, "stage": stage}
-            # When transitioning to idle, preserve any last_error written by stage_runner
-            if status == STATUS_IDLE and os.path.exists(status_file):
+            # Always preserve last_error — prevents the next iteration's STATUS_RUNNING
+            # write from clobbering an error written by the previous stage before break.
+            if os.path.exists(status_file):
                 try:
                     with open(status_file, "r") as sf:
                         existing = json.load(sf)
