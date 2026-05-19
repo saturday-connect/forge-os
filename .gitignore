@@ -9,10 +9,10 @@ test-projects/
 raw-input.md
 
 # ── Electron build output ─────────────────────────────────────────────────────
-electron/dist/
-electron/out/
-electron/dev-app-update.yml
-electron/package-lock.json
+desktop/dist/
+desktop/out/
+desktop/dev-app-update.yml
+desktop/package-lock.json
 
 # ── Python ────────────────────────────────────────────────────────────────────
 __pycache__/

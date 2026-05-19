@@ -16,7 +16,7 @@ The root `forge` executable is the user-facing CLI artifact. Source is modular �
 
 Priority order (highest wins):
 
-1. Current source under `src/`, `electron/`
+1. Current source under `src/`, `desktop/`
 2. Built `./forge` behavior
 3. Generated runtime under `.forge/scripts/*` and `<project>/.forge/scripts/*`
 4. Actual project state under `.forge/` and `.projects/index.json`
@@ -209,11 +209,11 @@ This means server fixes only reach Electron users when:
 
 ### macOS Distribution
 
-`entitlements.mac.plist` **must exist** at `electron/assets/entitlements.mac.plist`. Its absence causes a malformed bundle and the "damaged" Gatekeeper error.
+`entitlements.mac.plist` **must exist** at `desktop/assets/entitlements.mac.plist`. Its absence causes a malformed bundle and the "damaged" Gatekeeper error.
 
 Required entitlements: JIT, unsigned memory, library validation disable, network client+server, file access.
 
-Notarization: `electron/scripts/notarize.js` is wired as `afterSign` hook. It is silent unless `APPLE_ID`, `APPLE_ID_PASSWORD`, `APPLE_TEAM_ID` are set in the environment (GitHub secrets).
+Notarization: `desktop/scripts/notarize.js` is wired as `afterSign` hook. It is silent unless `APPLE_ID`, `APPLE_ID_PASSWORD`, `APPLE_TEAM_ID` are set in the environment (GitHub secrets).
 
 User workaround for unsigned builds: `xattr -cr "/Applications/Forge OS.app"`
 
@@ -350,7 +350,7 @@ Inspect:
 - `src/dashboard/DESIGN.md` — design contract
 - `src/dashboard/styles.css` — design tokens
 - `.projects/index.json` — registered projects and active selection
-- `electron/package.json` — build config, afterSign hook, notarize dep
+- `desktop/package.json` — build config, afterSign hook, notarize dep
 
 Security check before sharing any state artifact:
 - `.projects/<slug>/.forge/project-state.json` may contain tokens from testing

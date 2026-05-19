@@ -85,8 +85,8 @@ src/dashboard/styles.css          dashboard styles
 src/dashboard/scripts/*.js        dashboard JavaScript, assembled in order
 src/dashboard/DESIGN.md           design contract
 forge                             built binary (generated)
-electron/                         desktop app wrapper (Electron)
-electron/assets/                  app icons and macOS entitlements
+desktop/                          desktop app wrapper (Electron)
+desktop/assets/                   app icons and macOS entitlements
 docs/                             GitHub Pages product site
 .github/workflows/                CI — builds macOS DMG, Windows installer, Linux AppImage
 ```
@@ -115,10 +115,10 @@ Expected response: `200`
 
 ## Desktop App
 
-The Electron wrapper in `electron/` packages `forge` as a native desktop app. CI builds run on every push to `main` and publish to GitHub Releases on version tags.
+The Electron wrapper in `desktop/` packages `forge` as a native desktop app. CI builds run on every push to `main` and publish to GitHub Releases on version tags.
 
 ```bash
-cd electron
+cd desktop
 npm install
 npm run build:mac    # macOS DMG (arm64 + x64)
 npm run build:win    # Windows NSIS installer

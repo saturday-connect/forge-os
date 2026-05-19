@@ -32,18 +32,18 @@ src/dashboard/scripts.txt          dashboard script assembly order
 src/dashboard/DESIGN.md            active dashboard design contract
 src/dashboard.html                 generated compatibility snapshot (do not hand-edit)
 forge                              built executable artifact (do not hand-edit)
-electron/                          Electron desktop app wrapper
-electron/main.js                   Electron main process
-electron/preload.js                Electron preload script
-electron/assets/                   icons, entitlements.mac.plist
-electron/scripts/notarize.js       macOS notarization hook (no-op until Apple secrets set)
-electron/package.json              Electron build config (electron-builder)
+desktop/                           Electron desktop app wrapper
+desktop/main.js                    Electron main process
+desktop/preload.js                 Electron preload script
+desktop/assets/                    icons, entitlements.mac.plist
+desktop/scripts/notarize.js        macOS notarization hook (no-op until Apple secrets set)
+desktop/package.json               Electron build config (electron-builder)
 docs/                              GitHub Pages product site (deployed from /docs branch)
 .github/workflows/build-desktop.yml   CI — builds macOS DMG, Windows installer, Linux AppImage
 ```
 
 **Rules:**
-- Edit source in `src/`, `electron/`, `docs/`.
+- Edit source in `src/`, `desktop/`, `docs/`.
 - Never hand-edit `forge`, `src/dashboard.html`, or `.forge/scripts/*` — they are generated artifacts.
 - After any source change: `python3 src/build_forge.py` then `./forge upgrade`.
 
@@ -198,7 +198,7 @@ All bare `except Exception: pass` swallows replaced with typed exceptions (`OSEr
 
 ### Build Commands
 ```bash
-cd electron
+cd desktop
 npm install
 npm run build:mac    # macOS DMG (arm64 + x64)
 npm run build:win    # Windows NSIS installer
@@ -207,14 +207,14 @@ npm run build:linux  # Linux AppImage
 
 ### macOS Code Signing And Notarization
 
-**`entitlements.mac.plist` is required.** The file lives at `electron/assets/entitlements.mac.plist` and must exist or electron-builder produces a malformed bundle. Required entitlements for Electron:
+**`entitlements.mac.plist` is required.** The file lives at `desktop/assets/entitlements.mac.plist` and must exist or electron-builder produces a malformed bundle. Required entitlements for Electron:
 - `com.apple.security.cs.allow-jit` — Electron renderer (V8 JIT)
 - `com.apple.security.cs.allow-unsigned-executable-memory` — Node.js
 - `com.apple.security.cs.disable-library-validation` — bundled native modules
 - `com.apple.security.network.client` + `.server` — dashboard HTTP server
 - File access entitlements for project directories
 
-**Notarization**: `electron/scripts/notarize.js` runs as `afterSign` hook. It is a no-op unless all three Apple secrets are present (`APPLE_ID`, `APPLE_ID_PASSWORD`, `APPLE_TEAM_ID`).
+**Notarization**: `desktop/scripts/notarize.js` runs as `afterSign` hook. It is a no-op unless all three Apple secrets are present (`APPLE_ID`, `APPLE_ID_PASSWORD`, `APPLE_TEAM_ID`).
 
 **To enable full signing and notarization**, add these GitHub repo secrets:
 
@@ -458,7 +458,7 @@ Component sizing rules:
 - Fix: preserve design intent through tokens, adapt for dashboard density
 
 ### icon.ico Too Small (Windows CI Failure)
-- Symptom: `image electron/assets/icon.ico must be at least 256x256`
+- Symptom: `image desktop/assets/icon.ico must be at least 256x256`
 - Cause: ICO contained only 16×16 image (400 bytes)
 - Fix: rebuilt as 6-image ICO using manual binary construction — **do not use `PIL.Image.save(format="ICO")` for multi-size; use `struct.pack` ICO construction directly**
 
