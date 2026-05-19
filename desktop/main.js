@@ -63,13 +63,6 @@ function writeConfig(data) {
   fs.writeFileSync(CONFIG_FILE, JSON.stringify(data, null, 2), { mode: 0o600 })
 }
 
-function addProjectToHistory(projectPath) {
-  const config = readConfig()
-  const history = (config.projectHistory || []).filter(p => p !== projectPath)
-  history.unshift(projectPath)
-  writeConfig({ ...config, projectHistory: history.slice(0, 10) })
-}
-
 function addOrgToHistory(orgName, repoName) {
   const config = readConfig()
   const history = (config.orgHistory || []).filter(o => o.org !== orgName)
@@ -534,28 +527,6 @@ async function ensureOrgConfigPublished(token, orgLogin, config) {
 
 // ─── Project management ───────────────────────────────────────────────────────
 
-/**
- * Read the .forge dotfile from a project root.
- * Returns { dataDir, meta } if dotfile exists and is valid.
- * Returns { isLegacy: true, dataDir } if .forge/ directory (legacy) exists.
- * Returns null if neither exists.
- */
-function readForgeDotfile(projectRoot) {
-  const dotfilePath = path.join(projectRoot, '.forge')
-  try {
-    const stat = fs.statSync(dotfilePath)
-    if (stat.isFile()) {
-      const meta = JSON.parse(fs.readFileSync(dotfilePath, 'utf8'))
-      const dataDir = meta.data_dir.replace(/^~/, require('os').homedir())
-      return { isLegacy: false, dataDir, meta }
-    }
-    if (stat.isDirectory()) {
-      return { isLegacy: true, dataDir: dotfilePath }
-    }
-  } catch (_) {}
-  return null
-}
-
 function runForgeCommand(projectRoot, command) {
   return new Promise((resolve, reject) => {
     const proc = spawn('python3', [forgeBinaryPath(), '--project', projectRoot, command], {
@@ -564,50 +535,6 @@ function runForgeCommand(projectRoot, command) {
     proc.on('close', code => code === 0 ? resolve() : reject(new Error(`forge ${command} failed (exit ${code})`)))
     proc.on('error', reject)
   })
-}
-
-/**
- * Ensure the project at projectRoot has a valid .forge dotfile pointing to
- * a populated data directory. Handles:
- *   - fresh project (no .forge): prompt init
- *   - legacy project (.forge/ dir): prompt migration
- *   - valid project (.forge file): nothing to do
- * Returns forgeDataDir string on success, null if user cancelled.
- */
-async function ensureProjectReady(projectRoot) {
-  let dotfile = readForgeDotfile(projectRoot)
-
-  if (!dotfile) {
-    const { response } = await dialog.showMessageBox({ icon: appDialogIcon,
-      type: 'question',
-      title: 'Initialize Forge Project',
-      message: `No Forge project found in:\n${projectRoot}`,
-      detail: 'Would you like to initialize a new Forge project here?',
-      buttons: ['Initialize', 'Cancel'],
-      defaultId: 0
-    })
-    if (response !== 0) return null
-    await runForgeCommand(projectRoot, 'init')
-    dotfile = readForgeDotfile(projectRoot)
-    if (!dotfile) return null
-  }
-
-  if (dotfile.isLegacy) {
-    const { response } = await dialog.showMessageBox({ icon: appDialogIcon,
-      type: 'question',
-      title: 'Migrate Forge Project',
-      message: 'This project uses the old layout.',
-      detail: 'Project documentation will be moved to ~/.forge/projects/ and a .forge pointer file will be created in the project root. This is a one-time migration.',
-      buttons: ['Migrate', 'Cancel'],
-      defaultId: 0
-    })
-    if (response !== 0) return null
-    await runForgeCommand(projectRoot, 'migrate')
-    dotfile = readForgeDotfile(projectRoot)
-    if (!dotfile || dotfile.isLegacy) return null
-  }
-
-  return dotfile.dataDir
 }
 
 // ─── Server management ────────────────────────────────────────────────────────
@@ -723,133 +650,6 @@ function createWindow(port) {
   })
 }
 
-// ─── Project opener ───────────────────────────────────────────────────────────
-
-async function openProject(newPath) {
-  const newDataDir = await ensureProjectReady(newPath)
-  if (!newDataDir) return
-
-  addProjectToHistory(newPath)
-  writeConfig({ ...readConfig(), projectPath: newPath })
-  killServer()
-
-  try { await runForgeCommand(newPath, 'upgrade') } catch (_) {}
-
-  serverPort = await getFreePort()
-  startServer(newPath, newDataDir, serverPort)
-
-  try {
-    await waitForServer(serverPort)
-  } catch (err) {
-    dialog.showErrorBox('Server Error', `Failed to start server:\n${err.message}`)
-    return
-  }
-
-  if (win) {
-    win.loadURL(`http://127.0.0.1:${serverPort}`)
-    win.show()
-    win.focus()
-  }
-  buildTrayMenu()
-}
-
-const PICKER_STYLES = `
-  *{box-sizing:border-box;margin:0;padding:0;font-family:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
-  body{background:#0a0a0a;color:#fff;display:flex;flex-direction:column;height:100vh;overflow:hidden}
-  .header{padding:16px 16px 12px;font-size:11px;font-weight:600;color:#555;text-transform:uppercase;letter-spacing:1px;border-bottom:1px solid #1a1a1a;flex-shrink:0}
-  .list{flex:1;overflow-y:auto}
-  .item{padding:13px 16px;cursor:pointer;border-bottom:1px solid #141414;transition:background .1s;position:relative}
-  .item:hover{background:#141414}
-  .item.active{background:#0c0c22}
-  .item-name{font-size:14px;font-weight:600;margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-right:52px}
-  .item-sub{font-size:11px;color:#444;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .item.active .item-sub{color:#494fdf66}
-  .badge{position:absolute;right:16px;top:50%;transform:translateY(-50%);font-size:10px;color:#494fdf;font-weight:700;background:#0d0d2a;padding:2px 7px;border-radius:10px;border:1px solid #494fdf44}
-  .empty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:32px 24px;text-align:center}
-  .empty-icon{font-size:28px;opacity:.3}
-  .empty-title{font-size:14px;font-weight:600;color:#555}
-  .empty-desc{font-size:12px;color:#333;line-height:1.5}
-  .footer{padding:12px 16px;border-top:1px solid #1a1a1a;flex-shrink:0;display:flex;flex-direction:column;gap:8px}
-  .btn{width:100%;padding:10px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;border:none;transition:all .15s}
-  .btn-primary{background:#494fdf;color:#fff}
-  .btn-primary:hover{background:#5a60e8}
-  .btn-ghost{background:transparent;border:1px solid #222;color:#666}
-  .btn-ghost:hover{border-color:#333;color:#aaa}
-  input{width:100%;background:#141414;border:1px solid #222;color:#fff;padding:9px 12px;border-radius:8px;font-size:13px;outline:none}
-  input:focus{border-color:#494fdf}
-  input::placeholder{color:#333}
-  .field-label{font-size:11px;color:#555;margin-bottom:5px;display:block}
-`
-
-async function showProjectPicker() {
-  const config = readConfig()
-  const history = (config.projectHistory || []).filter(p => fs.existsSync(p))
-  const current = config.projectPath || ''
-  const isEmpty = history.length === 0
-
-  const pickerWin = new BrowserWindow({
-    width: 460,
-    height: isEmpty ? 280 : Math.min(80 + history.length * 62 + 76, 500),
-    resizable: false, minimizable: false, maximizable: false,
-    title: 'Switch Project',
-    parent: win || undefined, modal: !!win,
-    webPreferences: { nodeIntegration: true, contextIsolation: false }
-  })
-
-  const items = history.map((p, i) => `
-    <div class="item ${p === current ? 'active' : ''}" onclick="pick(${i})">
-      <div class="item-name">${require('path').basename(p)}</div>
-      <div class="item-sub">${p}</div>
-      ${p === current ? '<span class="badge">active</span>' : ''}
-    </div>`).join('')
-
-  const emptyState = `
-    <div class="empty">
-      <div class="empty-icon">📁</div>
-      <div class="empty-title">No recent projects</div>
-      <div class="empty-desc">Open a folder to initialize it as a Forge project. Your projects will appear here for quick switching.</div>
-    </div>`
-
-  const projectHtml = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>${PICKER_STYLES}</style></head><body>
-    <div class="header">Recent Projects</div>
-    ${isEmpty ? emptyState : `<div class="list">${items}</div>`}
-    <div class="footer">
-      <button class="btn btn-${isEmpty ? 'primary' : 'ghost'}" onclick="browseNew()">Open Folder…</button>
-    </div>
-    <script>
-      const {ipcRenderer}=require('electron')
-      const paths=${JSON.stringify(history)}
-      function pick(i){ipcRenderer.send('project-pick',paths[i])}
-      function browseNew(){ipcRenderer.send('project-browse')}
-    </script>
-  </body></html>`
-  pickerWin.loadFile(writeTempHtml('project-picker', projectHtml))
-
-  pickerWin.once('ready-to-show', () => pickerWin.show())
-
-  return new Promise(resolve => {
-    const { ipcMain: ipc } = require('electron')
-    ipc.once('project-pick', (_e, p) => { pickerWin.close(); resolve(p) })
-    ipc.once('project-browse', async () => {
-      pickerWin.close()
-      const result = await dialog.showOpenDialog(win || null, {
-        title: 'Open Forge Project',
-        defaultPath: current || app.getPath('home'),
-        properties: ['openDirectory', 'createDirectory'],
-        buttonLabel: 'Open Project'
-      })
-      resolve(result.canceled || !result.filePaths.length ? null : result.filePaths[0])
-    })
-    pickerWin.on('closed', () => {
-      ipc.removeAllListeners('project-pick')
-      ipc.removeAllListeners('project-browse')
-      resolve(null)
-    })
-  }).then(async chosenPath => {
-    if (chosenPath) await openProject(chosenPath)
-  })
-}
-
 // ─── Tray ─────────────────────────────────────────────────────────────────────
 
 function createTray() {
@@ -869,27 +669,73 @@ function createTray() {
   })
 }
 
+async function switchToProject(projectId) {
+  if (!serverPort) { if (win) { win.show(); win.focus() }; return }
+  try {
+    const body = JSON.stringify({ project_id: projectId })
+    await new Promise((resolve, reject) => {
+      const req = http.request({
+        hostname: '127.0.0.1', port: serverPort,
+        path: '/api/projects/select', method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(body),
+          'X-Forge-Token': FORGE_TOKEN
+        }
+      }, res => { res.resume(); res.on('end', resolve) })
+      req.on('error', reject)
+      req.write(body); req.end()
+    })
+  } catch (e) {
+    console.error('[switch-project]', e.message)
+  }
+  if (win) {
+    win.webContents.executeJavaScript('typeof loadState === "function" && loadState()').catch(() => win.reload())
+    win.show(); win.focus()
+  }
+  buildTrayMenu()
+}
+
 function buildTrayMenu() {
   if (!tray) return
 
-  const config = readConfig()
-  const projectName = config.projectPath ? path.basename(config.projectPath) : null
+  // Read managed projects from persistent index — not from legacy config.projectPath
+  const projectsRoot = path.join(os.homedir(), '.forge', 'projects')
+  let activeProjectName = null
+  let allProjects = []
+  let activeProjectId = ''
+  try {
+    const idx = JSON.parse(fs.readFileSync(path.join(projectsRoot, 'index.json'), 'utf8'))
+    activeProjectId = idx.active_project_id || ''
+    allProjects = (idx.projects || []).filter(p => p.status !== 'archived')
+    const active = allProjects.find(p => p.id === activeProjectId)
+    if (active) activeProjectName = active.name
+  } catch (_) {}
+
   const orgLabel = currentOrg
     ? `Connected: ${currentOrg}/forge-knowledge`
     : 'No org connected'
   const userLabel = currentUser?.login ? `Signed in as ${currentUser.login}` : null
+
+  // Native submenu — no modal window, no IPC, no styling to maintain.
+  // Matches Slack / Bear / Notion tray workspace-switcher pattern.
+  const projectsSubmenu = allProjects.length === 0
+    ? [{ label: 'No projects yet — create one in Forge OS', enabled: false }]
+    : allProjects.map(p => ({
+        label: p.name || p.slug || 'Unnamed project',
+        type: 'radio',
+        checked: p.id === activeProjectId,
+        click: () => switchToProject(p.id)
+      }))
 
   const menuTemplate = [
     { label: 'Show Forge OS', click: () => { if (win) { win.show(); win.focus() } } },
     { type: 'separator' },
     ...(userLabel ? [{ label: userLabel, enabled: false }] : []),
     { label: orgLabel, enabled: false },
-    ...(projectName ? [{ label: `Project: ${projectName}`, enabled: false }] : []),
+    ...(activeProjectName ? [{ label: `Project: ${activeProjectName}`, enabled: false }] : []),
     { type: 'separator' },
-    {
-      label: 'Switch Project',
-      click: async () => { await showProjectPicker() }
-    },
+    { label: 'Switch Project', submenu: projectsSubmenu },
     {
       label: 'Switch Organization',
       enabled: !!currentUser,
