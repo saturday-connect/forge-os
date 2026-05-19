@@ -1634,7 +1634,9 @@ class ForgeHandler(BaseHTTPRequestHandler):
                             cmd = [sys.executable, forge_script, "generate", s]
                             if tmp_combined and s == "context":
                                 cmd.append(tmp_combined)
-                            subprocess.run(cmd, cwd=REPO_ROOT, env=skip_env)
+                            result = subprocess.run(cmd, cwd=REPO_ROOT, env=skip_env)
+                            if result.returncode != 0:
+                                break
                     else:
                         cmd = [sys.executable, forge_script, "generate", stage]
                         if tmp_combined and stage == "context":
