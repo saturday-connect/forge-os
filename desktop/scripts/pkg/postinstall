@@ -1,9 +1,16 @@
 #!/bin/bash
 # Post-install script for Forge OS PKG installer.
-# This removes the com.apple.quarantine attribute so that macOS allows the unsigned app to run.
+# 1. Clears the com.apple.quarantine attribute so macOS allows the unsigned app to run.
+# 2. Launches the app so users don't need to find and open it manually.
 
-echo "Running xattr -cr on /Applications/Forge OS.app to clear quarantine attributes..."
-xattr -cr "/Applications/Forge OS.app" || true
-echo "Done."
+APP="/Applications/Forge OS.app"
+
+echo "Clearing quarantine attribute..."
+xattr -cr "$APP" || true
+
+echo "Launching Forge OS..."
+# open -n avoids reusing an existing instance; backgrounded so the installer
+# completes immediately rather than waiting for the app process to exit.
+open -n -a "$APP" &
 
 exit 0

@@ -507,13 +507,13 @@ body.mac #sidebar {
 .overview-phase-tile:last-child { border-right: none; }
 .overview-phase-tile:hover { background: var(--bg-2); }
 .overview-phase-tile--done { background: var(--bg-1); }
-.overview-phase-tile--active { background: rgba(73,79,223,0.07); }
+.overview-phase-tile--active { background: rgba(74,222,128,0.06); }
 .overview-phase-tile--active::after {
   content: '';
   position: absolute;
   bottom: 0; left: 0; right: 0;
   height: 2px;
-  background: var(--accent);
+  background: var(--primary);
   border-radius: 0 0 2px 2px;
 }
 .overview-phase-name {
@@ -526,7 +526,7 @@ body.mac #sidebar {
   gap: 5px;
 }
 .overview-phase-name--done { color: var(--green); }
-.overview-phase-name--active { color: var(--accent); }
+.overview-phase-name--active { color: var(--primary); }
 .overview-phase-name--pending { color: var(--text-3); }
 .overview-phase-pct {
   font-size: 20px;
@@ -550,7 +550,7 @@ body.mac #sidebar {
   transition: width 0.4s ease;
 }
 .overview-phase-bar-fill--done { background: var(--green); }
-.overview-phase-bar-fill--active { background: var(--accent); }
+.overview-phase-bar-fill--active { background: var(--primary); }
 .overview-phase-bar-fill--pending { background: transparent; }
 
 /* ===================== OVERVIEW — ATTENTION CARD ===================== */
