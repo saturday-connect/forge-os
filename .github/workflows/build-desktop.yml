@@ -100,6 +100,7 @@ jobs:
           retention-days: 14
           path: |
             desktop/dist/*.dmg
+            desktop/dist/*.pkg
             desktop/dist/*.zip
             desktop/dist/latest*.yml
 
@@ -133,6 +134,7 @@ jobs:
         with:
           files: |
             desktop/dist/*.dmg
+            desktop/dist/*.pkg
             desktop/dist/*.zip
             desktop/dist/latest*.yml
           generate_release_notes: true
