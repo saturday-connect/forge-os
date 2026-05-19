@@ -1211,8 +1211,8 @@
 
   function getPreferredAssets(assets) {
     var byId = {
-      macArm: pickAsset(assets, [/arm64.*\.dmg$/i, /arm64.*\.pkg$/i, /arm64.*\.zip$/i]),
-      macIntel: pickAsset(assets, [/(x64|amd64).*\.(dmg|pkg)$/i, /(x64|amd64).*\.zip$/i, /\.dmg$/i, /\.pkg$/i]),
+      macArm: pickAsset(assets, [/arm64.*\.pkg$/i, /arm64.*\.dmg$/i, /arm64.*\.zip$/i]),
+      macIntel: pickAsset(assets, [/(x64|amd64).*\.pkg$/i, /(x64|amd64).*\.dmg$/i, /(x64|amd64).*\.zip$/i, /\.pkg$/i, /\.dmg$/i]),
       win: pickAsset(assets, [/(x64|amd64).*\.exe$/i, /\.exe$/i, /(x64|amd64).*\.msi$/i, /\.msi$/i]),
       linux: pickAsset(assets, [/(x64|amd64).*\.AppImage$/i, /\.AppImage$/i, /(x64|amd64).*\.(deb|rpm|tar\.gz)$/i, /\.(deb|rpm|tar\.gz)$/i])
     }
