@@ -10,12 +10,12 @@ Forge sits at the repository root as a top-level orchestrator and manages multip
 Projects → Input → Generate → Review → Build → Deploy
 ```
 
-Each project gets a `.forge/` directory containing all generated documentation, build artifacts, gate state, and runtime scripts. The web dashboard drives the entire lifecycle from a browser.
+Each project gets a `.forge/` directory containing all generated documentation, build artifacts, gate state, and runtime scripts. The web dashboard drives the entire lifecycle from a browser — or use the native desktop app for macOS, Windows, and Linux.
 
 ## Requirements
 
 - Python 3.8+ (stdlib only, no pip dependencies)
-- Node.js 20+ (for Electron desktop app only)
+- Node.js 22+ (for Electron desktop app only)
 - GitHub CLI `gh` (optional, for secrets push and PR automation)
 
 ## Quick Start
@@ -62,6 +62,17 @@ Then open `http://localhost:8080` in your browser.
 
 `--project <path>` goes before the command when targeting a specific project.
 
+## Supported AI Tools
+
+| Tool | Models |
+|---|---|
+| Gemini CLI | Gemini 3 Flash, Gemini 3 Pro, Gemini 2.5 Flash, Gemini 2.5 Pro, Gemini 2.5 Flash Lite |
+| Claude Code CLI | Claude Sonnet 4.6, Claude Opus 4.7, Claude Haiku 4.5 |
+| Codex CLI | o4 Mini, o3, GPT-5.5, GPT-4.1, GPT-4.1 Mini |
+| OpenAI API | GPT-5.5, GPT-4o, GPT-4o Mini, o3 Mini |
+
+Configure the active tool and model in dashboard Settings or via `FORGE_TOOL` / `FORGE_MODEL` environment variables.
+
 ## Source Layout
 
 ```
@@ -75,7 +86,9 @@ src/dashboard/scripts/*.js        dashboard JavaScript, assembled in order
 src/dashboard/DESIGN.md           design contract
 forge                             built binary (generated)
 electron/                         desktop app wrapper (Electron)
-.github/workflows/                CI — builds macOS DMG and Windows installer
+electron/assets/                  app icons and macOS entitlements
+docs/                             GitHub Pages product site
+.github/workflows/                CI — builds macOS DMG, Windows installer, Linux AppImage
 ```
 
 **Edit source in `src/`.** Never hand-edit `forge`, `src/dashboard.html`, or `.forge/scripts/*` — they are generated artifacts.
@@ -102,37 +115,59 @@ Expected response: `200`
 
 ## Desktop App
 
-The Electron wrapper in `electron/` packages `forge` as a native desktop app for macOS and Windows. CI builds run on every push to `main` and on version tags.
+The Electron wrapper in `electron/` packages `forge` as a native desktop app. CI builds run on every push to `main` and publish to GitHub Releases on version tags.
 
 ```bash
 cd electron
 npm install
 npm run build:mac    # macOS DMG (arm64 + x64)
 npm run build:win    # Windows NSIS installer
+npm run build:linux  # Linux AppImage
 ```
 
 Authentication uses GitHub Device Flow. The OAuth App Client ID is configured via the setup wizard — never hardcoded.
+
+### macOS — "Forge OS is damaged" fix
+
+Downloaded builds are quarantined by Gatekeeper until the app is notarized. Run this once in Terminal after moving the app to Applications:
+
+```bash
+xattr -cr "/Applications/Forge OS.app"
+```
+
+Or right-click the app → **Open** → **Open Anyway**.
+
+To enable full code signing and notarization, add these secrets to the GitHub repository:
+
+| Secret | Description |
+|---|---|
+| `CSC_LINK` | Base64-encoded `.p12` Apple Developer certificate |
+| `CSC_KEY_PASSWORD` | Certificate password |
+| `APPLE_ID` | Apple ID email |
+| `APPLE_ID_PASSWORD` | App-specific password from appleid.apple.com |
+| `APPLE_TEAM_ID` | 10-character team ID from developer.apple.com |
 
 ## Dashboard Views
 
 | View | Purpose |
 |---|---|
 | Projects | Create, open, archive, restore, and delete projects |
-| Overview | Lifecycle summary and next-action guidance |
+| Overview | Lifecycle command center — phase progress, stage matrix, gates |
 | Input | Raw input Markdown files |
 | Generate | Per-stage and full-pipeline generation |
 | Review | File viewer, critique regeneration, gate status, version history |
 | Build | Build-system generation and git/PR automation |
-| Deploy | Environment and GitHub secrets status |
+| Deploy | Environment config, CI/CD workflow generator, GitHub secrets status |
 | Issues | Lightweight issue tracker |
-| Settings | Product config, AI runtime, git, environments |
+| Settings | Product config, AI tool/model, git, environments |
 
-## Security Notes
+## Security
 
 - `.projects/` is gitignored — managed project state never commits.
 - `.forge/project-state.json` may contain tokens from setup; treat as sensitive.
 - Generated build artifacts may include `.env.example` and secret requirement docs — review before sharing.
 - Secret values are never stored in source; only configured-secret metadata is persisted.
+- API endpoints validate path inputs, enforce request body size limits, and restrict model IDs to known allowlists.
 
 ## License
 
