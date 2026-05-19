@@ -47,45 +47,7 @@ PROJECTS_INDEX_FILE = os.path.join(PROJECTS_ROOT, "index.json")
 PROJECT_STATUS_ACTIVE = "active"
 PROJECT_STATUS_ARCHIVED = "archived"
 
-KNOWN_TOOLS = {
-    "gemini": {
-        "label": "Gemini CLI",
-        "models": [
-            {"id": "gemini-3-flash-preview",  "label": "Gemini 3 Flash (recommended)"},
-            {"id": "gemini-3-pro-preview",     "label": "Gemini 3 Pro"},
-            {"id": "gemini-2.5-flash",         "label": "Gemini 2.5 Flash"},
-            {"id": "gemini-2.5-pro",           "label": "Gemini 2.5 Pro"},
-            {"id": "gemini-2.5-flash-lite",    "label": "Gemini 2.5 Flash Lite (fastest)"},
-        ]
-    },
-    "claude": {
-        "label": "Claude Code CLI",
-        "models": [
-            {"id": "claude-sonnet-4-6",         "label": "Claude Sonnet 4.6 (recommended)"},
-            {"id": "claude-opus-4-7",            "label": "Claude Opus 4.7"},
-            {"id": "claude-haiku-4-5-20251001",  "label": "Claude Haiku 4.5 (fastest)"},
-        ]
-    },
-    "codex": {
-        "label": "Codex CLI",
-        "models": [
-            {"id": "o4-mini",      "label": "o4 Mini (recommended)"},
-            {"id": "o3",           "label": "o3"},
-            {"id": "gpt-5.5",      "label": "GPT-5.5"},
-            {"id": "gpt-4.1",      "label": "GPT-4.1"},
-            {"id": "gpt-4.1-mini", "label": "GPT-4.1 Mini"},
-        ]
-    },
-    "openai": {
-        "label": "OpenAI API (direct)",
-        "models": [
-            {"id": "gpt-5.5",     "label": "GPT-5.5"},
-            {"id": "gpt-4o",      "label": "GPT-4o"},
-            {"id": "gpt-4o-mini", "label": "GPT-4o Mini"},
-            {"id": "o3-mini",     "label": "o3 Mini"},
-        ]
-    },
-}
+KNOWN_TOOLS = {}  # __FORGE_KNOWN_TOOLS__
 
 REVIEWS_FILE = os.path.join(FORGE_DIR, "reviews.json")
 STATE_FILE = os.path.join(FORGE_DIR, "project-state.json")

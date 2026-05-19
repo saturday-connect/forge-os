@@ -6,6 +6,37 @@ FORGE_VERSION = "0.3.4"
 
 _DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
 
+def _load_tools():
+    with open(os.path.join(_DATA_DIR, "tools.json"), encoding="utf-8") as fh:
+        return _json.load(fh)
+
+KNOWN_TOOLS = _load_tools()
+
+def _generate_known_tools_code(tools):
+    return "KNOWN_TOOLS = " + pformat(tools, width=120)
+
+def _generate_allowed_models_code(tools):
+    allowed = {k: {m["id"] for m in v["models"]} for k, v in tools.items()}
+    lines = ["_ALLOWED_MODELS = {"]
+    for tool, models in allowed.items():
+        model_list = ", ".join(f'"{m}"' for m in sorted(models))
+        lines.append(f'    "{tool}": {{{model_list}}},')
+    lines.append("}")
+    return "\n".join(lines)
+
+def _load_build_steps():
+    with open(os.path.join(_DATA_DIR, "build_steps.json"), encoding="utf-8") as fh:
+        data = _json.load(fh)
+    return data["steps"], data["order"]
+
+STEPS, BUILD_ORDER = _load_build_steps()
+
+def _generate_steps_code(steps, order):
+    return (
+        "STEPS = " + pformat(steps, width=120) + "\n\n"
+        "BUILD_ORDER = " + repr(order)
+    )
+
 def _load_agents():
     d = {}
     agents_dir = os.path.join(_DATA_DIR, "agents")
@@ -70,8 +101,19 @@ DASHBOARD_HTML_CONTENT = _assemble_dashboard_html()
 _HERE = os.path.dirname(os.path.abspath(__file__))
 with open(os.path.join(_HERE, 'runtime', 'server.py'), 'r', encoding='utf-8') as _f:
     SERVER_PY_CONTENT = _f.read()
+SERVER_PY_CONTENT = SERVER_PY_CONTENT.replace(
+    "KNOWN_TOOLS = {}  # __FORGE_KNOWN_TOOLS__",
+    _generate_known_tools_code(KNOWN_TOOLS)
+)
 
-BUILD_RUNNER_PY_CONTENT = r"""#!/usr/bin/env python3
+with open(os.path.join(_HERE, 'runtime', 'build_runner.py'), 'r', encoding='utf-8') as _f:
+    BUILD_RUNNER_PY_CONTENT = _f.read()
+BUILD_RUNNER_PY_CONTENT = BUILD_RUNNER_PY_CONTENT.replace(
+    "STEPS = {}  # __FORGE_BUILD_STEPS__",
+    _generate_steps_code(STEPS, BUILD_ORDER)
+)
+
+_INLINE_BUILD_RUNNER_UNUSED = r"""#!/usr/bin/env python3
 '''Build system runner - generates production-grade code from reviewed spec documents.
 Two-pass strategy: backend generates API contract first, then frontend/integration consume it.
 Usage: python3 scripts/build_runner.py <step>
@@ -1038,6 +1080,8 @@ def run_distill_mode(args):
 
     log_info(f"Distilled patterns saved: {{args.distill_output}}")
 
+{ALLOWED_MODELS_CODE}
+
 def invoke_model(prompt, output_path):
     with tempfile.NamedTemporaryFile(mode='w+', delete=False, encoding='utf-8') as tmp:
         tmp_path = tmp.name
@@ -1045,6 +1089,9 @@ def invoke_model(prompt, output_path):
     try:
         tool = getattr(state, "tool", state.model)
         model_id = getattr(state, "model_id", "")
+        if model_id and tool in _ALLOWED_MODELS and model_id not in _ALLOWED_MODELS[tool]:
+            log_error(f"Unsupported model '{{model_id}}' for tool '{{tool}}'. Aborting.")
+            sys.exit(1)
         if tool == "gemini":
             cmd = ["gemini", "--skip-trust"]
             if model_id:
@@ -1706,6 +1753,7 @@ def build_forge():
         DASHBOARD_HTML_CONTENT=DASHBOARD_HTML_CONTENT,
         FORGE_VERSION=FORGE_VERSION,
         BUILD_RUNNER_PY_CONTENT=BUILD_RUNNER_PY_CONTENT,
+        ALLOWED_MODELS_CODE=_generate_allowed_models_code(KNOWN_TOOLS),
     )
 
     forge_content = forge_content.replace("__FORGE_SERVER_PY__", SERVER_PY_CONTENT)

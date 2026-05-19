@@ -7,56 +7,19 @@ import os, sys, json, subprocess, tempfile
 from datetime import datetime
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-FORGE_DIR = os.path.dirname(SCRIPT_DIR)
-REPO_ROOT = os.environ.get("AEOS_REPO_ROOT", os.path.dirname(FORGE_DIR))
+REPO_ROOT = os.environ.get("FORGE_REPO_ROOT", os.path.dirname(os.path.dirname(SCRIPT_DIR)))
+_forge_data = os.environ.get("FORGE_DATA_DIR")
+FORGE_DIR = os.path.expanduser(_forge_data) if _forge_data else os.path.dirname(SCRIPT_DIR)
 BUILD_STATUS_FILE = os.path.join(FORGE_DIR, "runs", "build-system.json")
 API_CONTRACT_FILE = os.path.join(FORGE_DIR, "15-build", "api-contract.md")
 
 # Build order matters: backend must run before frontend/integration/tests
-STEPS = {
-    "backend": {
-        "label": "Backend & API",
-        "agent": "code-architect",
-        "source_dirs": ["01-requirements", "03-analysis", "04-architecture", "06-engineering"],
-        "source_files": [],
-        "output_dir": "15-build/backend",
-    },
-    "frontend": {
-        "label": "Frontend UI",
-        "agent": "frontend-coder",
-        "source_dirs": ["02-design", "01-requirements"],
-        "source_files": ["06-engineering/frontend-spec.md", "04-architecture/system-architecture.md"],
-        "output_dir": "15-build/frontend",
-    },
-    "integration": {
-        "label": "Integration Layer",
-        "agent": "integration-engineer",
-        "source_dirs": ["06-engineering"],
-        "source_files": ["04-architecture/api-design.md"],
-        "output_dir": "15-build/integration",
-    },
-    "tests": {
-        "label": "Test Suite",
-        "agent": "qa-coder",
-        "source_dirs": ["07-quality"],
-        "source_files": ["06-engineering/backend-spec.md", "06-engineering/frontend-spec.md"],
-        "output_dir": "15-build/tests",
-    },
-    "infra": {
-        "label": "Infrastructure",
-        "agent": "devops-coder",
-        "source_dirs": ["04-architecture", "06-engineering", "07-quality", "08-operations"],
-        "source_files": ["01-requirements/prd.md"],
-        "output_dir": "15-build/infra",
-    },
-}
-
-BUILD_ORDER = ["backend", "frontend", "integration", "tests", "infra"]
+STEPS = {}  # __FORGE_BUILD_STEPS__
 
 def load_build_status():
     if os.path.exists(BUILD_STATUS_FILE):
         try:
-            with open(BUILD_STATUS_FILE) as f:
+            with open(BUILD_STATUS_FILE, encoding='utf-8') as f:
                 return json.load(f)
         except Exception:
             pass
@@ -71,7 +34,7 @@ def save_step_status(step, status_val, files=None, error=None):
         "generated_at": datetime.now().isoformat() if status_val == "complete" else existing.get("generated_at", ""),
         "error": error,
     }
-    with open(BUILD_STATUS_FILE, "w") as f:
+    with open(BUILD_STATUS_FILE, "w", encoding='utf-8') as f:
         json.dump(status, f, indent=2)
 
 def collect_docs(meta):
@@ -120,38 +83,20 @@ def invoke_ai(prompt, tool, model_id):
             cmd = ["claude", "-p", prompt, "--output-format", "text"]
         else:
             cmd = ["gemini", "--skip-trust", "-p", prompt]
-        with open(tmp_path, "w") as out_f:
+        with open(tmp_path, "w", encoding='utf-8') as out_f:
             result = subprocess.run(cmd, stdout=out_f, stderr=subprocess.PIPE, timeout=600)
         if result.returncode != 0:
             err = result.stderr.decode("utf-8", errors="replace") if result.stderr else "AI call failed"
-            return None, normalize_ai_error(err)
+            return None, err
         with open(tmp_path, encoding="utf-8") as f:
             return f.read(), None
     except subprocess.TimeoutExpired:
-        return None, "The request timed out after 10 minutes. Try again."
+        return None, "AI call timed out after 10 minutes"
     except FileNotFoundError:
         return None, "AI tool '" + tool + "' not found in PATH"
     finally:
         if os.path.exists(tmp_path):
             os.remove(tmp_path)
-
-def normalize_ai_error(raw_error):
-    text = (raw_error or "").strip()
-    lowered = text.lower()
-    quota_markers = [
-        "you've hit your limit",
-        "hit your limit",
-        "usage limit",
-        "quota",
-        "rate limit",
-        "too many requests",
-        "status 429",
-    ]
-    if any(marker in lowered for marker in quota_markers):
-        return "The AI request failed. Wait a few minutes, then retry."
-    if not text:
-        return "The AI model returned an error. Retry the request."
-    return text.splitlines()[0][:220]
 
 def sanitize_path(candidate):
     p = candidate.strip()
