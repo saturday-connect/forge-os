@@ -64,7 +64,11 @@ jobs:
             export CSC_LINK="${{ secrets.CSC_LINK }}"
             export CSC_KEY_PASSWORD="${{ secrets.CSC_KEY_PASSWORD }}"
           fi
-          npm run build:mac -- --publish never
+          # Build each architecture in a separate invocation to avoid pkg target
+          # temp-file collisions observed when electron-builder packages both
+          # macOS arch targets in one run.
+          npm run build:mac -- --publish never --arm64
+          npm run build:mac -- --publish never --x64
         working-directory: desktop
         env:
           # Signing: set CSC_LINK (base64 .p12) + CSC_KEY_PASSWORD to enable code signing.
