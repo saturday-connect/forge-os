@@ -605,7 +605,7 @@ body.mac #sidebar {
 }
 .overview-attention-card--warn { border-color: rgba(245,158,11,0.35); background: rgba(245,158,11,0.04); }
 .overview-attention-card--success { border-color: rgba(74,222,128,0.3); background: rgba(74,222,128,0.04); }
-.overview-attention-card--info { border-color: rgba(73,79,223,0.3); background: rgba(73,79,223,0.04); }
+.overview-attention-card--info { border-color: rgba(74,222,128,0.25); background: rgba(74,222,128,0.04); }
 .overview-attention-icon {
   width: 32px;
   height: 32px;
@@ -617,7 +617,7 @@ body.mac #sidebar {
 }
 .overview-attention-icon--warn { background: rgba(245,158,11,0.12); color: var(--amber); }
 .overview-attention-icon--success { background: var(--green-dim); color: var(--green); }
-.overview-attention-icon--info { background: rgba(73,79,223,0.12); color: var(--accent); }
+.overview-attention-icon--info { background: rgba(74,222,128,0.12); color: var(--primary); }
 .overview-attention-body { flex: 1; min-width: 0; }
 .overview-attention-title { font-size: 13px; font-weight: 700; margin-bottom: 3px; }
 .overview-attention-desc { font-size: 11px; color: var(--text-2); line-height: 1.6; margin-bottom: 10px; }
@@ -685,7 +685,7 @@ body.mac #sidebar {
   font-weight: 700;
 }
 .overview-stage-icon--done { background: var(--green-dim); color: var(--green); }
-.overview-stage-icon--partial { background: rgba(73,79,223,0.12); color: var(--accent); }
+.overview-stage-icon--partial { background: rgba(245,158,11,0.12); color: var(--amber); }
 .overview-stage-icon--empty { background: var(--bg-2); color: var(--text-3); border: 1px solid var(--border); }
 .overview-stage-icon--running { background: rgba(245,158,11,0.12); color: var(--amber); }
 .overview-stage-name {
@@ -709,32 +709,48 @@ body.mac #sidebar {
   flex-shrink: 0;
 }
 .overview-stage-status-dot--done { background: var(--green); }
-.overview-stage-status-dot--partial { background: var(--accent); }
+.overview-stage-status-dot--partial { background: var(--amber); }
 .overview-stage-status-dot--needs-review { background: var(--amber); }
 .overview-stage-status-dot--empty { background: var(--bg-3); border: 1px solid var(--border); }
+.overview-stage-progress {
+  width: 52px;
+  height: 3px;
+  background: var(--bg-3);
+  border-radius: 2px;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.overview-stage-progress-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
+.overview-stage-progress-fill--done     { background: var(--primary); }
+.overview-stage-progress-fill--partial  { background: var(--amber); }
+.overview-stage-progress-fill--running  { background: var(--amber); animation: pulse 1s infinite; }
+.overview-stage-progress-fill--empty    { background: transparent; }
 
 /* ===================== OVERVIEW — SIDEBAR ===================== */
+.overview-stat-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 8px;
+}
 .overview-stat-tile {
   background: var(--bg-1);
   border: 1px solid var(--border);
   border-radius: 10px;
-  padding: 14px 16px;
-  margin-bottom: 8px;
-  display: flex;
-  align-items: center;
-  gap: 12px;
+  padding: 12px 14px;
 }
-.overview-stat-tile:last-child { margin-bottom: 0; }
 .overview-stat-num {
-  font-size: 22px;
+  font-size: 20px;
   font-weight: 700;
   letter-spacing: -0.03em;
   line-height: 1;
-  flex-shrink: 0;
-  min-width: 36px;
+  margin-bottom: 4px;
 }
-.overview-stat-info { flex: 1; min-width: 0; }
-.overview-stat-label { font-size: 11px; font-weight: 600; color: var(--text-2); }
+.overview-stat-label { font-size: 10px; font-weight: 600; color: var(--text-2); }
 .overview-stat-sub { font-size: 10px; color: var(--text-3); margin-top: 2px; }
 
 .overview-gates-card {
@@ -744,32 +760,50 @@ body.mac #sidebar {
   overflow: hidden;
 }
 .overview-gates-header {
-  padding: 10px 14px 8px;
+  padding: 10px 14px 10px;
+  border-bottom: 1px solid var(--border);
+}
+.overview-gates-title {
   font-size: 11px;
   font-weight: 700;
   color: var(--text-2);
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  border-bottom: 1px solid var(--border);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.overview-gates-bar {
+  height: 4px;
+  background: var(--bg-3);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.overview-gates-bar-fill {
+  height: 100%;
+  border-radius: 2px;
+  background: var(--primary);
+  transition: width 0.4s ease;
 }
 .overview-gate-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 7px 14px;
+  padding: 6px 14px;
   border-bottom: 1px solid var(--border);
   font-size: 11px;
 }
 .overview-gate-row:last-child { border-bottom: none; }
 .overview-gate-name { color: var(--text-2); }
-.overview-gate-badge {
-  font-size: 10px;
-  font-weight: 700;
-  padding: 2px 7px;
-  border-radius: 20px;
+.overview-gate-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
 }
-.overview-gate-badge--pass { background: var(--green-dim); color: var(--green); }
-.overview-gate-badge--fail { background: var(--bg-2); color: var(--text-3); }
+.overview-gate-dot--pass { background: var(--primary); }
+.overview-gate-dot--fail { background: var(--bg-3); border: 1px solid var(--border); }
 
 /* Legacy — kept for compat */
 .lifecycle-stepper { display: none; }

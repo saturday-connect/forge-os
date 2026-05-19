@@ -732,12 +732,6 @@ function renderOverview() {
 
   const pname = state.project_name || 'My Project';
   document.getElementById('overview-project-name').textContent = pname;
-  document.getElementById('overview-subtitle').textContent = 'Product Lifecycle';
-
-  // Phase badge
-  const phaseBadgeColors = { input: 'var(--text-3)', generate: 'var(--primary)', review: 'var(--amber)', build: 'var(--primary)', deploy: 'var(--primary)' };
-  document.getElementById('overview-phase-badge').innerHTML =
-    `<span style="font-size:10px;font-weight:700;padding:3px 10px;border-radius:20px;background:var(--bg-2);border:1px solid var(--border);color:${phaseBadgeColors[phase] || 'var(--text-2)'};">${(phase || '').toUpperCase()}</span>`;
 
   // Quick action (header CTA)
   const quickActions = {
@@ -755,6 +749,16 @@ function renderOverview() {
   const totalReviewed = STAGES.reduce((n, s) => n + ((summary[s.dir] || {}).reviewed || 0), 0);
   const gatesPassed = Object.values(gates).filter(v => v === 'PASSED').length;
   const gatesTotal = Object.keys(gates).length || 8;
+
+  const subtitleParts = [];
+  if (totalGenerated > 0) subtitleParts.push(`${totalGenerated} docs generated`);
+  if (totalReviewed > 0) subtitleParts.push(`${totalReviewed} reviewed`);
+  if (gatesPassed > 0) subtitleParts.push(`${gatesPassed}/${gatesTotal} gates passed`);
+  document.getElementById('overview-subtitle').textContent = subtitleParts.length > 0 ? subtitleParts.join(' · ') : 'Product Lifecycle';
+
+  // Phase badge — show input count or doc progress instead of redundant phase label
+  const badgeEl = document.getElementById('overview-phase-badge');
+  if (badgeEl) badgeEl.innerHTML = '';
 
   const phasePcts = {
     input:    rawInputs.length > 0 ? 100 : 0,
@@ -948,11 +952,15 @@ function renderOverview() {
         : allReviewed ? 'reviewed'
         : `${st.reviewed}/${st.generated} reviewed`;
 
+      const progressPct = st.total > 0 ? Math.round((st.reviewed / st.total) * 100) : (isThisRunning ? 50 : 0);
+      const progressCls = isThisRunning ? 'running' : allReviewed ? 'done' : needsReview ? 'partial' : 'empty';
       return `
         <div class="overview-stage-row" onclick="switchView('${needsReview || allReviewed ? 'review' : 'generate'}')">
           <div class="overview-stage-icon ${iconCls}">${iconContent}</div>
           <span class="overview-stage-name ${nameCls}">${s.label}</span>
-          <span class="overview-stage-meta">${escapeHtml(metaText)}</span>
+          <div class="overview-stage-progress">
+            <div class="overview-stage-progress-fill overview-stage-progress-fill--${progressCls}" style="width:${progressPct}%"></div>
+          </div>
           <span class="overview-stage-status-dot ${dotCls}"></span>
         </div>`;
     }).join('')}`;
@@ -961,19 +969,18 @@ function renderOverview() {
   const openIssues = issues.filter(i => i.status === 'open').length;
   const hasBuildFiles = Object.values(buildStepsState).some(s => s.status === 'complete');
   const statsEl = document.getElementById('overview-stats-col');
-  statsEl.innerHTML = [
-    { num: rawInputs.length, label: 'Input Files', sub: rawInputs.length === 0 ? 'None added yet' : `${rawInputs.length} file${rawInputs.length!==1?'s':''} ready`, color: rawInputs.length > 0 ? 'var(--text)' : 'var(--text-3)' },
-    { num: totalGenerated, label: 'Docs Generated', sub: totalDocs > 0 ? `${totalDocs - totalGenerated} remaining` : 'Run Generate', color: totalGenerated > 0 ? 'var(--accent)' : 'var(--text-3)' },
-    { num: totalReviewed, label: 'Docs Reviewed', sub: totalGenerated > 0 ? `${Math.round((totalReviewed/totalGenerated)*100)}% complete` : '—', color: totalReviewed > 0 ? 'var(--green)' : 'var(--text-3)' },
-    { num: openIssues, label: 'Open Issues', sub: openIssues > 0 ? 'Action needed' : 'All clear', color: openIssues > 0 ? 'var(--amber)' : 'var(--text-3)' },
-  ].map(s => `
+  const statsData = [
+    { num: rawInputs.length, label: 'Input Files',    sub: rawInputs.length === 0 ? 'None yet'        : `${rawInputs.length} ready`,                                          color: rawInputs.length > 0  ? 'var(--text)'    : 'var(--text-3)' },
+    { num: totalGenerated,   label: 'Generated',      sub: totalDocs > 0 ? `${totalDocs - totalGenerated} left`         : 'Run pipeline',                                      color: totalGenerated > 0    ? 'var(--primary)' : 'var(--text-3)' },
+    { num: totalReviewed,    label: 'Reviewed',       sub: totalGenerated > 0 ? `${Math.round((totalReviewed/totalGenerated)*100)}% done`  : '—',                              color: totalReviewed > 0     ? 'var(--green)'   : 'var(--text-3)' },
+    { num: openIssues,       label: 'Open Issues',    sub: openIssues > 0 ? 'Needs action'    : 'All clear',                                                                   color: openIssues > 0        ? 'var(--amber)'   : 'var(--text-3)' },
+  ];
+  statsEl.innerHTML = `<div class="overview-stat-grid">${statsData.map(s => `
     <div class="overview-stat-tile">
       <div class="overview-stat-num" style="color:${s.color}">${s.num}</div>
-      <div class="overview-stat-info">
-        <div class="overview-stat-label">${s.label}</div>
-        <div class="overview-stat-sub">${s.sub}</div>
-      </div>
-    </div>`).join('');
+      <div class="overview-stat-label">${s.label}</div>
+      <div class="overview-stat-sub">${s.sub}</div>
+    </div>`).join('')}</div>`;
 
   // ── Gates sidebar ─────────────────────────────────────────────────────────
   const GATE_LABELS = {
@@ -984,14 +991,23 @@ function renderOverview() {
   const gateEntries = Object.entries(GATE_LABELS);
   const passedCount = gateEntries.filter(([k]) => gates[k] === 'PASSED').length;
   const gatesEl = document.getElementById('overview-gates-col');
+  const gateBarPct = gateEntries.length > 0 ? Math.round((passedCount / gateEntries.length) * 100) : 0;
   gatesEl.innerHTML = `
     <div class="overview-gates-card">
-      <div class="overview-gates-header">Gates &nbsp;<span style="font-weight:400;color:var(--text-3)">${passedCount}/${gateEntries.length}</span></div>
+      <div class="overview-gates-header">
+        <div class="overview-gates-title">
+          <span>Gates</span>
+          <span style="font-weight:400;color:var(--text-3)">${passedCount}/${gateEntries.length}</span>
+        </div>
+        <div class="overview-gates-bar">
+          <div class="overview-gates-bar-fill" style="width:${gateBarPct}%"></div>
+        </div>
+      </div>
       ${gateEntries.map(([key, label]) => {
         const passed = gates[key] === 'PASSED';
         return `<div class="overview-gate-row">
           <span class="overview-gate-name">${label}</span>
-          <span class="overview-gate-badge overview-gate-badge--${passed ? 'pass' : 'fail'}">${passed ? 'Pass' : 'Pending'}</span>
+          <span class="overview-gate-dot overview-gate-dot--${passed ? 'pass' : 'fail'}"></span>
         </div>`;
       }).join('')}
     </div>`;
