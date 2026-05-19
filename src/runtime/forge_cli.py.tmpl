@@ -871,6 +871,50 @@ def cmd_migrate():
     print(f"[Forge] Data directory: {{data_dir}}")
     print("[Forge] Next: git add .forge && git commit -m 'chore: add Forge OS project pointer'")
 
+def _deploy_scripts_to_dir(scripts_dir):
+    """Write current runtime scripts into an existing scripts/ directory."""
+    if not os.path.isdir(scripts_dir):
+        return False
+    try:
+        for fname, content in [
+            ("stage_runner.py", STAGE_RUNNER_PY),
+            ("run.py",          RUN_PY),
+            ("validate_gates.py", VALIDATE_GATES_PY),
+            ("build_runner.py", BUILD_RUNNER_PY),
+            ("server.py",       SERVER_PY),
+            ("constants.py",    CONSTANTS_PY),
+            ("dashboard.html",  DASHBOARD_HTML),
+        ]:
+            with open(os.path.join(scripts_dir, fname), "w", encoding="utf-8") as _f:
+                _f.write(content)
+        return True
+    except OSError:
+        return False
+
+
+def _upgrade_all_managed_projects(current_data_dir):
+    """Fan out script upgrades to every managed project data dir under ~/.forge/projects/.
+
+    Called by cmd_upgrade so a reinstall or binary update reaches all projects,
+    not just the one forge was invoked for.
+    """
+    managed_root = os.path.expanduser("~/.forge/projects")
+    if not os.path.isdir(managed_root):
+        return
+    current_abs = os.path.abspath(current_data_dir) if current_data_dir else ""
+    count = 0
+    for entry in os.listdir(managed_root):
+        candidate = os.path.join(managed_root, entry)
+        if not os.path.isdir(candidate):
+            continue
+        if os.path.abspath(candidate) == current_abs:
+            continue  # already upgraded by cmd_init above
+        if _deploy_scripts_to_dir(os.path.join(candidate, "scripts")):
+            count += 1
+    if count:
+        print(f"[Forge] Also upgraded {{count}} managed project(s).")
+
+
 def cmd_upgrade():
     print(f"Forge OS v{{FORGE_VERSION}} — upgrading runtime scripts...")
     forge_data_dir, _ = _resolve_data_dir()
@@ -878,6 +922,7 @@ def cmd_upgrade():
         print("Forge not initialized. Run './forge init' first.")
         sys.exit(1)
     cmd_init()
+    _upgrade_all_managed_projects(forge_data_dir)
     print("Upgrade complete. Runtime scripts updated, project data preserved.")
 
 def cmd_dev(port=DEFAULT_PORT):

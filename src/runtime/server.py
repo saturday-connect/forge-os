@@ -121,6 +121,9 @@ from constants import (
     CLAUDE_ARG_OUTPUT_FORMAT,
     CLAUDE_OUTPUT_TEXT,
     VERSION_TIMESTAMP_FORMAT,
+    INDEX_SCHEMA_VERSION,
+    STATE_SCHEMA_VERSION,
+    DIR_RUNS,
 )
 
 # ---------------------------------------------------------------------------
@@ -188,6 +191,27 @@ def set_project_root(project_root, data_dir=None):
         if not _dd:
             _dd = os.environ.get("FORGE_DATA_DIR", "")
     FORGE_DIR = os.path.abspath(_dd) if _dd else os.path.join(REPO_ROOT, ".forge")
+
+    # Recover gracefully when data_dir was deleted (e.g. manual cleanup, broken
+    # uninstaller).  Re-create the directory skeleton and copy scripts from the
+    # running server's own directory so the dashboard stays accessible.
+    if not os.path.isdir(FORGE_DIR):
+        logger.warning("set_project_root: data_dir missing, recreating: %s", FORGE_DIR)
+        try:
+            import shutil as _shutil
+            for _sub in ("scripts", DIR_RAW_INPUT, DIR_RUNS, DIR_AGENTS, DIR_GATES):
+                os.makedirs(os.path.join(FORGE_DIR, _sub), exist_ok=True)
+            # Copy current runtime scripts from the server's own location
+            _src_scripts = os.path.dirname(os.path.abspath(__file__))
+            _dst_scripts = os.path.join(FORGE_DIR, "scripts")
+            for _fname in ("server.py", "stage_runner.py", "run.py", "build_runner.py",
+                           "constants.py", "validate_gates.py", "dashboard.html"):
+                _src = os.path.join(_src_scripts, _fname)
+                if os.path.exists(_src):
+                    _shutil.copy2(_src, os.path.join(_dst_scripts, _fname))
+        except OSError as exc:
+            logger.warning("set_project_root: recovery failed: %s", exc)
+
     REVIEWS_FILE = os.path.join(FORGE_DIR, FILE_REVIEWS)
     STATE_FILE = os.path.join(FORGE_DIR, FILE_PROJECT_STATE)
     RAW_INPUT_DIR = os.path.join(FORGE_DIR, DIR_RAW_INPUT)
@@ -217,7 +241,19 @@ def slugify_project_name(name):
 
 
 def default_projects_index():
-    return {"active_project_id": "", "projects": []}
+    return {"active_project_id": "", "projects": [], "_schema_version": INDEX_SCHEMA_VERSION}
+
+
+def _migrate_index_schema(data, from_version):
+    """Migrate index.json from from_version to INDEX_SCHEMA_VERSION.
+    Each branch should be additive and idempotent. v0→v1 is a no-op."""
+    return data
+
+
+def _migrate_project_state_schema(data, from_version):
+    """Migrate project-state.json from from_version to STATE_SCHEMA_VERSION.
+    Each branch should be additive and idempotent. v0→v1 is a no-op."""
+    return data
 
 
 def load_projects_index():
@@ -229,6 +265,15 @@ def load_projects_index():
                     data = json.load(f)
                 if isinstance(data, dict) and isinstance(data.get("projects"), list):
                     data.setdefault("active_project_id", "")
+                    file_version = data.get("_schema_version", 0)
+                    if file_version < INDEX_SCHEMA_VERSION:
+                        data = _migrate_index_schema(data, file_version)
+                        data["_schema_version"] = INDEX_SCHEMA_VERSION
+                        try:
+                            with open(PROJECTS_INDEX_FILE, "w", encoding="utf-8") as f:
+                                json.dump(data, f, indent=2)
+                        except OSError as exc:
+                            logger.warning("load_projects_index migrate write: %s", exc)
                     return data
             except (OSError, json.JSONDecodeError) as exc:
                 logger.warning("load_projects_index: %s", exc)
@@ -238,6 +283,7 @@ def load_projects_index():
 def save_projects_index(index_data):
     with _index_lock:
         ensure_projects_root()
+        index_data["_schema_version"] = INDEX_SCHEMA_VERSION
         with open(PROJECTS_INDEX_FILE, "w", encoding="utf-8") as f:
             json.dump(index_data, f, indent=2)
         try:
@@ -374,7 +420,7 @@ def save_reviews(reviews):
 
 def _default_state():
     return {
-        "schema_version": 1,
+        "_schema_version": STATE_SCHEMA_VERSION,
         "project_name": "",
         "builds": [],
         "issues": [],
@@ -410,6 +456,18 @@ def load_project_state():
                         for sk, sv in v.items():
                             if sk not in data[k]:
                                 data[k][sk] = sv
+                file_version = data.get("_schema_version", 0)
+                if file_version < STATE_SCHEMA_VERSION:
+                    data = _migrate_project_state_schema(data, file_version)
+                    data["_schema_version"] = STATE_SCHEMA_VERSION
+                    try:
+                        _to_save = json.loads(json.dumps(data))
+                        _to_save.get("git", {}).pop("token", None)
+                        with open(STATE_FILE, "w") as f:
+                            json.dump(_to_save, f, indent=2)
+                        os.chmod(STATE_FILE, 0o600)
+                    except OSError as exc:
+                        logger.warning("load_project_state migrate write: %s", exc)
                 return data
             except (OSError, json.JSONDecodeError) as exc:
                 logger.warning("load_project_state: %s", exc)
@@ -421,6 +479,7 @@ def save_project_state(state):
     with _state_lock:
         to_save = json.loads(json.dumps(state))
         to_save.get("git", {}).pop("token", None)
+        to_save["_schema_version"] = STATE_SCHEMA_VERSION
         with open(STATE_FILE, "w") as f:
             json.dump(to_save, f, indent=2)
         try:

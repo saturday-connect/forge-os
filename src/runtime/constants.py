@@ -407,3 +407,11 @@ SPEC_SNIPPET_MAX_CHARS = 1000
 # Valid stage prefix count (00 through 10)
 # ---------------------------------------------------------------------------
 VALID_STAGE_PREFIX_COUNT = 11
+
+# ---------------------------------------------------------------------------
+# State file schema versions — increment when the format of a state file
+# changes in a backwards-incompatible way and add a migration branch in
+# server.py (_migrate_index_schema / _migrate_project_state_schema).
+# ---------------------------------------------------------------------------
+INDEX_SCHEMA_VERSION = 1
+STATE_SCHEMA_VERSION = 1
