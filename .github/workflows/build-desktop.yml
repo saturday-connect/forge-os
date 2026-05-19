@@ -59,7 +59,12 @@ jobs:
 
       - name: Build desktop app (macOS)
         if: runner.os == 'macOS'
-        run: npm run build:mac -- --publish never
+        run: |
+          if [ -n "${{ secrets.CSC_LINK }}" ]; then
+            export CSC_LINK="${{ secrets.CSC_LINK }}"
+            export CSC_KEY_PASSWORD="${{ secrets.CSC_KEY_PASSWORD }}"
+          fi
+          npm run build:mac -- --publish never
         working-directory: desktop
         env:
           # Signing: set CSC_LINK (base64 .p12) + CSC_KEY_PASSWORD to enable code signing.
@@ -67,8 +72,6 @@ jobs:
           # Until secrets are configured the app builds unsigned — users must run:
           #   xattr -cr "/Applications/Forge OS.app"
           CSC_IDENTITY_AUTO_DISCOVERY: false
-          CSC_LINK: ${{ secrets.CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
