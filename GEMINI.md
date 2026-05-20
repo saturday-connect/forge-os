@@ -217,6 +217,25 @@ Gate instances at runtime: `.forge/12-gates/<gate>.md`
 
 ---
 
+## Recent Features (Latest Session)
+
+### Knowledge Base Pipeline
+New "Knowledge" view and `/api/knowledge/*` endpoints. Reviewed docs from a project can be exported to a separate git repo (`projects/<slug>/` layout) as a PR, or distilled by AI into `global/patterns`, `global/decisions`, `global/learnings` as a draft PR. State tracked in `.forge/runs/kb-state.json`. Reuses existing `git.token` / GitHub PAT — no separate credential required.
+
+Key endpoints:
+- `POST /api/knowledge/configure` — save KB repo config
+- `POST /api/knowledge/export` — export to KB repo as PR
+- `POST /api/knowledge/distill` — AI distillation to global dirs as draft PR
+- `POST /api/knowledge/sync` — pin KB ref for generation context
+
+### Consistency Check After Fix
+When `POST /api/fix` completes successfully, `_run_consistency_check()` runs one AI call against the fixed doc + up to 10 downstream reviewed docs (1500 chars each). Inconsistent docs are marked `needs_review` in `reviews.json` and a toast appears in the dashboard. Result in `runs/consistency-check.json`. Entirely non-blocking — wrapped in try/except.
+
+### Manual Code Review Before Push
+The Build panel diff viewer shows per-file git diff (parsed via `_parse_diff_files()`) with color-coded +/- lines. A "Your Review" section lets the human approve or request changes before pushing. Verdict + notes stored in `build-review.json` as `human_review.{verdict, notes, reviewed_at}` audit record. `action: "human_review"` POST to `/api/build-review`.
+
+---
+
 ## Desktop App (Electron)
 
 Wrapper lives in `desktop/` — never `electron/` (causes Node.js module resolution conflict).
@@ -261,3 +280,5 @@ Tag pushes (`v*`) → GitHub Releases. Non-tag pushes → 14-day artifacts.
 | macOS "app is damaged" | Missing `entitlements.mac.plist` or unsigned app | Create plist; use `.pkg` installer or `xattr -cr` |
 | Model not visible in selector | Not in `src/data/tools.json` | Add to `tools.json`, rebuild, upgrade |
 | "Unnamed Project" in dashboard | Empty `project_name` + stale Electron server | 3-level fallback + hot-deploy + name backfill on select |
+| `human_review` verdict not saved | Notes textarea empty on request_changes | Notes are required for request_changes verdict |
+| Consistency check silent | AI call failed inside try/except | Check `runs/consistency-check.json` for error field |

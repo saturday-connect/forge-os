@@ -186,6 +186,7 @@ Project landing page plus 9 operational views:
 | Build | Build-system generation, git branch/commit/push/PR flow |
 | Deploy | Environment cards, CI/CD workflow generator, GitHub secrets status |
 | Issues | Lightweight issue tracker |
+| Knowledge | Knowledge base pipeline — export, distill, sync |
 | Settings | Product, AI tool/model, git, environments, danger zone |
 
 ---
@@ -373,6 +374,15 @@ Acceptable finding: project absolute paths intentionally ellipsized in cards.
 - Cause: shared pkg staging directories
 - Fix: build arch targets sequentially in CI
 
+**Edit insertion duplicate match**
+- Symptom: Edit tool rejects with "not unique in the file"
+- Cause: old_string context was too short, matched multiple locations
+- Fix: always include several surrounding unique lines as context when inserting into dense files
+
+**Consistency check exception swallowing is intentional**
+- `_run_consistency_check()` in server.py is wrapped in try/except by design — a fix always completes even if the downstream AI check fails
+- Advisory, not blocking
+
 ---
 
 ## Success Log
@@ -403,6 +413,11 @@ Acceptable finding: project absolute paths intentionally ellipsized in cards.
 - macOS CI: sequential arch builds prevent pkg race condition
 - Beta release infrastructure: versioned tags, asset overwrite, download page auto-detection
 - README, LICENSE, CLAUDE.md, AGENT.md, GEMINI.md all production-grade
+- CLI warning strip: diagnostic noise filtered from AI subprocess stdout before persisting doc content
+- Knowledge Base pipeline: export/distill/sync to separate KB repo with PR-based review governance
+- Consistency check after fix: one AI call finds downstream doc drift; marks affected files needs_review
+- Manual code review before push: per-file diff viewer + human verdict audit trail in build-review.json
+- CI auto-release on version bump: push to main triggers tag + release when package.json version is new
 
 ---
 

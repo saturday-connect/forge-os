@@ -404,6 +404,7 @@ Inside a target `.forge/`:
 | Build | Build-system generation, git branch/commit/push/PR automation |
 | Deploy | Environment config, CI/CD workflow generator, GitHub secrets status |
 | Issues | Lightweight issue tracker |
+| Knowledge | Knowledge base export (per-project docs → KB repo), AI distillation to global patterns/decisions/learnings, sync ref management |
 | Settings | Product config, AI tool/model, git, environments, danger zone |
 
 ---
@@ -423,7 +424,7 @@ Inside a target `.forge/`:
 | `POST` | `/api/build` | Branch, commit, push, PR workflow |
 | `GET/POST` | `/api/build-system` | Build subsystem status and generation |
 | `GET` | `/api/build-file` | Generated build artifact content |
-| `GET/POST` | `/api/build-review` | Pre-push review lifecycle |
+| `GET/POST` | `/api/build-review` | Pre-push review lifecycle; also accepts `action: "human_review"` with `{verdict, notes}` to record the human reviewer verdict before pushing |
 | `GET/POST` | `/api/secrets` | Secret requirements and push/config status |
 | `GET` | `/api/tools` | Supported AI tools and models |
 | `GET` | `/api/versions` | File version list |
@@ -433,6 +434,11 @@ Inside a target `.forge/`:
 | `POST` | `/api/settings` | Save project settings (validates tool + model) |
 | `POST` | `/api/issue` | Create/update issue |
 | `POST` | `/api/reset` | Reset generated docs/reviews/gates |
+| `GET/POST` | `/api/knowledge` | Knowledge base config, status, reviewed docs |
+| `POST` | `/api/knowledge/configure` | Save KB repo config (owner, repo, branch) |
+| `POST` | `/api/knowledge/export` | Export reviewed docs to KB repo as PR |
+| `POST` | `/api/knowledge/distill` | AI distillation pass → global KB dirs as draft PR |
+| `POST` | `/api/knowledge/sync` | Pin KB repo ref for generation context |
 | `GET/POST/DELETE` | `/api/projects` | Managed project lifecycle |
 | `POST` | `/api/projects/select` | Select active project (backfills name) |
 | `POST` | `/api/projects/archive` | Archive project |
@@ -448,6 +454,8 @@ Inside a target `.forge/`:
 .forge/runs/status.json         generation/processing status
 .forge/runs/build-system.json   build subsystem step status
 .forge/runs/build-review.json   pre-push review state
+.forge/runs/kb-state.json           knowledge base pipeline operation state
+.forge/runs/consistency-check.json  last consistency check result (downstream affected docs)
 .projects/index.json            managed project registry and active selection
 ~/.forge/user.json              user role and department
 ~/.forge/_pat_signal            transient PAT handoff file (deleted after Electron reads it)
@@ -606,6 +614,15 @@ Component sizing rules:
 - Cause: running both arch targets in a parallel matrix shares the same pkg staging directories
 - Fix: build macOS arch targets sequentially (two sequential CI steps, not a matrix)
 
+### Edit Tool Duplicate Match On Insertion
+- Symptom: Edit tool reports "not unique in the file" when inserting near a commonly repeated string
+- Cause: the old_string context was too short and matched multiple locations
+- Fix: always include a longer unique surrounding context (preceding/following unique lines) when inserting into dense files
+
+### Consistency Check After Fix — AI Call Failure Swallowed
+- Design decision: `_run_consistency_check()` is wrapped in try/except; a fix always completes even if the downstream AI call fails
+- This is intentional — consistency check is advisory, not blocking
+
 ---
 
 ## Success Log
@@ -637,6 +654,12 @@ Component sizing rules:
 - macOS CI: sequential arch builds — no pkg race condition
 - Beta release infrastructure: versioned beta tags, asset-overwrite support, download page auto-detection
 - README, LICENSE, CLAUDE.md, AGENT.md all production-grade
+- CLI warning strip: `_strip_cli_warnings()` filters diagnostic noise from AI subprocess stdout before persisting doc content
+- Knowledge Base pipeline: export reviewed docs to separate git repo as PR, AI distillation to global patterns/decisions/learnings, sync ref for generation context
+- Consistency check after fix: one AI call checks all downstream reviewed docs for drift after a critique fix; marks affected docs as `needs_review`
+- Manual code review: diff viewer + human verdict (approve/request_changes) with audit trail in build-review.json before push
+- `action` dispatch pattern in POST handlers: single endpoint per resource, multiple action values — avoids URL proliferation
+- CI auto-release: `check-version` job reads `desktop/package.json` version, creates git tag + GitHub Release if version not found — push to main is sufficient, no manual tag needed
 
 ---
 
