@@ -1405,10 +1405,18 @@ function _applyUpdateNow() {
     // Relaunch directly so the flow is fully testable end-to-end in dev.
     app.relaunch()
     app.exit(0)
-  } else {
-    // isSilent=false  forceRunAfter=true — quit, run installer, relaunch app
-    autoUpdater.quitAndInstall(false, true)
+    return
   }
+  // Fallback: quitAndInstall silently does nothing on unsigned macOS (no Squirrel.Mac).
+  // If the process hasn't exited within 3s, force-relaunch via app.relaunch().
+  const fallback = setTimeout(() => {
+    console.warn('[updater] quitAndInstall did not exit within 3s — forcing relaunch')
+    app.relaunch({ execPath: process.execPath })
+    app.exit(0)
+  }, 3000)
+  if (fallback.unref) fallback.unref()
+  // isSilent=false  forceRunAfter=true — quit, run installer, relaunch app
+  autoUpdater.quitAndInstall(false, true)
 }
 
 // ── Reminder scheduler ────────────────────────────────────────────────────

@@ -133,6 +133,7 @@ let lastProcessingStatus = 'idle';
 let lastSeenErrorTs = localStorage.getItem('forge_lastSeenErrorTs') || null;
 let optimisticRunning = null;  // {stage, startTime} — card spinner only, never drives toasts
 let fixingFile = null;
+let _fixSubmittedAt = 0; // timestamp when submitFix() was called
 let viewingVersion = null;  // {id, timestamp} when viewing a historic version, null = current
 
 const PIPELINE_STAGE_ORDER = ['context','requirements','design','analysis','architecture','delivery','engineering','qa','operations','release','marketing'];
@@ -684,7 +685,10 @@ function renderTopbar() {
         showToast('Generation complete', 'success');
       }
     }
-    if (lastProcessingStatus === 'fixing' && fixingFile) {
+    // Clear fixingFile when: we saw fixing→idle transition, OR we submitted a fix
+    // and the server is idle 5s+ later (fast completion missed between polls).
+    const fixMissedTransition = fixingFile && _fixSubmittedAt && (Date.now() - _fixSubmittedAt > 5000);
+    if ((lastProcessingStatus === 'fixing' || fixMissedTransition) && fixingFile) {
       if (!lastError) {
         showToast('Regeneration complete', 'success');
       }
@@ -692,6 +696,7 @@ function renderTopbar() {
         reloadCurrentFile();
       }
       fixingFile = null;
+      _fixSubmittedAt = 0;
     }
     // Show error toast once per unique error
     if (lastError && lastError.timestamp !== lastSeenErrorTs) {
@@ -1921,6 +1926,7 @@ async function submitFix() {
 
   // Immediately show fixing state before the request even goes out
   fixingFile = currentReviewFile;
+  _fixSubmittedAt = Date.now();
   document.getElementById('critique-textarea').value = '';
   const overlay = document.getElementById('viewer-fix-overlay');
   if (overlay) {
@@ -1941,6 +1947,7 @@ async function submitFix() {
   } catch (e) {
     showToast('Failed to start regeneration', 'error');
     fixingFile = null;
+    _fixSubmittedAt = 0;
     if (overlay) overlay.style.display = 'none';
     if (fixBtn) fixBtn.disabled = false;
   }
