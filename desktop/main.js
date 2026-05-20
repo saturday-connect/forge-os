@@ -1408,11 +1408,30 @@ function _applyUpdateNow() {
     return
   }
   // Fallback: quitAndInstall silently does nothing on unsigned macOS (no Squirrel.Mac).
-  // If the process hasn't exited within 3s, force-relaunch via app.relaunch().
+  // If the process hasn't exited within 3s, the installer couldn't run.
+  // Do NOT app.relaunch() — that reopens the same binary without installing anything,
+  // causing the update banner to loop forever. Instead, open the releases page so
+  // the user can install manually, and clear the staged update to stop the loop.
   const fallback = setTimeout(() => {
-    console.warn('[updater] quitAndInstall did not exit within 3s — forcing relaunch')
-    app.relaunch({ execPath: process.execPath })
-    app.exit(0)
+    console.warn('[updater] quitAndInstall did not exit within 3s — auto-install unavailable')
+    isQuitting = false
+    // Capture version before clearing state
+    const ver = _updateReadyVersion || ''
+    // Clear the staged update so the banner doesn't reappear on next launch
+    _updateReady        = false
+    _updateReadyVersion = null
+    const cfg = readConfig()
+    writeConfig({ ...cfg, updateNotifiedVersion: null })
+    if (win && !win.isDestroyed()) win.webContents.send('forge:update-cleared')
+    if (tray) { tray.setToolTip('Forge OS'); buildTrayMenu() }
+    shell.openExternal('https://github.com/saturday-connect/forge-os/releases/latest')
+    dialog.showMessageBox({
+      type: 'info',
+      title: 'Manual install required',
+      message: `Forge OS ${ver ? ver + ' ' : ''}is ready to install`,
+      detail: 'Automatic installation requires a signed build. The releases page has been opened in your browser — download and install the latest version, then reopen Forge OS.',
+      buttons: ['OK']
+    }).catch(() => {})
   }, 3000)
   if (fallback.unref) fallback.unref()
   // isSilent=false  forceRunAfter=true — quit, run installer, relaunch app
