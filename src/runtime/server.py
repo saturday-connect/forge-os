@@ -383,6 +383,23 @@ def sync_registry_from_disk(index_data):
 # AI invocation
 # ---------------------------------------------------------------------------
 
+# CLI diagnostic lines that must never appear in generated document content.
+# Matched against each line; a line is dropped if it starts with or contains
+# any of these substrings.
+_CLI_WARNING_PATTERNS = (
+    "Warning: ",
+    "Ripgrep is not available",
+    "Falling back to GrepTool",
+    "256-color support not detected",
+)
+
+
+def _strip_cli_warnings(text):
+    lines = text.splitlines(keepends=True)
+    cleaned = [l for l in lines if not any(p in l for p in _CLI_WARNING_PATTERNS)]
+    return "".join(cleaned).lstrip("\n")
+
+
 def invoke_ai(prompt, tool, model_id):
     with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".txt", encoding=FILE_ENCODING) as t:
         tmp_path = t.name
@@ -402,7 +419,8 @@ def invoke_ai(prompt, tool, model_id):
             err = result.stderr.decode(FILE_ENCODING, errors="replace") if result.stderr else "AI call failed"
             return None, normalize_ai_error(err)
         with open(tmp_path, encoding=FILE_ENCODING) as f:
-            return f.read(), None
+            raw = f.read()
+        return _strip_cli_warnings(raw), None
     except subprocess.TimeoutExpired:
         return None, "The request timed out after 10 minutes. Try again."
     except FileNotFoundError:
