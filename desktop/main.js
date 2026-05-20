@@ -637,10 +637,13 @@ function createWindow(port) {
     }
   })
 
-  win.on('close', e => {
+  win.on('close', () => {
+    // Let the close proceed — before-quit handles server teardown.
+    // Hiding to tray on close is non-standard on macOS and produces a
+    // blank black window artifact with hiddenInset titlebar style.
     if (!isQuitting) {
-      e.preventDefault()
-      win.hide()
+      isQuitting = true
+      killServer()
     }
   })
 
@@ -2097,7 +2100,7 @@ if (!app.requestSingleInstanceLock()) {
   })
 
   app.on('window-all-closed', () => {
-    // Intentionally do nothing — app lives in the tray on all platforms
+    app.quit()
   })
 
   app.on('before-quit', () => {
