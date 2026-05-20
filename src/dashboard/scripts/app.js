@@ -1722,10 +1722,7 @@ async function openReviewFile(path, status, size, modifiedAt) {
   // Clear any active version view when switching files
   viewingVersion = null;
   document.getElementById('viewer-version-banner').style.display = 'none';
-  document.getElementById('btn-mark-reviewed').style.opacity = '';
-  document.getElementById('btn-mark-reviewed').style.pointerEvents = '';
-  document.getElementById('btn-needs-review').style.opacity = '';
-  document.getElementById('btn-needs-review').style.pointerEvents = '';
+  _setReviewToggle(status, false);
 
   const _pathParts = path.split('/');
   const _stageDir  = _pathParts[0] || '';
@@ -1739,8 +1736,7 @@ async function openReviewFile(path, status, size, modifiedAt) {
       <span class="viewer-breadcrumb-sep">›</span>
       <span class="viewer-breadcrumb-file">${_fmtFileName(_fileName)}</span>
     </div>`;
-  document.getElementById('btn-mark-reviewed').style.display = '';
-  document.getElementById('btn-needs-review').style.display = '';
+  document.getElementById('btn-review-toggle').style.display = '';
   document.getElementById('viewer-mode-toggle').style.display = '';
 
   document.getElementById('meta-path').textContent = STAGE_DIR_TO_LABEL[path.split('/')[0]] || path.split('/')[0];
@@ -1802,6 +1798,37 @@ async function openReviewFile(path, status, size, modifiedAt) {
   fetchVersions(path);
 }
 
+function _setReviewToggle(status, disabled) {
+  const btn = document.getElementById('btn-review-toggle');
+  const lbl = document.getElementById('btn-review-toggle-label');
+  if (!btn) return;
+  const isReviewed = status === 'reviewed';
+  btn.className = 'btn btn-sm ' + (isReviewed ? 'btn-review-active' : 'btn-primary');
+  if (lbl) lbl.textContent = isReviewed ? 'Reviewed' : 'Mark Reviewed';
+  btn.style.opacity = disabled ? '0.3' : '';
+  btn.style.pointerEvents = disabled ? 'none' : '';
+}
+
+async function toggleReviewStatus() {
+  if (!currentReviewFile) return;
+  const btn = document.getElementById('btn-review-toggle');
+  const isReviewed = btn && btn.classList.contains('btn-review-active');
+  const newStatus = isReviewed ? 'needs_review' : 'reviewed';
+  try {
+    await apiFetch('/api/review', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: currentReviewFile, status: newStatus })
+    });
+    _setReviewToggle(newStatus, false);
+    document.getElementById('meta-status').innerHTML = `<span class="badge badge-${newStatus.replace('_','-')}">${newStatus.replace('_',' ')}</span>`;
+    showToast(newStatus === 'reviewed' ? 'Marked as reviewed' : 'Marked for review', 'success');
+    loadState();
+  } catch (e) {
+    showToast('Failed', 'error');
+  }
+}
+
 async function markFile(status) {
   if (!currentReviewFile) return;
   try {
@@ -1810,8 +1837,9 @@ async function markFile(status) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ path: currentReviewFile, status })
     });
-    showToast(status === 'reviewed' ? 'Marked as reviewed' : 'Marked for review', 'success');
+    _setReviewToggle(status, false);
     document.getElementById('meta-status').innerHTML = `<span class="badge badge-${status.replace('_','-')}">${status.replace('_',' ')}</span>`;
+    showToast(status === 'reviewed' ? 'Marked as reviewed' : 'Marked for review', 'success');
     loadState();
   } catch (e) {
     showToast('Failed', 'error');
@@ -1872,11 +1900,9 @@ async function openVersion(id, timestamp) {
     document.getElementById('vb-label').textContent =
       `Viewing version from ${new Date(timestamp).toLocaleString()} — not the current file`;
 
-    // Dim action buttons while viewing historic version
-    document.getElementById('btn-mark-reviewed').style.opacity = '0.3';
-    document.getElementById('btn-mark-reviewed').style.pointerEvents = 'none';
-    document.getElementById('btn-needs-review').style.opacity = '0.3';
-    document.getElementById('btn-needs-review').style.pointerEvents = 'none';
+    // Dim toggle while viewing historic version
+    const _btn = document.getElementById('btn-review-toggle');
+    if (_btn) { _btn.style.opacity = '0.3'; _btn.style.pointerEvents = 'none'; }
 
     // Re-render version list to highlight active
     fetchVersions(currentReviewFile);
@@ -1888,10 +1914,8 @@ async function openVersion(id, timestamp) {
 function closeVersion() {
   viewingVersion = null;
   document.getElementById('viewer-version-banner').style.display = 'none';
-  document.getElementById('btn-mark-reviewed').style.opacity = '';
-  document.getElementById('btn-mark-reviewed').style.pointerEvents = '';
-  document.getElementById('btn-needs-review').style.opacity = '';
-  document.getElementById('btn-needs-review').style.pointerEvents = '';
+  const _btn = document.getElementById('btn-review-toggle');
+  if (_btn) { _btn.style.opacity = ''; _btn.style.pointerEvents = ''; }
   // Reload current live file
   reloadCurrentFile().then(() => fetchVersions(currentReviewFile));
 }
@@ -3614,8 +3638,7 @@ async function resetPipeline() {
     document.getElementById('viewer-content').innerHTML = VIEWER_DEFAULT_HTML;
     document.getElementById('viewer-raw-pre').textContent = '';
     document.getElementById('viewer-filename').innerHTML = '<span style="font-size:12px;color:var(--text-3);">Select a document to review</span>';
-    document.getElementById('btn-mark-reviewed').style.display = 'none';
-    document.getElementById('btn-needs-review').style.display = 'none';
+    document.getElementById('btn-review-toggle').style.display = 'none';
     document.getElementById('viewer-mode-toggle').style.display = 'none';
     loadState();
   } catch (e) {

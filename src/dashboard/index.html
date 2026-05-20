@@ -307,10 +307,9 @@
                 <button class="toggle-btn active" id="btn-mode-rendered" onclick="setViewerMode('rendered')">Rendered</button>
                 <button class="toggle-btn" id="btn-mode-raw" onclick="setViewerMode('raw')">Raw</button>
               </div>
-              <button class="btn btn-ghost btn-sm" id="btn-needs-review" onclick="markFile('needs_review')" style="display:none">Needs Review</button>
-              <button class="btn btn-primary btn-sm" id="btn-mark-reviewed" onclick="markFile('reviewed')" style="display:none">
+              <button class="btn btn-sm" id="btn-review-toggle" onclick="toggleReviewStatus()" style="display:none">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 12.75l6 6 9-13.5"/></svg>
-                Mark Reviewed
+                <span id="btn-review-toggle-label">Mark Reviewed</span>
               </button>
             </div>
           </div>

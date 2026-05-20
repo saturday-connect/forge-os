@@ -2872,6 +2872,18 @@ body.mac .projects-main {
   color: var(--on-primary);
   box-shadow: 0 0 12px rgba(74,222,128,0.35);
 }
+/* Review toggle — active = already reviewed, click to unmark */
+.btn-review-active {
+  background: rgba(74,222,128,0.12);
+  border-color: var(--primary-dim);
+  color: var(--primary);
+}
+.btn-review-active:hover:not(:disabled) {
+  background: rgba(74,222,128,0.06);
+  border-color: var(--primary-dim);
+  color: var(--text-3);
+}
+.btn-review-active:hover:not(:disabled) svg { opacity: 0.4; }
 .projects-shell .btn-primary {
   background: var(--primary);
   border-color: var(--primary-dim);
