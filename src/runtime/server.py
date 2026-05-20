@@ -2263,6 +2263,22 @@ class ForgeHandler(BaseHTTPRequestHandler):
                 self._json_response(200, {"status": "cleared"})
                 return
 
+            if action == "human_review":
+                verdict = (data.get("verdict") or "").strip()
+                notes   = (data.get("notes")   or "").strip()
+                if verdict not in ("approve", "request_changes", "comment"):
+                    self._json_response(400, {"error": "verdict must be approve, request_changes, or comment"})
+                    return
+                entry = _load_review()
+                entry["human_review"] = {
+                    "verdict": verdict,
+                    "notes": notes,
+                    "reviewed_at": datetime.now().isoformat(),
+                }
+                _save_review(entry)
+                self._json_response(200, {"status": "ok", "verdict": verdict})
+                return
+
             existing = _load_review()
             if existing.get("status") == "reviewing":
                 self._json_response(200, {"status": "already_reviewing"})
@@ -2330,6 +2346,13 @@ class ForgeHandler(BaseHTTPRequestHandler):
 
                     review_entry["diff_stat"] = diff_stat
                     review_entry["total_changed_lines"] = total_changed
+                    # Parse full diff into per-file structured data for the human reviewer
+                    _full_diff_raw = subprocess.run(
+                        ["git", "diff", "--cached"],
+                        cwd=REPO_ROOT, capture_output=True, text=True,
+                    ).stdout
+                    review_entry["diff_files"] = _parse_diff_files(_full_diff_raw[:200000])
+                    review_entry["human_review"] = {"verdict": None, "notes": "", "reviewed_at": None}
                     _save_review(review_entry)
 
                     is_large = total_changed > LARGE_CHANGESET_THRESHOLD or not has_commits
@@ -3444,6 +3467,36 @@ class ForgeHandler(BaseHTTPRequestHandler):
 # ---------------------------------------------------------------------------
 # Post-fix consistency check
 # ---------------------------------------------------------------------------
+
+def _parse_diff_files(diff_text):
+    """Parse raw `git diff` output into a list of per-file dicts."""
+    files = []
+    current = None
+    for line in diff_text.splitlines():
+        if line.startswith("diff --git "):
+            if current is not None:
+                current["patch"] = "\n".join(current["_lines"])[:8000]
+                del current["_lines"]
+                files.append(current)
+            parts = line.split(" ")
+            # Extract path from "b/<path>" at end of header
+            path = parts[-1][2:] if parts[-1].startswith("b/") else parts[-1]
+            current = {"path": path, "additions": 0, "deletions": 0, "_lines": []}
+        elif current is not None:
+            if line.startswith("+") and not line.startswith("+++"):
+                current["additions"] += 1
+                current["_lines"].append(line)
+            elif line.startswith("-") and not line.startswith("---"):
+                current["deletions"] += 1
+                current["_lines"].append(line)
+            elif line.startswith(("@@", " ", "\\")):
+                current["_lines"].append(line)
+    if current is not None:
+        current["patch"] = "\n".join(current["_lines"])[:8000]
+        del current["_lines"]
+        files.append(current)
+    return files
+
 
 def _run_consistency_check(fixed_rel, proj):
     """

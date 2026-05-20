@@ -3700,3 +3700,83 @@ body.mac .projects-main {
 .kb-activity-pr { font-size: 11px; color: var(--accent); display: flex; align-items: center; gap: 3px; }
 .kb-activity-error { font-size: 11px; color: var(--red); max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .kb-error { padding: 20px; color: var(--red); font-size: 13px; }
+
+/* ============================================================
+   Diff Viewer (Build → Review panel)
+   ============================================================ */
+.diff-file-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 4px;
+}
+.diff-file-entry {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.diff-file-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: var(--surface-2);
+  cursor: pointer;
+  font-size: 11px;
+  user-select: none;
+}
+.diff-file-header:hover { background: var(--surface-3, rgba(255,255,255,.05)); }
+.diff-file-path {
+  flex: 1;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.diff-stat-add { color: var(--primary); font-size: 11px; font-weight: 600; }
+.diff-stat-del { color: var(--red); font-size: 11px; font-weight: 600; }
+.diff-toggle-icon { color: var(--text-3); transition: transform 0.15s ease; flex-shrink: 0; }
+.diff-patch-body {
+  background: #0a0f0a;
+  padding: 8px 10px;
+  overflow-x: auto;
+  max-height: 320px;
+  overflow-y: auto;
+}
+.diff-patch {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.6;
+  white-space: pre;
+}
+.diff-line { display: block; }
+.diff-line-add  { color: #4ade80; background: rgba(74,222,128,.07); }
+.diff-line-del  { color: #f87171; background: rgba(239,68,68,.07); }
+.diff-line-hunk { color: #60a5fa; font-weight: 600; }
+
+/* Human review section */
+.human-review-section {
+  border-top: 1px solid var(--border);
+  padding-top: 14px;
+  margin-top: 4px;
+}
+.human-review-textarea {
+  width: 100%;
+  min-height: 68px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 12px;
+  padding: 8px 10px;
+  resize: vertical;
+  font-family: inherit;
+  box-sizing: border-box;
+}
+.human-review-textarea:focus {
+  outline: none;
+  border-color: var(--primary);
+}

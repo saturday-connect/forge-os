@@ -2526,15 +2526,63 @@ function showReviewPanel(data) {
 
   // Review done
   const verdictMap = {
-    approve:            { cls: 'var(--green)',  label: '✅ Approve',             hint: 'No blocking issues found.' },
-    approve_with_notes: { cls: 'var(--yellow,#f59e0b)', label: '⚠️ Approve with Notes', hint: 'Minor issues noted — can proceed.' },
-    request_changes:    { cls: 'var(--red)',    label: '❌ Request Changes',      hint: 'Issues must be fixed before merging.' },
-    unknown:            { cls: 'var(--text-2)', label: '? Unknown verdict',       hint: '' },
-    error:              { cls: 'var(--red)',    label: '! Error',                hint: '' },
+    approve:            { cls: 'var(--primary)', label: '✅ Approve',             hint: 'No blocking issues found.' },
+    approve_with_notes: { cls: '#f59e0b',         label: '⚠️ Approve with Notes', hint: 'Minor issues noted — can proceed.' },
+    request_changes:    { cls: 'var(--red)',      label: '❌ Request Changes',      hint: 'Issues must be fixed before merging.' },
+    unknown:            { cls: 'var(--text-2)',   label: '? Unknown verdict',       hint: '' },
+    error:              { cls: 'var(--red)',      label: '! Error',                hint: '' },
   };
   const v = verdictMap[data.verdict] || verdictMap.unknown;
-
   const reviewHtml = (data.review || '').replace(/\n/g, '<br>').replace(/`([^`]+)`/g, '<code>$1</code>');
+
+  // Diff viewer — file list with expandable patches
+  const diffFiles = data.diff_files || [];
+  const diffViewerHtml = diffFiles.length > 0 ? `
+    <details style="margin-bottom:14px;">
+      <summary style="font-size:12px;font-weight:600;color:var(--text-2);cursor:pointer;margin-bottom:10px;display:flex;align-items:center;gap:6px;">
+        ${icon('code', 13)} Code Changes
+        <span style="font-size:10px;font-weight:400;color:var(--text-3);margin-left:4px;">${diffFiles.length} file${diffFiles.length > 1 ? 's' : ''}</span>
+      </summary>
+      <div class="diff-file-list">
+        ${diffFiles.map((f, i) => `
+          <div class="diff-file-entry">
+            <div class="diff-file-header" onclick="toggleDiffFile(${i})">
+              <span class="diff-file-path">${escapeHtml(f.path)}</span>
+              <span class="diff-stat-add">+${f.additions}</span>
+              <span class="diff-stat-del">-${f.deletions}</span>
+              <svg class="diff-toggle-icon" id="diff-toggle-${i}" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+            </div>
+            <div class="diff-patch-body" id="diff-patch-${i}" style="display:none;">
+              <pre class="diff-patch">${_renderDiffPatch(f.patch)}</pre>
+            </div>
+          </div>`).join('')}
+      </div>
+    </details>` : '';
+
+  // Human review section
+  const hr = data.human_review || {};
+  const hrVerdict = hr.verdict || '';
+  const hrNotes   = hr.notes   || '';
+  const hrDone    = !!(hr.reviewed_at && hrVerdict);
+  const humanReviewHtml = `
+    <div class="human-review-section">
+      <div style="font-size:12px;font-weight:600;color:var(--text-2);margin-bottom:8px;display:flex;align-items:center;gap:6px;">
+        ${icon('user', 13)} Your Review
+        ${hrDone ? `<span style="font-size:10px;padding:1px 7px;border-radius:10px;background:${hrVerdict === 'approve' ? 'rgba(74,222,128,.12)' : 'rgba(239,68,68,.10)'};color:${hrVerdict === 'approve' ? 'var(--primary)' : 'var(--red)'};">${hrVerdict === 'approve' ? 'Approved' : 'Changes Requested'}</span>` : ''}
+      </div>
+      <textarea id="human-review-notes" class="human-review-textarea" placeholder="Review notes (required when requesting changes)…">${escapeHtml(hrNotes)}</textarea>
+      <div style="display:flex;gap:8px;align-items:center;margin-top:8px;">
+        <button class="btn btn-primary btn-sm" onclick="proceedWithPush()">
+          ${icon('cloudUp', 12)} ${data.verdict === 'request_changes' ? 'Push Anyway' : 'Approve &amp; Push'}
+        </button>
+        <button class="btn btn-ghost btn-sm" onclick="saveRequestChanges()" style="color:var(--red);border-color:var(--red-dim,var(--border));">
+          ${icon('xCircle', 12)} Request Changes
+        </button>
+        <button class="btn btn-ghost btn-sm" onclick="cancelReview()">Cancel</button>
+        <span style="font-size:11px;color:var(--text-3);margin-left:auto;">${new Date(data.timestamp).toLocaleTimeString()}</span>
+      </div>
+      ${hrDone && hrVerdict === 'request_changes' ? `<div style="margin-top:8px;font-size:11px;color:var(--red);"><strong>Changes requested</strong> — fix the issues above before pushing.</div>` : ''}
+    </div>`;
 
   panel.innerHTML = `
     <div class="card" style="border-color:${v.cls}">
@@ -2548,28 +2596,70 @@ function showReviewPanel(data) {
         </div>
       </div>
       <details open style="margin-bottom:12px;">
-        <summary style="font-size:12px;font-weight:600;color:var(--text-2);cursor:pointer;margin-bottom:8px;">Review details</summary>
-        <div style="font-size:12px;color:var(--text-2);line-height:1.7;padding:10px;background:var(--bg-2);border-radius:6px;max-height:320px;overflow-y:auto;">${reviewHtml}</div>
+        <summary style="font-size:12px;font-weight:600;color:var(--text-2);cursor:pointer;margin-bottom:8px;">AI review details</summary>
+        <div style="font-size:12px;color:var(--text-2);line-height:1.7;padding:10px;background:var(--surface-2);border-radius:6px;max-height:280px;overflow-y:auto;">${reviewHtml}</div>
       </details>
-      ${data.diff_stat ? `
-      <details style="margin-bottom:12px;">
-        <summary style="font-size:12px;font-weight:600;color:var(--text-2);cursor:pointer;margin-bottom:8px;">Diff stat</summary>
-        <pre style="font-size:10px;color:var(--green);background:var(--bg);padding:10px;border-radius:6px;overflow-x:auto;margin:0;">${escapeHtml(data.diff_stat)}</pre>
-      </details>` : ''}
-      <div style="display:flex;gap:8px;align-items:center;">
-        <button class="btn btn-primary btn-sm" onclick="proceedWithPush()" style="${data.verdict === 'request_changes' ? 'background:var(--red);border-color:var(--red);' : ''}">
-          ${icon('cloudUp',12)} ${data.verdict === 'request_changes' ? 'Push Anyway' : 'Approve &amp; Push'}
-        </button>
-        <button class="btn btn-ghost btn-sm" onclick="cancelReview()">
-          Cancel
-        </button>
-        <span style="font-size:11px;color:var(--text-3);margin-left:auto;">${new Date(data.timestamp).toLocaleTimeString()}</span>
-      </div>
+      ${diffViewerHtml}
+      ${humanReviewHtml}
     </div>`;
 }
 
+function _renderDiffPatch(patch) {
+  if (!patch) return '<span style="color:var(--text-3);font-size:11px;">No diff content</span>';
+  return patch.split('\n').map(line => {
+    if (line.startsWith('@@')) {
+      return `<span class="diff-line diff-line-hunk">${escHtml(line)}</span>`;
+    } else if (line.startsWith('+')) {
+      return `<span class="diff-line diff-line-add">${escHtml(line)}</span>`;
+    } else if (line.startsWith('-')) {
+      return `<span class="diff-line diff-line-del">${escHtml(line)}</span>`;
+    }
+    return `<span class="diff-line">${escHtml(line)}</span>`;
+  }).join('\n');
+}
+
+function toggleDiffFile(i) {
+  const body = document.getElementById(`diff-patch-${i}`);
+  const icon = document.getElementById(`diff-toggle-${i}`);
+  if (!body) return;
+  const isOpen = body.style.display !== 'none';
+  body.style.display = isOpen ? 'none' : 'block';
+  if (icon) icon.style.transform = isOpen ? '' : 'rotate(180deg)';
+}
+
+async function saveRequestChanges() {
+  const notes = (document.getElementById('human-review-notes') || {}).value || '';
+  if (!notes.trim()) {
+    showToast('Add review notes before requesting changes', 'error');
+    return;
+  }
+  try {
+    await apiFetch('/api/build-review', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'human_review', verdict: 'request_changes', notes })
+    });
+    showToast('Changes requested — fix issues before pushing', 'info');
+    showReviewPanel({ status: 'reviewing' });
+    syncReviewStatus();
+  } catch (e) {
+    showToast('Failed to save review', 'error');
+  }
+}
+
 async function proceedWithPush() {
+  const notes = (document.getElementById('human-review-notes') || {}).value || '';
   const panel = document.getElementById('review-panel');
+
+  // Save human approval audit record before pushing
+  try {
+    await apiFetch('/api/build-review', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'human_review', verdict: 'approve', notes })
+    });
+  } catch (e) { /* non-fatal — proceed with push */ }
+
   if (panel) panel.innerHTML = `<div class="card" style="border-color:var(--blue)"><div style="font-size:13px;color:var(--blue);">${icon('cloudUp',14)} Pushing to GitHub…</div></div>`;
 
   try {
@@ -2580,7 +2670,6 @@ async function proceedWithPush() {
     });
     const d = await res.json();
     showToast(`Build started: ${d.branch || ''}`, 'info');
-    // Clear review file
     await apiFetch('/api/build-review', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'clear' }) });
     if (panel) panel.style.display = 'none';
     loadState();
