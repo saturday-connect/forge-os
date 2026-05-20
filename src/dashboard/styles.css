@@ -1947,7 +1947,11 @@ body.mac #sidebar {
 .md-body blockquote > blockquote { margin-top: 8px; border-left-color: var(--purple); background: rgba(168,85,247,0.06); }
 
 /* Tables */
-.md-body table { width: 100%; border-collapse: collapse; margin: 1em 0; font-size: 12px; }
+.md-body table { width: 100%; border-collapse: collapse; margin: 1em 0; font-size: 12px; display: table; }
+.md-body .md-table-wrap { overflow-x: auto; margin: 1em 0; }
+.md-body thead { display: table-header-group; }
+.md-body tbody { display: table-row-group; }
+.md-body tr { display: table-row; }
 .md-body th {
   background: var(--bg-2);
   font-weight: 700;
@@ -1959,6 +1963,7 @@ body.mac #sidebar {
   text-transform: uppercase;
   letter-spacing: 0.05em;
   white-space: nowrap;
+  display: table-cell;
 }
 .md-body td {
   padding: 7px 12px;
@@ -1966,9 +1971,41 @@ body.mac #sidebar {
   color: var(--text-2);
   vertical-align: top;
   line-height: 1.5;
+  display: table-cell;
 }
 .md-body tr:nth-child(even) td { background: rgba(255,255,255,0.02); }
 .md-body tr:hover td { background: rgba(255,255,255,0.04); }
+
+/* Mermaid diagrams */
+.mermaid-pending, .mermaid-rendered {
+  margin: 1.2em 0;
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow-x: auto;
+}
+.mermaid-pending::before {
+  content: 'Loading diagram…';
+  color: var(--text-3);
+  font-size: 11px;
+  font-family: var(--mono);
+}
+.mermaid-rendered svg { max-width: 100%; height: auto; }
+.mermaid-error {
+  white-space: pre-wrap;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--red);
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+}
 
 /* HR */
 .md-body hr { border: none; border-top: 1px solid var(--border); margin: 1.5em 0; }

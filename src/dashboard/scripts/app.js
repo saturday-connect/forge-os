@@ -111,6 +111,13 @@ function renderMarkdown(text) {
   try { return parseMarkdown(text); } catch(e) { return '<pre style="white-space:pre-wrap">' + escHtml(text) + '</pre>'; }
 }
 
+function setViewerContent(html) {
+  const el = document.getElementById('viewer-content');
+  if (!el) return;
+  el.innerHTML = html;
+  if (typeof _renderMermaidInEl === 'function') _renderMermaidInEl(el);
+}
+
 // ============================================================
 // State
 // ============================================================
@@ -1759,7 +1766,7 @@ async function openReviewFile(path, status, size, modifiedAt) {
           </div>`;
         document.getElementById('viewer-raw-pre').textContent = '';
       } else {
-        document.getElementById('viewer-content').innerHTML = renderMarkdown(text);
+        setViewerContent(renderMarkdown(text));
         document.getElementById('viewer-raw-pre').textContent = text;
       }
     } else {
@@ -1857,7 +1864,7 @@ async function openVersion(id, timestamp) {
     const text = await res.text();
     viewingVersion = { id, timestamp };
 
-    document.getElementById('viewer-content').innerHTML = renderMarkdown(text);
+    setViewerContent(renderMarkdown(text));
     document.getElementById('viewer-raw-pre').textContent = text;
 
     const banner = document.getElementById('viewer-version-banner');
@@ -1913,7 +1920,7 @@ async function reloadCurrentFile() {
     if (res.ok) {
       const text = await res.text();
       const raw = text || '(empty file)';
-      document.getElementById('viewer-content').innerHTML = renderMarkdown(raw);
+      setViewerContent(renderMarkdown(raw));
       document.getElementById('viewer-raw-pre').textContent = raw;
     }
   } catch (e) {}
