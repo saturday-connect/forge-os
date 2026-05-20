@@ -135,6 +135,14 @@
       <span class="nav-label">Deploy</span>
     </div>
     <div class="nav-section-label">Manage</div>
+    <div class="nav-item" data-view="knowledge" onclick="switchView('knowledge')">
+      <span class="nav-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/>
+        </svg>
+      </span>
+      <span class="nav-label">Knowledge</span>
+    </div>
     <div class="nav-item" data-view="issues" onclick="switchView('issues')">
       <span class="nav-icon">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
@@ -447,6 +455,27 @@
       </div>
     </div>
 
+    <!-- KNOWLEDGE -->
+    <div class="view" id="view-knowledge">
+      <div class="view-header">
+        <div>
+          <div class="view-title">Knowledge Base</div>
+          <div class="view-subtitle">Export reviewed docs · Distill global learnings · Pin knowledge ref</div>
+        </div>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-ghost btn-sm" id="btn-kb-refresh" onclick="refreshKnowledge()">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+            Refresh
+          </button>
+        </div>
+      </div>
+      <div class="view-body" id="kb-view-body">
+        <div id="kb-configure-section"></div>
+        <div id="kb-pipeline-section"></div>
+        <div id="kb-activity-section"></div>
+      </div>
+    </div>
+
     <!-- ISSUES -->
     <div class="view" id="view-issues">
       <div class="view-header">
@@ -734,6 +763,8 @@
 <script><!-- FORGE_DASHBOARD_SCRIPT:markdown.js --></script>
 
 <script><!-- FORGE_DASHBOARD_SCRIPT:app.js --></script>
+
+<script><!-- FORGE_DASHBOARD_SCRIPT:knowledge.js --></script>
 
 <script><!-- FORGE_DASHBOARD_SCRIPT:editor.js --></script>
 

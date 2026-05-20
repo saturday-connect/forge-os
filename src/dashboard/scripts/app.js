@@ -3458,6 +3458,8 @@ function switchView(name) {
 
   const navEl = document.querySelector(`.nav-item[data-view="${name}"]`);
   if (navEl) navEl.classList.add('active');
+
+  if (name === 'knowledge') renderKnowledge();
 }
 
 // ============================================================

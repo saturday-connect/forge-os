@@ -3512,3 +3512,191 @@ body.mac .projects-main {
     white-space: normal;
   }
 }
+
+/* ============================================================
+   Knowledge Base view
+   ============================================================ */
+.kb-section {
+  margin-bottom: 20px;
+}
+.kb-section-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-3);
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  margin-bottom: 10px;
+}
+.kb-config-row {
+  display: flex;
+  gap: 12px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+.kb-config-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+  min-width: 140px;
+}
+.kb-config-btn-col {
+  flex: 0 0 auto;
+}
+.kb-label {
+  font-size: 11px;
+  color: var(--text-3);
+}
+.kb-config-status {
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--primary);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.kb-config-status--warn {
+  color: var(--text-3);
+}
+.kb-pipeline-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 14px;
+  margin-bottom: 20px;
+}
+@media (max-width: 900px) {
+  .kb-pipeline-grid { grid-template-columns: 1fr; }
+}
+.kb-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.kb-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.kb-card-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.kb-card-badge {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 10px;
+  letter-spacing: .04em;
+}
+.kb-badge-green  { background: rgba(74,222,128,.12); color: var(--primary); }
+.kb-badge-purple { background: rgba(139,92,246,.12); color: var(--purple);  }
+.kb-badge-dim    { background: var(--surface-2); color: var(--text-3); }
+.kb-card-desc {
+  font-size: 12px;
+  color: var(--text-2);
+  line-height: 1.5;
+}
+.kb-card-footer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: auto;
+}
+.kb-card-hint {
+  font-size: 11px;
+  color: var(--text-3);
+}
+.kb-doc-list {
+  max-height: 140px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 8px;
+  background: var(--surface-2);
+}
+.kb-stage-group { margin-bottom: 6px; }
+.kb-stage-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-3);
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  margin-bottom: 2px;
+}
+.kb-doc-item {
+  font-size: 11px;
+  color: var(--text-2);
+  padding: 1px 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--mono);
+}
+.kb-distill-targets {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.kb-distill-target {
+  font-size: 11px;
+  color: var(--text-2);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.kb-distill-target code {
+  font-size: 10px;
+  color: var(--purple);
+  background: rgba(139,92,246,.08);
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-family: var(--mono);
+  white-space: nowrap;
+}
+.kb-sync-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.kb-sync-hint {
+  font-size: 11px;
+  color: var(--text-3);
+}
+.kb-activity-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.kb-activity-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  padding: 7px 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  flex-wrap: wrap;
+}
+.kb-activity-type {
+  display: flex; align-items: center; gap: 4px;
+  font-weight: 600; color: var(--text); min-width: 70px;
+}
+.kb-activity-ts { color: var(--text-3); font-size: 11px; }
+.kb-activity-docs { color: var(--text-3); font-size: 11px; margin-left: auto; }
+.kb-activity-status { font-size: 11px; font-weight: 600; }
+.kb-activity-status--done  { color: var(--primary); }
+.kb-activity-status--error { color: var(--red); }
+.kb-activity-status--busy  { color: var(--text-3); }
+.kb-activity-pr { font-size: 11px; color: var(--accent); display: flex; align-items: center; gap: 3px; }
+.kb-activity-error { font-size: 11px; color: var(--red); max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kb-error { padding: 20px; color: var(--red); font-size: 13px; }

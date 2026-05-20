@@ -415,3 +415,20 @@ VALID_STAGE_PREFIX_COUNT = 11
 # ---------------------------------------------------------------------------
 INDEX_SCHEMA_VERSION = 1
 STATE_SCHEMA_VERSION = 1
+
+# ---------------------------------------------------------------------------
+# Knowledge base
+# ---------------------------------------------------------------------------
+KB_STATUS_IDLE = "idle"
+KB_STATUS_EXPORTING = "exporting"
+KB_STATUS_DISTILLING = "distilling"
+KB_STATUS_DONE = "done"
+KB_STATUS_ERROR = "error"
+
+KB_PROJECTS_DIR = "projects"
+KB_GLOBAL_PATTERNS = "global/patterns"
+KB_GLOBAL_DECISIONS = "global/decisions"
+KB_GLOBAL_LEARNINGS = "global/learnings"
+KB_BRANCH_EXPORT_PREFIX = "kb/export"
+KB_BRANCH_DISTILL_PREFIX = "kb/distill"
+FILE_KB_STATE = "runs/kb-state.json"

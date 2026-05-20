@@ -124,6 +124,17 @@ from constants import (
     INDEX_SCHEMA_VERSION,
     STATE_SCHEMA_VERSION,
     DIR_RUNS,
+    KB_BRANCH_DISTILL_PREFIX,
+    KB_BRANCH_EXPORT_PREFIX,
+    KB_GLOBAL_DECISIONS,
+    KB_GLOBAL_LEARNINGS,
+    KB_GLOBAL_PATTERNS,
+    KB_PROJECTS_DIR,
+    KB_STATUS_DISTILLING,
+    KB_STATUS_DONE,
+    KB_STATUS_ERROR,
+    KB_STATUS_EXPORTING,
+    FILE_KB_STATE,
 )
 
 # ---------------------------------------------------------------------------
@@ -181,6 +192,45 @@ PROJECTS_ROOT = os.path.abspath(os.path.expanduser(_projects_root_override)) if 
 PROJECTS_INDEX_FILE = os.path.join(PROJECTS_ROOT, "index.json")
 
 KNOWN_TOOLS = {}  # __FORGE_KNOWN_TOOLS__
+
+DISTILL_KNOWLEDGE_PROMPT = """# Knowledge Base Distillation
+
+You are distilling product and engineering documents into reusable organizational knowledge.
+
+**Project:** {project_name}
+
+**Task:**
+Analyze the following reviewed documents and extract knowledge reusable for future projects. Focus on GENERAL, REUSABLE knowledge — not project-specific details.
+
+Do NOT include:
+- Specific company or product names
+- Infrastructure hostnames, IP addresses, API keys
+- Business logic specific to this project
+- Team member names or contact details
+
+**Documents:**
+{doc_content}
+
+---
+
+Respond with EXACTLY these three sections. If a section has nothing relevant, write "Nothing to extract." under the heading.
+
+## Patterns
+
+Reusable architecture and design patterns. Include: pattern name, when to use it, trade-offs.
+
+## Decisions
+
+Key architectural or product decisions. Use this format:
+**Decision:** [what was decided]
+**Context:** [why this was needed]
+**Rationale:** [why this approach over alternatives]
+
+## Learnings
+
+Cross-project lessons — failure modes, gotchas, invariants, principles.
+Format: **[Topic]**: [what to do or avoid and why]
+"""
 
 REVIEWS_FILE = os.path.join(FORGE_DIR, FILE_REVIEWS)
 STATE_FILE = os.path.join(FORGE_DIR, FILE_PROJECT_STATE)
@@ -788,6 +838,300 @@ def _push_distill_to_kb(kb_repo_url, token, file_path, stage, ts):
         shutil.rmtree(_work_dir, ignore_errors=True)
 
 
+def _load_kb_state():
+    path = os.path.join(FORGE_DIR, FILE_KB_STATE)
+    if not os.path.exists(path):
+        return {"exports": [], "distillations": []}
+    try:
+        with open(path) as f:
+            return json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return {"exports": [], "distillations": []}
+
+
+def _save_kb_state(kb_state):
+    path = os.path.join(FORGE_DIR, FILE_KB_STATE)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w") as f:
+        json.dump(kb_state, f, indent=2)
+
+
+def _kb_config_from_state(proj):
+    """Return knowledge_base config dict, falling back to git.kb_repo_url for backcompat."""
+    kb = proj.get("knowledge_base") or {}
+    if kb.get("repo_owner") or kb.get("repo_name"):
+        return kb
+    kb_url = proj.get("git", {}).get("kb_repo_url", "")
+    if kb_url:
+        parsed = urllib.parse.urlparse(kb_url)
+        parts = parsed.path.strip("/").split("/")
+        if len(parts) >= 2:
+            return {
+                "repo_owner": parts[-2],
+                "repo_name": parts[-1].replace(".git", ""),
+                "branch": "main",
+                "ref": "",
+                "last_synced": "",
+            }
+    return kb
+
+
+def _collect_reviewed_docs():
+    """Return list of (rel_path, abs_path) for all reviewed markdown files across all stage dirs."""
+    reviews = load_reviews()
+    docs = []
+    for stage_dir in ALL_STAGE_DIRS:
+        stage_path = os.path.join(FORGE_DIR, stage_dir)
+        if not os.path.isdir(stage_path):
+            continue
+        for fname in sorted(os.listdir(stage_path)):
+            if not fname.endswith(MARKDOWN_EXTENSION):
+                continue
+            rel = f"{stage_dir}/{fname}"
+            if reviews.get(rel) == REVIEW_REVIEWED:
+                docs.append((rel, os.path.join(stage_path, fname)))
+    return docs
+
+
+def _run_export_to_kb(kb_config, proj, token, docs):
+    """Clone KB repo, write project docs to projects/<slug>/, push branch, open PR. Returns (pr_url, error)."""
+    owner = kb_config.get("repo_owner", "")
+    repo = kb_config.get("repo_name", "")
+    if not owner or not repo:
+        return None, "KB repo not configured"
+    slug = slugify_project_name(proj.get("project_name", "project"))
+    ts = datetime.now().strftime("%Y%m%d-%H%M%S")
+    branch = f"{KB_BRANCH_EXPORT_PREFIX}/{slug}/{ts}"
+    auth_url = f"https://x-access-token:{token}@github.com/{owner}/{repo}.git"
+    work_dir = tempfile.mkdtemp(prefix="forge-kb-export-")
+    try:
+        r = subprocess.run(
+            ["git", "clone", "--depth=1", auth_url, work_dir],
+            capture_output=True, text=True, timeout=GIT_TIMEOUT_SECS * 4,
+        )
+        if r.returncode != 0:
+            return None, f"Clone failed: {r.stderr.strip()[:200]}"
+        def_br = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            cwd=work_dir, capture_output=True, text=True,
+        )
+        default_branch = def_br.stdout.strip() or "main"
+        subprocess.run(["git", "checkout", "-b", branch], cwd=work_dir, capture_output=True)
+        for rel, abs_path in docs:
+            dest = os.path.join(work_dir, KB_PROJECTS_DIR, slug, rel)
+            os.makedirs(os.path.dirname(dest), exist_ok=True)
+            shutil.copy2(abs_path, dest)
+        meta = {
+            "project": proj.get("project_name", slug),
+            "slug": slug,
+            "exported_at": datetime.now().isoformat(),
+            "doc_count": len(docs),
+        }
+        meta_path = os.path.join(work_dir, KB_PROJECTS_DIR, slug, "_meta.json")
+        with open(meta_path, "w", encoding=FILE_ENCODING) as mf:
+            json.dump(meta, mf, indent=2)
+        subprocess.run(["git", "config", "user.email", GIT_COMMIT_EMAIL], cwd=work_dir, capture_output=True)
+        subprocess.run(["git", "config", "user.name", GIT_COMMIT_NAME], cwd=work_dir, capture_output=True)
+        subprocess.run(["git", "add", "."], cwd=work_dir, capture_output=True)
+        commit_r = subprocess.run(
+            ["git", "commit", "-m", f"kb(export): {proj.get('project_name', slug)} docs ({len(docs)} files)"],
+            cwd=work_dir, capture_output=True, text=True,
+        )
+        if commit_r.returncode != 0:
+            return None, f"Commit failed: {commit_r.stderr.strip()[:200]}"
+        push_r = subprocess.run(
+            ["git", "push", "origin", branch],
+            cwd=work_dir, capture_output=True, text=True, timeout=GIT_TIMEOUT_SECS * 2,
+        )
+        if push_r.returncode != 0:
+            return None, f"Push failed: {push_r.stderr.strip()[:200]}"
+        pr_payload = json.dumps({
+            "title": f"kb(export): {proj.get('project_name', slug)} — {len(docs)} reviewed docs",
+            "head": branch,
+            "base": default_branch,
+            "body": (
+                f"Exported reviewed documents from **{proj.get('project_name', slug)}**.\n\n"
+                f"- **Files:** {len(docs)}\n"
+                f"- **Exported:** `{meta['exported_at']}`\n\n"
+                f"Review project docs and merge to add them to the knowledge base.\n\n"
+                f"**CODEOWNERS:** `@project-owner-team` approval required."
+            ),
+            "draft": False,
+        }).encode("utf-8")
+        req = urllib.request.Request(
+            f"https://api.github.com/repos/{owner}/{repo}/pulls",
+            data=pr_payload,
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Accept": GITHUB_ACCEPT_HEADER,
+                "Content-Type": GITHUB_CONTENT_TYPE,
+                "X-GitHub-Api-Version": GITHUB_API_VERSION,
+                "User-Agent": GITHUB_USER_AGENT,
+            },
+        )
+        with urllib.request.urlopen(req, timeout=NETWORK_TIMEOUT_SECS) as resp:
+            pr = json.loads(resp.read().decode("utf-8"))
+            return pr.get("html_url", ""), None
+    except urllib.error.HTTPError as e:
+        body = e.read().decode("utf-8", errors="ignore")[:300]
+        return None, f"GitHub API error {e.code}: {body}"
+    except Exception as e:
+        return None, str(e)[:300]
+    finally:
+        shutil.rmtree(work_dir, ignore_errors=True)
+
+
+def _parse_distill_sections(text):
+    """Parse ## Patterns / ## Decisions / ## Learnings sections from AI distillation output."""
+    buckets = {"patterns": [], "decisions": [], "learnings": []}
+    current = None
+    for line in text.splitlines():
+        low = line.strip().lower()
+        if low.startswith("## patterns"):
+            current = "patterns"
+        elif low.startswith("## decisions"):
+            current = "decisions"
+        elif low.startswith("## learnings"):
+            current = "learnings"
+        elif current:
+            buckets[current].append(line)
+    return (
+        "\n".join(buckets["patterns"]).strip(),
+        "\n".join(buckets["decisions"]).strip(),
+        "\n".join(buckets["learnings"]).strip(),
+    )
+
+
+def _run_distill_to_kb(kb_config, proj, token, docs):
+    """AI distillation: extract global learnings from reviewed docs and open a draft PR in the KB repo."""
+    owner = kb_config.get("repo_owner", "")
+    repo = kb_config.get("repo_name", "")
+    if not owner or not repo:
+        return None, "KB repo not configured"
+    # Build doc content, cap each doc at 3 000 chars and total at 14 000
+    doc_chunks = []
+    total = 0
+    for rel, abs_path in docs:
+        try:
+            with open(abs_path, "r", encoding=FILE_ENCODING) as f:
+                content = f.read()
+        except OSError:
+            continue
+        snippet = content[:3000]
+        chunk = f"\n\n=== {rel} ===\n{snippet}"
+        if total + len(chunk) > 14000:
+            break
+        doc_chunks.append(chunk)
+        total += len(chunk)
+    if not doc_chunks:
+        return None, "No document content to distill"
+    prompt = DISTILL_KNOWLEDGE_PROMPT.format(
+        project_name=proj.get("project_name", "Project"),
+        doc_content="".join(doc_chunks),
+    )
+    tool = proj.get("tool", DEFAULT_TOOL)
+    model_id = proj.get("model", "")
+    ai_result, ai_error = invoke_ai(prompt, tool, model_id)
+    if ai_error:
+        return None, f"AI distillation failed: {ai_error}"
+    if not ai_result or not ai_result.strip():
+        return None, "AI returned empty distillation"
+    patterns, decisions, learnings = _parse_distill_sections(ai_result)
+    if not any([patterns, decisions, learnings]):
+        return None, "No patterns, decisions or learnings could be extracted"
+    slug = slugify_project_name(proj.get("project_name", "project"))
+    ts = datetime.now().strftime("%Y%m%d-%H%M%S")
+    branch = f"{KB_BRANCH_DISTILL_PREFIX}/{slug}/{ts}"
+    auth_url = f"https://x-access-token:{token}@github.com/{owner}/{repo}.git"
+    work_dir = tempfile.mkdtemp(prefix="forge-kb-distill-")
+    try:
+        r = subprocess.run(
+            ["git", "clone", "--depth=1", auth_url, work_dir],
+            capture_output=True, text=True, timeout=GIT_TIMEOUT_SECS * 4,
+        )
+        if r.returncode != 0:
+            return None, f"Clone failed: {r.stderr.strip()[:200]}"
+        def_br = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            cwd=work_dir, capture_output=True, text=True,
+        )
+        default_branch = def_br.stdout.strip() or "main"
+        subprocess.run(["git", "checkout", "-b", branch], cwd=work_dir, capture_output=True)
+        written = []
+        date_tag = ts[:8]
+        if patterns and "nothing to extract" not in patterns.lower():
+            dest = os.path.join(work_dir, KB_GLOBAL_PATTERNS, f"{slug}-{date_tag}.md")
+            os.makedirs(os.path.dirname(dest), exist_ok=True)
+            with open(dest, "w", encoding=FILE_ENCODING) as f:
+                f.write(f"# Patterns: {proj.get('project_name', slug)}\n\n> Distilled: {ts}\n\n{patterns}\n")
+            written.append(("patterns", os.path.relpath(dest, work_dir)))
+        if decisions and "nothing to extract" not in decisions.lower():
+            dest = os.path.join(work_dir, KB_GLOBAL_DECISIONS, f"{slug}-{date_tag}.md")
+            os.makedirs(os.path.dirname(dest), exist_ok=True)
+            with open(dest, "w", encoding=FILE_ENCODING) as f:
+                f.write(f"# Decisions: {proj.get('project_name', slug)}\n\n> Distilled: {ts}\n\n{decisions}\n")
+            written.append(("decisions", os.path.relpath(dest, work_dir)))
+        if learnings and "nothing to extract" not in learnings.lower():
+            dest = os.path.join(work_dir, KB_GLOBAL_LEARNINGS, f"{slug}-{date_tag}.md")
+            os.makedirs(os.path.dirname(dest), exist_ok=True)
+            with open(dest, "w", encoding=FILE_ENCODING) as f:
+                f.write(f"# Learnings: {proj.get('project_name', slug)}\n\n> Distilled: {ts}\n\n{learnings}\n")
+            written.append(("learnings", os.path.relpath(dest, work_dir)))
+        if not written:
+            return None, "Nothing substantive extracted — all sections were empty"
+        subprocess.run(["git", "config", "user.email", GIT_COMMIT_EMAIL], cwd=work_dir, capture_output=True)
+        subprocess.run(["git", "config", "user.name", GIT_COMMIT_NAME], cwd=work_dir, capture_output=True)
+        subprocess.run(["git", "add", "."], cwd=work_dir, capture_output=True)
+        commit_r = subprocess.run(
+            ["git", "commit", "-m", f"kb(distill): global learnings from {slug} ({date_tag})"],
+            cwd=work_dir, capture_output=True, text=True,
+        )
+        if commit_r.returncode != 0:
+            return None, f"Commit failed: {commit_r.stderr.strip()[:200]}"
+        push_r = subprocess.run(
+            ["git", "push", "origin", branch],
+            cwd=work_dir, capture_output=True, text=True, timeout=GIT_TIMEOUT_SECS * 2,
+        )
+        if push_r.returncode != 0:
+            return None, f"Push failed: {push_r.stderr.strip()[:200]}"
+        pr_body_text = (
+            f"AI-distilled global learnings from **{proj.get('project_name', slug)}**.\n\n"
+            "**Files proposed:**\n"
+            + "\n".join(f"- `{path}` ({kind})" for kind, path in written)
+            + f"\n\n**Source docs distilled:** {len(doc_chunks)}\n\n"
+            + "> This is a **draft PR**. Review the distilled content carefully before merging.\n"
+            + "> **CODEOWNERS:** `@knowledge-curators` approval required for `global/` paths."
+        )
+        pr_payload = json.dumps({
+            "title": f"kb(distill): global learnings from {proj.get('project_name', slug)}",
+            "head": branch,
+            "base": default_branch,
+            "body": pr_body_text,
+            "draft": True,
+        }).encode("utf-8")
+        req = urllib.request.Request(
+            f"https://api.github.com/repos/{owner}/{repo}/pulls",
+            data=pr_payload,
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Accept": GITHUB_ACCEPT_HEADER,
+                "Content-Type": GITHUB_CONTENT_TYPE,
+                "X-GitHub-Api-Version": GITHUB_API_VERSION,
+                "User-Agent": GITHUB_USER_AGENT,
+            },
+        )
+        with urllib.request.urlopen(req, timeout=NETWORK_TIMEOUT_SECS) as resp:
+            pr = json.loads(resp.read().decode("utf-8"))
+            return {"pr_url": pr.get("html_url", ""), "files": written}, None
+    except urllib.error.HTTPError as e:
+        body = e.read().decode("utf-8", errors="ignore")[:300]
+        return None, f"GitHub API error {e.code}: {body}"
+    except Exception as e:
+        return None, str(e)[:300]
+    finally:
+        shutil.rmtree(work_dir, ignore_errors=True)
+
+
 def _load_distill_result():
     _path = os.path.join(FORGE_DIR, FILE_DISTILL_RESULT)
     if not os.path.exists(_path):
@@ -1268,7 +1612,18 @@ class ForgeHandler(BaseHTTPRequestHandler):
                     content = _f.read()
                 self._json_response(200, {"content": content})
             else:
-                self._json_response(200, {"entries": _list_knowledge_entries()})
+                _proj = load_project_state()
+                _kb_cfg = _kb_config_from_state(_proj)
+                _kb_st = _load_kb_state()
+                _reviewed_docs = _collect_reviewed_docs()
+                self._json_response(200, {
+                    "config": _kb_cfg,
+                    "status": _kb_st,
+                    "reviewed_doc_count": len(_reviewed_docs),
+                    "reviewed_docs": [{"rel": r, "size": os.path.getsize(a)} for r, a in _reviewed_docs],
+                    "entries": _list_knowledge_entries(),
+                    "gh_cli": subprocess.run(["which", "gh"], capture_output=True).returncode == 0,
+                })
             return
 
         if path == "/api/tools":
@@ -2604,6 +2959,109 @@ class ForgeHandler(BaseHTTPRequestHandler):
             _t = threading.Thread(target=_run_distill, daemon=True)
             _t.start()
             self._json_response(200, {"status": "started", "stage": stage})
+            return
+
+        if path == "/api/knowledge/configure":
+            repo_owner = (data.get("repo_owner") or "").strip()
+            repo_name = (data.get("repo_name") or "").strip()
+            branch = (data.get("branch") or "main").strip()
+            if not repo_owner or not repo_name:
+                self._json_response(400, {"error": "repo_owner and repo_name are required"})
+                return
+            proj = load_project_state()
+            proj["knowledge_base"] = {
+                "repo_owner": repo_owner,
+                "repo_name": repo_name,
+                "branch": branch,
+                "ref": proj.get("knowledge_base", {}).get("ref", ""),
+                "last_synced": proj.get("knowledge_base", {}).get("last_synced", ""),
+            }
+            # Keep backcompat field
+            proj.setdefault("git", {})["kb_repo_url"] = f"https://github.com/{repo_owner}/{repo_name}"
+            save_project_state(proj)
+            self._json_response(200, {"status": "saved", "config": proj["knowledge_base"]})
+            return
+
+        if path == "/api/knowledge/export":
+            proj = load_project_state()
+            kb_cfg = _kb_config_from_state(proj)
+            if not kb_cfg.get("repo_owner") or not kb_cfg.get("repo_name"):
+                self._json_response(400, {"error": "Configure knowledge base repo first"})
+                return
+            token = proj.get("git", {}).get("token", "") or GIT_PAT
+            if not token:
+                self._json_response(400, {"error": "GitHub token required — configure it in Settings"})
+                return
+            docs = _collect_reviewed_docs()
+            if not docs:
+                self._json_response(400, {"error": "No reviewed documents to export"})
+                return
+
+            def _do_export():
+                _kb_st2 = _load_kb_state()
+                ts = datetime.now().strftime("%Y%m%d-%H%M%S")
+                entry = {"id": ts, "slug": slugify_project_name(proj.get("project_name", "project")),
+                         "doc_count": len(docs), "status": KB_STATUS_EXPORTING,
+                         "created_at": datetime.now().isoformat(), "pr_url": None, "error": None}
+                _kb_st2.setdefault("exports", []).insert(0, entry)
+                _save_kb_state(_kb_st2)
+                pr_url, error = _run_export_to_kb(kb_cfg, proj, token, docs)
+                entry["pr_url"] = pr_url
+                entry["error"] = error
+                entry["status"] = KB_STATUS_ERROR if error else KB_STATUS_DONE
+                _save_kb_state(_kb_st2)
+
+            threading.Thread(target=_do_export, daemon=True).start()
+            self._json_response(200, {"status": "started", "doc_count": len(docs)})
+            return
+
+        if path == "/api/knowledge/distill":
+            proj = load_project_state()
+            kb_cfg = _kb_config_from_state(proj)
+            if not kb_cfg.get("repo_owner") or not kb_cfg.get("repo_name"):
+                self._json_response(400, {"error": "Configure knowledge base repo first"})
+                return
+            token = proj.get("git", {}).get("token", "") or GIT_PAT
+            if not token:
+                self._json_response(400, {"error": "GitHub token required — configure it in Settings"})
+                return
+            docs = _collect_reviewed_docs()
+            if not docs:
+                self._json_response(400, {"error": "No reviewed documents to distill"})
+                return
+
+            def _do_distill():
+                _kb_st2 = _load_kb_state()
+                ts = datetime.now().strftime("%Y%m%d-%H%M%S")
+                entry = {"id": ts, "slug": slugify_project_name(proj.get("project_name", "project")),
+                         "doc_count": len(docs), "status": KB_STATUS_DISTILLING,
+                         "created_at": datetime.now().isoformat(), "pr_url": None, "files": [], "error": None}
+                _kb_st2.setdefault("distillations", []).insert(0, entry)
+                _save_kb_state(_kb_st2)
+                result, error = _run_distill_to_kb(kb_cfg, proj, token, docs)
+                if error:
+                    entry["error"] = error
+                    entry["status"] = KB_STATUS_ERROR
+                else:
+                    entry["pr_url"] = result.get("pr_url")
+                    entry["files"] = result.get("files", [])
+                    entry["status"] = KB_STATUS_DONE
+                _save_kb_state(_kb_st2)
+
+            threading.Thread(target=_do_distill, daemon=True).start()
+            self._json_response(200, {"status": "started", "doc_count": len(docs)})
+            return
+
+        if path == "/api/knowledge/sync":
+            ref = (data.get("ref") or "").strip()
+            if not ref:
+                self._json_response(400, {"error": "ref is required"})
+                return
+            proj = load_project_state()
+            proj.setdefault("knowledge_base", {})["ref"] = ref
+            proj["knowledge_base"]["last_synced"] = datetime.now().isoformat()
+            save_project_state(proj)
+            self._json_response(200, {"status": "synced", "ref": ref})
             return
 
         if path == "/api/settings":
