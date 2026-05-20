@@ -1717,15 +1717,25 @@ function setupAutoUpdater() {
     _updateChecking     = false
   })
 
-  // Background check on startup — silent unless an update is found.
-  // The 'error' event handles user-facing errors; .catch() here only suppresses
-  // the unhandled-rejection warning when the error event already fired.
-  autoUpdater.checkForUpdates().catch(() => {})
+  // Startup check is deferred to after did-finish-load (see scheduleStartupUpdateCheck)
+  // so network is ready and the window is in a stable state when the first check fires.
 
-  // Periodic background check every 4 hours — keeps long-running sessions current
+  // Periodic background check every hour — keeps long-running sessions current and
+  // catches releases that published while the app was running.
   setInterval(() => {
     autoUpdater.checkForUpdates().catch(() => {})
-  }, 4 * 60 * 60 * 1000)
+  }, 60 * 60 * 1000)
+}
+
+// Called from did-finish-load so the network is definitely up before we query GitHub.
+// Fires immediately, then again at 2 min (catches releases that were still publishing
+// when the app started, which would return "no update" on the first check).
+function scheduleStartupUpdateCheck() {
+  if (!app.isPackaged) return
+  autoUpdater.checkForUpdates().catch(() => {})
+  setTimeout(() => {
+    autoUpdater.checkForUpdates().catch(() => {})
+  }, 2 * 60 * 1000)
 }
 
 // Called from tray "Check for Updates" — marks intent as manual so "up to date"
@@ -2047,6 +2057,9 @@ if (!app.requestSingleInstanceLock()) {
         if (_updateReady && _updateReadyVersion) {
           setTimeout(() => _showUpdateBannerInApp(_updateReadyVersion), 800)
         }
+        // Startup update check fires here — network is up, window is stable.
+        // A second check runs at 2 min to catch releases still publishing at launch time.
+        scheduleStartupUpdateCheck()
       })
       win.show()
     } catch (err) {
