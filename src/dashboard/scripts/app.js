@@ -702,6 +702,14 @@ function renderTopbar() {
       if (currentReviewFile === fixingFile) {
         reloadCurrentFile();
       }
+      // Notify about downstream docs that were reset to needs_review
+      const consistency = processing.consistency_check;
+      if (consistency && consistency.affected_count > 0) {
+        const n = consistency.affected_count;
+        setTimeout(() => {
+          showToast(`${n} downstream doc${n > 1 ? 's' : ''} marked for re-review — check the Review tree`, 'info');
+        }, 1200);
+      }
       fixingFile = null;
       _fixSubmittedAt = 0;
     }

@@ -135,6 +135,10 @@ from constants import (
     KB_STATUS_ERROR,
     KB_STATUS_EXPORTING,
     FILE_KB_STATE,
+    FILE_CONSISTENCY_CHECK,
+    CONSISTENCY_CHECK_MAX_DOWNSTREAM,
+    CONSISTENCY_CHECK_DOC_CHARS,
+    CONSISTENCY_CHECK_FIXED_CHARS,
 )
 
 # ---------------------------------------------------------------------------
@@ -230,6 +234,24 @@ Key architectural or product decisions. Use this format:
 
 Cross-project lessons — failure modes, gotchas, invariants, principles.
 Format: **[Topic]**: [what to do or avoid and why]
+"""
+
+CONSISTENCY_CHECK_PROMPT = """The following document was updated based on a critique:
+
+=== UPDATED: {fixed_rel} ===
+{fixed_content}
+
+Review each downstream document listed below. Identify ONLY those that now contain specific inconsistencies, gaps, or outdated information caused by the update above.
+
+Be specific — name the exact claim, section, or assumption that conflicts.
+If a document is fully consistent with the update, do NOT mention it.
+
+Format each finding as:
+FILE: <relative_path>
+REASON: <1-2 sentences on what specifically needs updating>
+
+Downstream documents:
+{downstream_block}
 """
 
 REVIEWS_FILE = os.path.join(FORGE_DIR, FILE_REVIEWS)
@@ -3207,16 +3229,23 @@ class ForgeHandler(BaseHTTPRequestHandler):
             status_file = os.path.join(FORGE_DIR, FILE_STATUS)
 
             def run_fix():
+                _consistency = None
                 try:
                     if os.path.exists(os.path.join(FORGE_DIR, "runs")):
                         with open(status_file, "w") as sf:
                             json.dump({"status": STATUS_FIXING, "stage": stage, "file": file_path, "updated_at": datetime.now().isoformat()}, sf)
                     cmd = [sys.executable, os.path.join(FORGE_DIR, "scripts/run.py"), stage, "--output", file_path, "--critique", critique]
-                    subprocess.run(cmd, cwd=REPO_ROOT)
+                    result = subprocess.run(cmd, cwd=REPO_ROOT)
+                    if result.returncode == 0:
+                        _proj = load_project_state()
+                        _consistency = _run_consistency_check(file_path, _proj)
                 finally:
                     if os.path.exists(os.path.join(FORGE_DIR, "runs")):
+                        _payload = {"status": STATUS_IDLE, "stage": stage, "file": file_path, "updated_at": datetime.now().isoformat()}
+                        if _consistency:
+                            _payload["consistency_check"] = _consistency
                         with open(status_file, "w") as sf:
-                            json.dump({"status": STATUS_IDLE, "stage": stage, "file": file_path, "updated_at": datetime.now().isoformat()}, sf)
+                            json.dump(_payload, sf)
 
             t = threading.Thread(target=run_fix, daemon=True)
             t.start()
@@ -3410,6 +3439,130 @@ class ForgeHandler(BaseHTTPRequestHandler):
             return
 
         self._json_response(404, {"error": "not found"})
+
+
+# ---------------------------------------------------------------------------
+# Post-fix consistency check
+# ---------------------------------------------------------------------------
+
+def _run_consistency_check(fixed_rel, proj):
+    """
+    After a fix, scan reviewed downstream docs for inconsistencies with the
+    updated file. Marks affected docs as needs_review and returns a results
+    dict (or None on failure/skip).
+
+    This is best-effort — any exception is swallowed so the fix always
+    completes cleanly even when the AI call fails.
+    """
+    try:
+        fixed_abs = os.path.join(FORGE_DIR, fixed_rel)
+        if not os.path.exists(fixed_abs):
+            return None
+        with open(fixed_abs, "r", encoding=FILE_ENCODING) as f:
+            fixed_content = f.read()
+        if not fixed_content.strip():
+            return None
+
+        fixed_stage_dir = fixed_rel.split("/")[0]
+        try:
+            fixed_idx = ALL_STAGE_DIRS.index(fixed_stage_dir)
+        except ValueError:
+            return None
+
+        # Collect reviewed docs from all stages downstream of the fixed file
+        reviews = load_reviews()
+        downstream = []
+        for stage_dir in ALL_STAGE_DIRS[fixed_idx + 1:]:
+            if len(downstream) >= CONSISTENCY_CHECK_MAX_DOWNSTREAM:
+                break
+            stage_path = os.path.join(FORGE_DIR, stage_dir)
+            if not os.path.isdir(stage_path):
+                continue
+            for fname in sorted(os.listdir(stage_path)):
+                if not fname.endswith(MARKDOWN_EXTENSION):
+                    continue
+                rel = f"{stage_dir}/{fname}"
+                if reviews.get(rel) == REVIEW_REVIEWED:
+                    downstream.append((rel, os.path.join(stage_path, fname)))
+                if len(downstream) >= CONSISTENCY_CHECK_MAX_DOWNSTREAM:
+                    break
+
+        if not downstream:
+            return None
+
+        # Build downstream block (one snippet per doc)
+        downstream_block = ""
+        for rel, abs_path in downstream:
+            try:
+                with open(abs_path, "r", encoding=FILE_ENCODING) as f:
+                    snippet = f.read()[:CONSISTENCY_CHECK_DOC_CHARS]
+                downstream_block += f"\n\n=== {rel} ===\n{snippet}"
+            except OSError:
+                pass
+        if not downstream_block.strip():
+            return None
+
+        prompt = CONSISTENCY_CHECK_PROMPT.format(
+            fixed_rel=fixed_rel,
+            fixed_content=fixed_content[:CONSISTENCY_CHECK_FIXED_CHARS],
+            downstream_block=downstream_block,
+        )
+
+        tool = proj.get("tool", DEFAULT_TOOL)
+        model_id = proj.get("model", "")
+        ai_result, ai_error = invoke_ai(prompt, tool, model_id)
+        if ai_error or not ai_result or not ai_result.strip():
+            return None
+
+        # Parse FILE: / REASON: pairs from AI output
+        affected = []
+        lines = ai_result.splitlines()
+        i = 0
+        while i < len(lines):
+            stripped = lines[i].strip()
+            if stripped.lower().startswith("file:"):
+                fname = stripped[5:].strip()
+                reason = ""
+                if i + 1 < len(lines) and lines[i + 1].strip().lower().startswith("reason:"):
+                    reason = lines[i + 1].strip()[7:].strip()
+                    i += 1
+                if fname:
+                    affected.append({"file": fname, "reason": reason})
+            i += 1
+
+        if not affected:
+            return None
+
+        # Mark affected docs as needs_review (only if they are valid downstream paths)
+        valid_rels = {r for r, _ in downstream}
+        reviews = load_reviews()
+        marked = []
+        for item in affected:
+            rel = item["file"]
+            if rel in valid_rels and reviews.get(rel) == REVIEW_REVIEWED:
+                reviews[rel] = REVIEW_NEEDS_REVIEW
+                marked.append(item)
+        if marked:
+            save_reviews(reviews)
+
+        result = {
+            "source": fixed_rel,
+            "checked_at": datetime.now().isoformat(),
+            "affected_count": len(marked),
+            "affected": marked,
+        }
+
+        check_file = os.path.join(FORGE_DIR, FILE_CONSISTENCY_CHECK)
+        os.makedirs(os.path.dirname(check_file), exist_ok=True)
+        with open(check_file, "w", encoding=FILE_ENCODING) as f:
+            json.dump(result, f, indent=2)
+
+        logger.info("consistency_check: %d downstream docs marked for re-review after fix of %s", len(marked), fixed_rel)
+        return result
+
+    except Exception as exc:
+        logger.warning("_run_consistency_check: %s", exc)
+        return None
 
 
 def run_server(port=DEFAULT_PORT):

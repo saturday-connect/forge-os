@@ -417,6 +417,14 @@ INDEX_SCHEMA_VERSION = 1
 STATE_SCHEMA_VERSION = 1
 
 # ---------------------------------------------------------------------------
+# Consistency check
+# ---------------------------------------------------------------------------
+FILE_CONSISTENCY_CHECK = "runs/consistency-check.json"
+CONSISTENCY_CHECK_MAX_DOWNSTREAM = 10   # max downstream docs to examine
+CONSISTENCY_CHECK_DOC_CHARS = 1500      # chars per downstream doc in prompt
+CONSISTENCY_CHECK_FIXED_CHARS = 4000    # chars of the fixed doc in prompt
+
+# ---------------------------------------------------------------------------
 # Knowledge base
 # ---------------------------------------------------------------------------
 KB_STATUS_IDLE = "idle"
