@@ -135,6 +135,9 @@ let currentReviewFile = null;
 let runtimeInitialized = false;
 let pollInterval = null;
 
+// Phase auto-sync: tracks allReviewed across polls to detect 100% transition
+let _prevAllReviewed = null;  // null = not yet seen (skip first load)
+
 // Generation tracking
 let lastProcessingStatus = 'idle';
 let lastSeenErrorTs = localStorage.getItem('forge_lastSeenErrorTs') || null;
@@ -244,6 +247,14 @@ async function loadState() {
     const res = await apiFetch('/api/state');
     if (!res.ok) return;
     state = await res.json();
+
+    // Auto-sync phases when review transitions to 100%
+    const nowAllReviewed = !!state.allReviewed;
+    if (_prevAllReviewed === false && nowAllReviewed) {
+      _autoSyncPhases();
+    }
+    _prevAllReviewed = nowAllReviewed;
+
     renderAll();
   } catch (e) {
     console.warn('State fetch failed', e);
@@ -3649,6 +3660,22 @@ function renderPhases() {
       ${i < phases.length - 1 ? '<div class="phase-connector"></div>' : ''}
     `;
   }).join('');
+}
+
+async function _autoSyncPhases() {
+  try {
+    const res = await apiFetch('/api/phases', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'sync' })
+    });
+    const data = await res.json();
+    if (data.phases !== undefined) {
+      state.phases = data.phases;
+      renderPhases();
+      showToast(`All files reviewed — ${data.phases.length} phase${data.phases.length !== 1 ? 's' : ''} synced from docs`, 'success');
+    }
+  } catch (e) { /* non-fatal — phases can be synced manually */ }
 }
 
 async function syncPhases() {
