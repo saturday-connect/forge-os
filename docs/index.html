@@ -3,31 +3,106 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Forge OS — Documentation-first PDLC automation</title>
-  <meta name="description" content="Forge OS turns product ideas into a full delivery pipeline. AI-generated requirements, design, architecture, build systems, and deployment — driven from Markdown." />
-  <meta property="og:title" content="Forge OS" />
-  <meta property="og:description" content="Documentation-first PDLC automation. From idea to shipped product." />
-  <meta property="og:type" content="website" />
+
+  <title>Forge OS — Documentation-first PDLC automation by Saturday Connect</title>
+  <meta name="description" content="Forge OS turns product ideas into a full delivery pipeline — AI-generated requirements, design, architecture, build systems, and deployment, driven from Markdown. Built by Saturday Connect." />
+
+  <!-- Open Graph -->
+  <meta property="og:type"        content="website" />
+  <meta property="og:site_name"   content="Forge OS" />
+  <meta property="og:title"       content="Forge OS — Documentation-first PDLC automation" />
+  <meta property="og:description" content="From idea to shipped product. AI-generated docs, review gates, build automation, local preview, and deployment — all in one open-source desktop app." />
+  <meta property="og:url"         content="https://saturday-connect.github.io/forge-os/" />
+  <meta property="og:image"       content="https://saturday-connect.github.io/forge-os/assets/og-card.png" />
+
+  <!-- Twitter Card -->
+  <meta name="twitter:card"        content="summary_large_image" />
+  <meta name="twitter:title"       content="Forge OS — Documentation-first PDLC automation" />
+  <meta name="twitter:description" content="From idea to shipped product. Open-source desktop app by Saturday Connect." />
+  <meta name="twitter:image"       content="https://saturday-connect.github.io/forge-os/assets/og-card.png" />
+
   <meta name="theme-color" content="#060D06" />
-  <link rel="canonical" href="https://saturday-connect.github.io/forge-os/" />
+  <meta name="robots"      content="index, follow" />
+  <link rel="canonical"    href="https://saturday-connect.github.io/forge-os/" />
+
+  <!-- Inline SVG favicon -->
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%234ADE80'/%3E%3Crect x='8' y='6' width='4' height='20' rx='1' fill='%23060D06'/%3E%3Crect x='8' y='6' width='16' height='4' rx='1' fill='%23060D06'/%3E%3Crect x='8' y='15' width='12' height='3' rx='1' fill='%23060D06'/%3E%3C/svg%3E" />
+
+  <!-- Performance hints -->
+  <link rel="preconnect" href="https://api.github.com" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+
+  <!-- JSON-LD structured data -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Forge OS",
+    "applicationCategory": "DeveloperApplication",
+    "operatingSystem": ["macOS", "Windows", "Linux"],
+    "description": "Documentation-first PDLC automation desktop app. AI-generated requirements, design, architecture, build systems, and deployment.",
+    "url": "https://saturday-connect.github.io/forge-os/",
+    "downloadUrl": "https://github.com/saturday-connect/forge-os/releases",
+    "softwareVersion": "1.0.0-beta.25",
+    "license": "https://www.apache.org/licenses/LICENSE-2.0",
+    "author": {
+      "@type": "Organization",
+      "name": "Saturday Connect",
+      "url": "https://github.com/saturday-connect"
+    },
+    "offers": {
+      "@type": "Offer",
+      "price": "0",
+      "priceCurrency": "USD"
+    }
+  }
+  </script>
+
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     :root {
       --bg:            #060D06;
+      --bg-1:          rgba(255,255,255,0.03);
       --surface:       rgba(255,255,255,0.04);
       --surface-2:     rgba(255,255,255,0.06);
       --border:        rgba(255,255,255,0.08);
       --border-hover:  rgba(255,255,255,0.18);
       --text:          #ffffff;
       --text-2:        rgba(255,255,255,0.55);
-      --text-3:        rgba(255,255,255,0.25);
+      --text-3:        rgba(255,255,255,0.28);
       --accent:        #4ADE80;
       --accent-hover:  #6ee89a;
-      --accent-subtle: rgba(74,222,128,0.10);
+      --accent-subtle: rgba(74,222,128,0.08);
       --accent-border: rgba(74,222,128,0.22);
-      --radius:        0px;
-      --radius-sm:     0px;
+      --green:         #4ADE80;
+      --blue:          #60a5fa;
+      --purple:        #a78bfa;
+      --amber:         #f59e0b;
+      --red:           #f87171;
+      --mono:          'SF Mono','Fira Code','Cascadia Code',monospace;
+    }
+
+    /* ── Accessibility ── */
+    .skip-link {
+      position: absolute;
+      top: -100%;
+      left: 16px;
+      background: var(--accent);
+      color: #060D06;
+      padding: 8px 16px;
+      font-size: 14px;
+      font-weight: 700;
+      z-index: 9999;
+      transition: top 0.15s;
+    }
+    .skip-link:focus { top: 16px; }
+
+    :focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 3px;
     }
 
     html { scroll-behavior: smooth; }
@@ -35,7 +110,7 @@
     body {
       background: var(--bg);
       color: var(--text);
-      font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
       -webkit-font-smoothing: antialiased;
       -moz-osx-font-smoothing: grayscale;
       line-height: 1.6;
@@ -55,9 +130,9 @@
       justify-content: space-between;
       padding: 0 32px;
       height: 60px;
-      background: rgba(6,13,6,0.82);
-      backdrop-filter: blur(16px);
-      -webkit-backdrop-filter: blur(16px);
+      background: rgba(6,13,6,0.88);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
       border-bottom: 1px solid var(--accent-border);
     }
 
@@ -65,7 +140,7 @@
       display: flex;
       align-items: center;
       gap: 10px;
-      font-weight: 600;
+      font-weight: 700;
       font-size: 14px;
       letter-spacing: 1.5px;
       text-transform: uppercase;
@@ -75,7 +150,7 @@
       width: 28px;
       height: 28px;
       background: var(--accent);
-      border-radius: 8px;
+      border-radius: 7px;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -83,21 +158,17 @@
       color: #060D06;
     }
 
-    .nav-logo-mark svg {
-      display: block;
-      width: 16px;
-      height: 16px;
-    }
+    .nav-logo-mark svg { display: block; width: 16px; height: 16px; }
 
     .nav-right {
       display: flex;
       align-items: center;
-      gap: 28px;
+      gap: 24px;
     }
 
     .nav-text-links {
       display: flex;
-      gap: 28px;
+      gap: 24px;
     }
 
     .nav-text-links a {
@@ -105,15 +176,27 @@
       color: var(--text-2);
       transition: color 0.15s;
     }
-
     .nav-text-links a:hover { color: var(--text); }
+
+    .nav-stars {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: var(--text-3);
+      padding: 4px 10px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      transition: border-color 0.15s, color 0.15s;
+    }
+    .nav-stars:hover { border-color: var(--border-hover); color: var(--text-2); }
 
     .btn-github {
       display: flex;
       align-items: center;
       gap: 7px;
       padding: 7px 14px;
-      border-radius: var(--radius-sm);
+      border-radius: 6px;
       border: 1px solid var(--border);
       background: var(--surface);
       font-size: 13px;
@@ -121,36 +204,32 @@
       transition: border-color 0.15s, color 0.15s, background 0.15s;
       white-space: nowrap;
     }
+    .btn-github:hover { border-color: var(--border-hover); color: var(--text); background: var(--surface-2); }
 
-    .btn-github:hover {
-      border-color: var(--border-hover);
-      color: var(--text);
-      background: var(--surface-2);
-    }
-
-    @media (max-width: 640px) {
+    @media (max-width: 768px) {
       nav { padding: 0 20px; }
       .nav-text-links { display: none; }
+      .nav-stars { display: none; }
     }
 
-    /* ── SECTIONS ── */
+    /* ── SHARED SECTION ── */
     section { padding: 96px 32px; }
     .container { max-width: 1100px; margin: 0 auto; }
 
     .eyebrow {
       display: inline-block;
       font-size: 11px;
-      font-weight: 600;
-      letter-spacing: 1.5px;
+      font-weight: 700;
+      letter-spacing: 1.8px;
       text-transform: uppercase;
       color: var(--accent);
       margin-bottom: 16px;
     }
 
     .section-heading {
-      font-size: clamp(28px, 4vw, 40px);
+      font-size: clamp(26px, 3.5vw, 38px);
       font-weight: 700;
-      letter-spacing: -1.5px;
+      letter-spacing: -1.2px;
       line-height: 1.15;
       margin-bottom: 14px;
     }
@@ -162,9 +241,71 @@
       line-height: 1.65;
     }
 
+    /* ── WHAT'S NEW STRIP ── */
+    .whats-new-strip {
+      background: rgba(74,222,128,0.05);
+      border-bottom: 1px solid rgba(74,222,128,0.12);
+      padding: 10px 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .whats-new-strip .badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 2px 9px;
+      border-radius: 99px;
+      background: rgba(74,222,128,0.12);
+      border: 1px solid rgba(74,222,128,0.3);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.8px;
+      text-transform: uppercase;
+      color: var(--accent);
+      flex-shrink: 0;
+    }
+
+    .whats-new-strip .items {
+      display: flex;
+      gap: 16px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    .whats-new-item {
+      font-size: 12px;
+      color: var(--text-2);
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    .whats-new-item::before {
+      content: '●';
+      font-size: 6px;
+      color: var(--accent);
+    }
+
+    .whats-new-strip a {
+      font-size: 12px;
+      color: var(--accent);
+      text-decoration: underline;
+      text-underline-offset: 3px;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+
+    @media (max-width: 640px) {
+      .whats-new-strip { padding: 10px 20px; }
+      .whats-new-item:nth-child(n+4) { display: none; }
+    }
+
     /* ── HERO ── */
     #hero {
-      padding: 120px 32px 0;
+      padding: 100px 32px 0;
       text-align: center;
     }
 
@@ -177,12 +318,12 @@
       border-radius: 99px;
       font-size: 13px;
       color: var(--text-2);
-      margin-bottom: 36px;
+      margin-bottom: 32px;
     }
 
     .hero-badge .pulse {
-      width: 8px;
-      height: 8px;
+      width: 7px;
+      height: 7px;
       border-radius: 50%;
       background: var(--green);
       animation: pulse 2s infinite;
@@ -191,25 +332,24 @@
 
     @keyframes pulse {
       0%, 100% { opacity: 1; transform: scale(1); }
-      50%       { opacity: 0.5; transform: scale(0.85); }
+      50%       { opacity: 0.45; transform: scale(0.8); }
     }
 
     .hero-h1 {
-      font-size: clamp(48px, 7vw, 88px);
+      font-size: clamp(44px, 6.5vw, 80px);
       font-weight: 800;
-      letter-spacing: -2px;
-      line-height: 1.0;
-      margin-bottom: 24px;
+      letter-spacing: -2.5px;
+      line-height: 1.02;
+      margin-bottom: 22px;
     }
-
     .hero-h1 .accent { color: var(--accent); font-style: italic; }
 
     .hero-sub {
-      font-size: clamp(16px, 2vw, 19px);
+      font-size: clamp(16px, 2vw, 18px);
       color: var(--text-2);
-      max-width: 480px;
-      margin: 0 auto 48px;
-      line-height: 1.65;
+      max-width: 460px;
+      margin: 0 auto 44px;
+      line-height: 1.7;
     }
 
     /* Download buttons */
@@ -218,24 +358,23 @@
       flex-wrap: wrap;
       gap: 12px;
       justify-content: center;
-      margin-bottom: 24px;
+      margin-bottom: 20px;
     }
 
     .btn {
       display: inline-flex;
       align-items: center;
       gap: 12px;
-      padding: 13px 22px;
-      border-radius: var(--radius);
+      padding: 12px 20px;
+      border-radius: 8px;
       font-size: 14px;
       font-weight: 500;
       transition: background 0.15s, border-color 0.15s, opacity 0.15s, transform 0.1s;
       cursor: pointer;
       text-align: left;
-      min-width: 196px;
+      min-width: 190px;
       border: 1px solid transparent;
     }
-
     .btn:active { transform: scale(0.98); }
 
     .btn-primary {
@@ -244,7 +383,6 @@
       border-color: var(--accent);
       font-weight: 700;
     }
-
     .btn-primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
 
     .btn-secondary {
@@ -252,51 +390,45 @@
       color: var(--text);
       border-color: var(--border);
     }
-
     .btn-secondary:hover { background: rgba(255,255,255,0.05); border-color: var(--border-hover); }
 
     .btn.recommended {
-      outline: 1px solid var(--accent);
+      outline: 2px solid var(--accent);
       outline-offset: 2px;
     }
-
-    .btn.loading { opacity: 0.45; pointer-events: none; }
+    .btn.loading { opacity: 0.4; pointer-events: none; }
 
     .btn-icon { flex-shrink: 0; width: 22px; height: 22px; }
-
     .btn-labels { display: flex; flex-direction: column; gap: 1px; }
     .btn-main   { font-size: 14px; font-weight: 600; line-height: 1.2; }
-    .btn-sub    { font-size: 11px; opacity: 0.65; line-height: 1.2; }
+    .btn-sub    { font-size: 11px; opacity: 0.6; line-height: 1.2; }
 
     #version-note {
-      font-size: 13px;
+      font-size: 12px;
       color: var(--text-3);
-      margin-bottom: 6px;
-      min-height: 20px;
+      margin-bottom: 8px;
+      min-height: 18px;
     }
-
     #version-note a { color: var(--text-2); text-decoration: underline; text-underline-offset: 3px; }
 
     /* Platform strip */
     .platform-strip {
-      margin-top: 64px;
+      margin-top: 60px;
       border-top: 1px solid var(--border);
       border-bottom: 1px solid var(--border);
-      padding: 14px 32px;
+      padding: 13px 32px;
       display: flex;
       align-items: center;
       justify-content: center;
       flex-wrap: wrap;
       gap: 4px 0;
     }
-
     .platform-strip .strip-item {
       font-size: 11px;
       font-variant: small-caps;
       letter-spacing: 0.5px;
       color: var(--text-3);
     }
-
     .platform-strip .sep {
       color: var(--text-3);
       font-size: 11px;
@@ -305,7 +437,6 @@
 
     /* ── FEATURES ── */
     #features { background: var(--bg); }
-
     .features-header { margin-bottom: 48px; }
 
     .features-grid {
@@ -314,15 +445,16 @@
       gap: 1px;
       background: var(--border);
       border: 1px solid var(--border);
+      border-radius: 12px;
       overflow: hidden;
     }
 
     .feature-card {
       background: var(--bg);
-      padding: 28px 24px;
+      padding: 28px 22px;
       display: flex;
       flex-direction: column;
-      gap: 14px;
+      gap: 12px;
     }
 
     .feature-icon {
@@ -330,6 +462,7 @@
       height: 36px;
       background: var(--accent-subtle);
       border: 1px solid var(--accent-border);
+      border-radius: 8px;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -338,8 +471,8 @@
     }
 
     .feature-title {
-      font-size: 15px;
-      font-weight: 600;
+      font-size: 14px;
+      font-weight: 700;
       letter-spacing: -0.3px;
       line-height: 1.3;
     }
@@ -350,12 +483,23 @@
       line-height: 1.65;
     }
 
-    @media (max-width: 900px) {
-      .features-grid { grid-template-columns: repeat(2, 1fr); }
+    .feature-tag {
+      display: inline-flex;
+      align-items: center;
+      padding: 2px 7px;
+      border-radius: 99px;
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: 0.8px;
+      text-transform: uppercase;
+      width: fit-content;
+      margin-top: auto;
     }
-    @media (max-width: 480px) {
-      .features-grid { grid-template-columns: 1fr; }
-    }
+    .feature-tag--new { background: rgba(74,222,128,.12); color: var(--accent); border: 1px solid rgba(74,222,128,.25); }
+    .feature-tag--beta { background: rgba(96,165,250,.1); color: var(--blue); border: 1px solid rgba(96,165,250,.25); }
+
+    @media (max-width: 900px) { .features-grid { grid-template-columns: repeat(2, 1fr); } }
+    @media (max-width: 480px) { .features-grid { grid-template-columns: 1fr; } }
 
     /* ── LIFECYCLE ── */
     #how-it-works {
@@ -363,26 +507,25 @@
       border-top: 1px solid var(--border);
       border-bottom: 1px solid var(--border);
     }
-
     .lifecycle-header { margin-bottom: 48px; }
 
     .lifecycle-strip {
       display: flex;
       border: 1px solid var(--border);
+      border-radius: 10px;
       overflow: hidden;
-      margin-bottom: 32px;
+      margin-bottom: 28px;
     }
 
     .lifecycle-phase {
       flex: 1;
-      padding: 24px 20px;
+      padding: 22px 18px;
       border-right: 1px solid var(--border);
       display: flex;
       flex-direction: column;
       gap: 8px;
       background: var(--bg);
     }
-
     .lifecycle-phase:last-child { border-right: none; }
 
     .phase-num {
@@ -393,8 +536,8 @@
     }
 
     .phase-name {
-      font-size: 15px;
-      font-weight: 600;
+      font-size: 14px;
+      font-weight: 700;
       letter-spacing: -0.3px;
     }
 
@@ -405,7 +548,7 @@
     }
 
     @media (max-width: 768px) {
-      .lifecycle-strip { flex-direction: column; }
+      .lifecycle-strip { flex-direction: column; border-radius: 8px; }
       .lifecycle-phase { border-right: none; border-bottom: 1px solid var(--border); }
       .lifecycle-phase:last-child { border-bottom: none; }
     }
@@ -413,37 +556,202 @@
     .stage-pills {
       display: flex;
       flex-wrap: wrap;
-      gap: 8px;
+      gap: 7px;
     }
 
     .stage-pill {
-      padding: 3px 9px;
+      padding: 3px 10px;
       border: 1px solid var(--border);
+      border-radius: 4px;
       font-size: 11px;
       color: var(--text-2);
-      font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
-      letter-spacing: 0.5px;
+      font-family: var(--mono);
+      letter-spacing: 0.3px;
+      transition: border-color 0.15s, color 0.15s;
     }
+    .stage-pill:hover { border-color: var(--accent-border); color: var(--accent); }
+
+    /* ── AI TOOLS ── */
+    #ai-tools {
+      background: var(--bg);
+      border-top: 1px solid var(--border);
+    }
+
+    .tools-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 16px;
+      margin-top: 48px;
+    }
+
+    .tool-card {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 22px 20px;
+      background: var(--surface);
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      transition: border-color 0.15s;
+    }
+    .tool-card:hover { border-color: var(--border-hover); }
+
+    .tool-card-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .tool-icon {
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+      flex-shrink: 0;
+    }
+
+    .tool-name { font-size: 14px; font-weight: 700; }
+    .tool-desc { font-size: 12px; color: var(--text-3); }
+
+    .tool-models {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .tool-model {
+      font-size: 11px;
+      font-family: var(--mono);
+      color: var(--text-2);
+      padding: 3px 8px;
+      background: rgba(255,255,255,0.04);
+      border-radius: 4px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    @media (max-width: 900px) { .tools-grid { grid-template-columns: repeat(2, 1fr); } }
+    @media (max-width: 480px) { .tools-grid { grid-template-columns: 1fr; } }
+
+    /* ── QUICK START ── */
+    #quick-start {
+      background: var(--surface);
+      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .quickstart-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 32px;
+      margin-top: 48px;
+      align-items: start;
+    }
+
+    @media (max-width: 768px) { .quickstart-grid { grid-template-columns: 1fr; } }
+
+    .qs-steps {
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+    }
+
+    .qs-step {
+      display: flex;
+      gap: 16px;
+      padding: 18px 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .qs-step:last-child { border-bottom: none; }
+
+    .qs-num {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: var(--accent-subtle);
+      border: 1px solid var(--accent-border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--accent);
+      flex-shrink: 0;
+      margin-top: 1px;
+    }
+
+    .qs-body { flex: 1; min-width: 0; }
+
+    .qs-title {
+      font-size: 14px;
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+
+    .qs-desc {
+      font-size: 13px;
+      color: var(--text-2);
+      line-height: 1.6;
+    }
+
+    .terminal-block {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      overflow: hidden;
+      background: rgba(0,0,0,0.4);
+    }
+
+    .terminal-titlebar {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 10px 14px;
+      background: rgba(255,255,255,0.04);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .terminal-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+    }
+    .terminal-dot--red    { background: #ff5f56; }
+    .terminal-dot--yellow { background: #ffbd2e; }
+    .terminal-dot--green  { background: #27c93f; }
+
+    .terminal-body {
+      padding: 18px 20px;
+      font-family: var(--mono);
+      font-size: 12.5px;
+      line-height: 2;
+    }
+
+    .t-comment { color: rgba(255,255,255,0.22); }
+    .t-prompt  { color: var(--accent); user-select: none; }
+    .t-cmd     { color: #fff; }
+    .t-out     { color: rgba(255,255,255,0.38); }
 
     /* ── TEAM ── */
     #team { background: var(--bg); }
-
     .team-header { margin-bottom: 48px; }
 
     .team-cards {
       display: flex;
-      gap: 24px;
+      gap: 20px;
       margin-bottom: 20px;
     }
 
-    @media (max-width: 640px) {
-      .team-cards { flex-direction: column; }
-    }
+    @media (max-width: 640px) { .team-cards { flex-direction: column; } }
 
     .team-card {
       flex: 1;
       border: 1px solid var(--border);
-      padding: 28px 28px 32px;
+      border-radius: 10px;
+      padding: 26px 26px 30px;
       background: var(--surface);
       display: flex;
       flex-direction: column;
@@ -459,28 +767,20 @@
       display: inline-flex;
       align-items: center;
       padding: 4px 10px;
+      border-radius: 6px;
       font-size: 10px;
       font-weight: 700;
       letter-spacing: 1.2px;
       text-transform: uppercase;
       width: fit-content;
     }
-
-    .role-badge.admin {
-      background: var(--accent);
-      color: #060D06;
-    }
-
-    .role-badge.member {
-      background: transparent;
-      color: var(--text-2);
-      border: 1px solid var(--border);
-    }
+    .role-badge.admin  { background: var(--accent); color: #060D06; }
+    .role-badge.member { background: transparent; color: var(--text-2); border: 1px solid var(--border); }
 
     .team-card h3 {
-      font-size: 18px;
+      font-size: 17px;
       font-weight: 700;
-      letter-spacing: -0.5px;
+      letter-spacing: -0.4px;
     }
 
     .team-steps {
@@ -522,34 +822,34 @@
     }
 
     .inline-code {
-      font-size: 12px;
-      background: rgba(255,255,255,0.06);
+      font-size: 11.5px;
+      background: rgba(255,255,255,0.07);
       padding: 1px 5px;
-      font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+      border-radius: 3px;
+      font-family: var(--mono);
     }
 
     /* ── PLATFORMS ── */
     #platforms {
-      background: var(--bg);
+      background: var(--surface);
       border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
     }
-
     .platforms-header { margin-bottom: 48px; }
 
     .platform-cards {
       display: grid;
       grid-template-columns: repeat(3, 1fr);
-      gap: 20px;
+      gap: 16px;
     }
 
-    @media (max-width: 768px) {
-      .platform-cards { grid-template-columns: 1fr; }
-    }
+    @media (max-width: 768px) { .platform-cards { grid-template-columns: 1fr; } }
 
     .platform-card {
       border: 1px solid var(--border);
-      padding: 28px 24px;
-      background: var(--surface);
+      border-radius: 10px;
+      padding: 26px 22px;
+      background: var(--bg);
       display: flex;
       flex-direction: column;
       gap: 18px;
@@ -573,16 +873,14 @@
 
     .platform-name {
       font-size: 15px;
-      font-weight: 600;
+      font-weight: 700;
       letter-spacing: -0.3px;
     }
-
     .platform-name-row {
       display: flex;
       align-items: center;
       gap: 8px;
     }
-
     .platform-req {
       font-size: 12px;
       color: var(--text-3);
@@ -601,36 +899,36 @@
       gap: 8px;
       padding: 9px 14px;
       border: 1px solid var(--border);
+      border-radius: 6px;
       font-size: 13px;
       color: var(--text-2);
-      background: var(--bg);
-      transition: border-color 0.15s, color 0.15s;
+      background: var(--surface);
+      transition: border-color 0.15s, color 0.15s, background 0.15s;
     }
-
-    .dl-link:hover { border-color: var(--border-hover); color: var(--text); }
-
-    .dl-link.loading { opacity: 0.4; pointer-events: none; }
-
+    .dl-link:hover { border-color: var(--border-hover); color: var(--text); background: var(--surface-2); }
+    .dl-link.loading { opacity: 0.35; pointer-events: none; }
     .dl-link svg { flex-shrink: 0; color: var(--text-3); }
 
     .platform-install-note {
       font-size: 12px;
       color: var(--text-3);
-      line-height: 1.7;
+      line-height: 1.75;
       border-top: 1px solid var(--border);
       padding-top: 16px;
     }
 
     .platform-install-note .code-block {
       display: block;
-      font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
-      background: rgba(255,255,255,0.04);
+      font-family: var(--mono);
+      background: rgba(0,0,0,0.4);
       border: 1px solid var(--border);
-      padding: 8px 12px;
+      border-radius: 6px;
+      padding: 9px 13px;
       margin: 8px 0;
       white-space: pre;
       font-size: 11px;
       color: var(--text-2);
+      overflow-x: auto;
     }
 
     .badge-new {
@@ -638,9 +936,9 @@
       align-items: center;
       padding: 2px 8px;
       border-radius: 99px;
-      font-size: 10px;
+      font-size: 9px;
       font-weight: 700;
-      letter-spacing: 0.5px;
+      letter-spacing: 0.8px;
       text-transform: uppercase;
       background: rgba(74,222,128,0.12);
       color: var(--green);
@@ -650,7 +948,12 @@
     /* ── FOOTER ── */
     footer {
       border-top: 1px solid var(--border);
-      padding: 28px 32px;
+      padding: 36px 32px;
+    }
+
+    .footer-inner {
+      max-width: 1100px;
+      margin: 0 auto;
       display: flex;
       align-items: center;
       justify-content: space-between;
@@ -660,10 +963,17 @@
 
     .footer-left {
       display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .footer-brand {
+      display: flex;
       align-items: center;
-      gap: 10px;
+      gap: 9px;
       font-size: 13px;
-      color: var(--text-3);
+      font-weight: 600;
+      color: var(--text-2);
     }
 
     .footer-logo {
@@ -677,47 +987,50 @@
       color: #060D06;
       flex-shrink: 0;
     }
+    .footer-logo svg { display: block; width: 13px; height: 13px; }
 
-    .footer-logo svg {
-      display: block;
-      width: 13px;
-      height: 13px;
+    .footer-copy {
+      font-size: 12px;
+      color: var(--text-3);
     }
 
-    .footer-right {
+    .footer-links {
       display: flex;
-      gap: 20px;
+      flex-wrap: wrap;
+      gap: 6px 20px;
+      align-items: center;
     }
 
-    .footer-right a {
+    .footer-links a {
       font-size: 13px;
       color: var(--text-3);
       transition: color 0.15s;
     }
+    .footer-links a:hover { color: var(--text-2); }
 
-    .footer-right a:hover { color: var(--text-2); }
-
-    @media (max-width: 480px) {
+    @media (max-width: 640px) {
       section { padding: 64px 20px; }
-      #hero { padding: 80px 20px 0; }
-      footer { padding: 24px 20px; }
+      #hero { padding: 72px 20px 0; }
+      footer { padding: 28px 20px; }
       nav { padding: 0 20px; }
+      .footer-inner { flex-direction: column; align-items: flex-start; }
     }
   </style>
 </head>
 <body>
 
+<!-- Skip navigation for accessibility -->
+<a href="#main-content" class="skip-link">Skip to content</a>
+
 <!-- NAV -->
-<nav>
-  <a class="nav-logo" href="#">
+<nav role="navigation" aria-label="Main navigation">
+  <a class="nav-logo" href="#" aria-label="Forge OS home">
     <div class="nav-logo-mark" aria-hidden="true">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-        <rect x="6"   y="4.5" width="3"  height="15"  rx="0.5" fill="currentColor"/>
-        <rect x="6"   y="4.5" width="12" height="2.8"  rx="0.5" fill="currentColor"/>
-        <rect x="6"   y="12"  width="9"  height="2.5"  rx="0.5" fill="currentColor"/>
-        <path transform="translate(18.5,5.1)"
-          d="M0,-1.6 C.22,-.52 .52,-.22 1.6,0 C.52,.22 .22,.52 0,1.6 C-.22,.52 -.52,.22 -1.6,0 C-.52,-.22 -.22,-.52 0,-1.6Z"
-          fill="currentColor" opacity="0.85"/>
+        <rect x="6"   y="4.5" width="3"  height="15" rx="0.5" fill="currentColor"/>
+        <rect x="6"   y="4.5" width="12" height="2.8" rx="0.5" fill="currentColor"/>
+        <rect x="6"   y="12"  width="9"  height="2.5" rx="0.5" fill="currentColor"/>
+        <path transform="translate(18.5,5.1)" d="M0,-1.6 C.22,-.52 .52,-.22 1.6,0 C.52,.22 .22,.52 0,1.6 C-.22,.52 -.52,.22 -1.6,0 C-.52,-.22 -.22,-.52 0,-1.6Z" fill="currentColor" opacity="0.85"/>
       </svg>
     </div>
     Forge OS
@@ -726,9 +1039,14 @@
     <div class="nav-text-links">
       <a href="#features">Features</a>
       <a href="#how-it-works">How it works</a>
-      <a href="#team">Team</a>
+      <a href="#ai-tools">AI Tools</a>
+      <a href="#platforms">Downloads</a>
     </div>
-    <a class="btn-github" href="https://github.com/saturday-connect/forge-os" target="_blank" rel="noopener">
+    <a class="nav-stars" id="nav-stars" href="https://github.com/saturday-connect/forge-os" target="_blank" rel="noopener noreferrer" aria-label="GitHub stars">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+      <span id="stars-count">GitHub</span>
+    </a>
+    <a class="btn-github" href="https://github.com/saturday-connect/forge-os" target="_blank" rel="noopener noreferrer" aria-label="View on GitHub">
       <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
         <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z" />
       </svg>
@@ -737,24 +1055,37 @@
   </div>
 </nav>
 
+<!-- WHAT'S NEW -->
+<div class="whats-new-strip" role="banner" aria-label="What's new">
+  <span class="badge">beta.25</span>
+  <div class="items">
+    <span class="whats-new-item">Local Preview — run built code with one click</span>
+    <span class="whats-new-item">Stuck build detection &amp; Stop/Restart</span>
+    <span class="whats-new-item">Semantic branch names + atomic commits</span>
+    <span class="whats-new-item">Phase deployment status model</span>
+  </div>
+  <a href="https://github.com/saturday-connect/forge-os/releases" target="_blank" rel="noopener noreferrer">Release notes →</a>
+</div>
+
 <!-- HERO -->
-<section id="hero">
+<main id="main-content">
+<section id="hero" aria-labelledby="hero-heading">
   <div class="container" style="display:flex;flex-direction:column;align-items:center;">
-    <div class="hero-badge">
+    <div class="hero-badge" aria-label="Status: Open source, free to use">
       <span class="pulse" aria-hidden="true"></span>
-      Open source &middot; Free to use
+      Open source &middot; Free forever
     </div>
 
-    <h1 class="hero-h1">
+    <h1 class="hero-h1" id="hero-heading">
       Build products,<br /><span class="accent">not just code</span>
     </h1>
 
     <p class="hero-sub">
-      Forge OS drives the full PDLC — requirements through deployment — with AI and a local dashboard.
+      Forge OS drives the full PDLC — requirements through deployment — with AI, a local dashboard, and no cloud lock-in.
     </p>
 
-    <div class="download-row">
-      <a id="btn-mac-arm" class="btn btn-primary loading" href="#downloads" aria-label="Download Forge OS for macOS Apple Silicon">
+    <div class="download-row" role="group" aria-label="Download Forge OS">
+      <a id="btn-mac-arm" class="btn btn-primary loading" href="https://github.com/saturday-connect/forge-os/releases" aria-label="Download Forge OS for macOS Apple Silicon">
         <svg class="btn-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
           <path d="M16.25 5.65a4.74 4.74 0 001.17-3.48 4.81 4.81 0 00-3.25 1.65 4.52 4.52 0 00-1.09 3.33 4 4 0 003.17-1.5zm2.73 8.07a4.88 4.88 0 012.35-4.13 5.05 5.05 0 00-3.97-2.17c-1.68-.17-3.26.98-4.14.98-.87 0-2.22-.96-3.65-.93A5.33 5.33 0 005.1 10.2C2.78 14.12 4.5 19.99 6.7 23.2c1.08 1.55 2.4 3.3 4.1 3.24 1.64-.07 2.26-.98 4.24-.98 1.97 0 2.54.98 4.26.95 1.77-.03 2.9-1.57 3.97-3.13a13.7 13.7 0 001.76-3.6 4.77 4.77 0 01-3.05-4.96z"/>
         </svg>
@@ -764,7 +1095,7 @@
         </span>
       </a>
 
-      <a id="btn-mac-intel" class="btn btn-secondary loading" href="#downloads" aria-label="Download Forge OS for macOS Intel">
+      <a id="btn-mac-intel" class="btn btn-secondary loading" href="https://github.com/saturday-connect/forge-os/releases" aria-label="Download Forge OS for macOS Intel">
         <svg class="btn-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
           <path d="M16.25 5.65a4.74 4.74 0 001.17-3.48 4.81 4.81 0 00-3.25 1.65 4.52 4.52 0 00-1.09 3.33 4 4 0 003.17-1.5zm2.73 8.07a4.88 4.88 0 012.35-4.13 5.05 5.05 0 00-3.97-2.17c-1.68-.17-3.26.98-4.14.98-.87 0-2.22-.96-3.65-.93A5.33 5.33 0 005.1 10.2C2.78 14.12 4.5 19.99 6.7 23.2c1.08 1.55 2.4 3.3 4.1 3.24 1.64-.07 2.26-.98 4.24-.98 1.97 0 2.54.98 4.26.95 1.77-.03 2.9-1.57 3.97-3.13a13.7 13.7 0 001.76-3.6 4.77 4.77 0 01-3.05-4.96z"/>
         </svg>
@@ -774,7 +1105,7 @@
         </span>
       </a>
 
-      <a id="btn-win" class="btn btn-secondary loading" href="#downloads" aria-label="Download Forge OS for Windows x64">
+      <a id="btn-win" class="btn btn-secondary loading" href="https://github.com/saturday-connect/forge-os/releases" aria-label="Download Forge OS for Windows x64">
         <svg class="btn-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
           <path d="M3 5.55L10.5 4.5V11H3V5.55zM11.5 4.35L22 2.8V11H11.5V4.35zM3 12H10.5V18.5L3 17.45V12zM11.5 12H22V20.7L11.5 19.2V12z"/>
         </svg>
@@ -784,7 +1115,7 @@
         </span>
       </a>
 
-      <a id="btn-linux" class="btn btn-secondary loading" href="#downloads" aria-label="Download Forge OS for Linux x64">
+      <a id="btn-linux" class="btn btn-secondary loading" href="https://github.com/saturday-connect/forge-os/releases" aria-label="Download Forge OS for Linux x64">
         <svg class="btn-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
           <path d="M12 2a7 7 0 00-7 7c0 2.1.9 4 2.3 5.3-.9 1.1-1.5 2.4-1.8 3.8-.4 1.4-.2 2.8.5 4.1.6 1.2 1.6 2.1 2.8 2.7-.4 1-.6 2-.6 3.1 0 .5 0 .9.1 1.3h7.4c.1-.4.1-.8.1-1.3 0-1-.2-2-.6-3.1 1.2-.6 2.2-1.5 2.8-2.7.7-1.3.9-2.7.5-4.1-.3-1.4-.9-2.7-1.8-3.8A7.03 7.03 0 0019 9a7 7 0 00-7-7zm-1.5 9.5a1.5 1.5 0 110-3 1.5 1.5 0 010 3zm3 0a1.5 1.5 0 110-3 1.5 1.5 0 010 3z"/>
         </svg>
@@ -795,134 +1126,147 @@
       </a>
     </div>
 
-    <p id="version-note"></p>
+    <p id="version-note" aria-live="polite"></p>
 
-    <div class="platform-strip">
-      <span class="strip-item">macOS 12+</span>
-      <span class="sep">&middot;</span>
-      <span class="strip-item">Windows 10+</span>
-      <span class="sep">&middot;</span>
-      <span class="strip-item">Ubuntu 20.04+</span>
-      <span class="sep">&middot;</span>
-      <span class="strip-item">Apache 2.0</span>
-      <span class="sep">&middot;</span>
-      <span class="strip-item">No cloud required</span>
+    <div class="platform-strip" role="list" aria-label="System requirements and license">
+      <span class="strip-item" role="listitem">macOS 12+</span>
+      <span class="sep" aria-hidden="true">&middot;</span>
+      <span class="strip-item" role="listitem">Windows 10+</span>
+      <span class="sep" aria-hidden="true">&middot;</span>
+      <span class="strip-item" role="listitem">Ubuntu 20.04+</span>
+      <span class="sep" aria-hidden="true">&middot;</span>
+      <span class="strip-item" role="listitem">Apache 2.0</span>
+      <span class="sep" aria-hidden="true">&middot;</span>
+      <span class="strip-item" role="listitem">No cloud required</span>
+      <span class="sep" aria-hidden="true">&middot;</span>
+      <span class="strip-item" role="listitem">100% local</span>
     </div>
   </div>
 </section>
 
 <!-- FEATURES -->
-<section id="features">
+<section id="features" aria-labelledby="features-heading">
   <div class="container">
     <div class="features-header">
       <span class="eyebrow">Capabilities</span>
-      <h2 class="section-heading">Everything from idea to shipped</h2>
-      <p class="section-sub">One tool drives the entire product delivery lifecycle.</p>
+      <h2 class="section-heading" id="features-heading">Everything from idea to shipped</h2>
+      <p class="section-sub">One tool drives the entire product delivery lifecycle — no stitching together a dozen SaaS tools.</p>
     </div>
 
-    <div class="features-grid">
-      <div class="feature-card">
+    <div class="features-grid" role="list">
+
+      <div class="feature-card" role="listitem">
         <div class="feature-icon" aria-hidden="true">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/>
-            <line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/>
-          </svg>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
         </div>
         <div class="feature-title">AI-generated docs</div>
-        <div class="feature-desc">Write ideas in Markdown; Forge generates requirements, design specs, and architecture docs through 11 structured stages.</div>
+        <div class="feature-desc">Write ideas in Markdown; Forge generates requirements, design specs, and architecture docs through 11 structured pipeline stages.</div>
       </div>
 
-      <div class="feature-card">
+      <div class="feature-card" role="listitem">
         <div class="feature-icon" aria-hidden="true">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <polyline points="9 11 12 14 22 4"/>
-            <path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/>
-          </svg>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
         </div>
         <div class="feature-title">Review &amp; gate system</div>
-        <div class="feature-desc">Every generated document must be reviewed and approved before the pipeline advances to the next stage.</div>
+        <div class="feature-desc">Every generated document must be reviewed and approved before the pipeline advances. File-level critique regeneration and gate sign-off included.</div>
       </div>
 
-      <div class="feature-card">
+      <div class="feature-card" role="listitem">
         <div class="feature-icon" aria-hidden="true">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <polyline points="16 18 22 12 16 6"/>
-            <polyline points="8 6 2 12 8 18"/>
-          </svg>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
         </div>
-        <div class="feature-title">Build generation</div>
-        <div class="feature-desc">Generates CI/CD pipelines, Dockerfiles, and env configs directly from your architecture docs.</div>
+        <div class="feature-title">Build &amp; CI generation</div>
+        <div class="feature-desc">Generates CI/CD pipelines, Dockerfiles, and env configs. Commits each component atomically with conventional commits and opens a PR.</div>
       </div>
 
-      <div class="feature-card">
+      <div class="feature-card" role="listitem">
         <div class="feature-icon" aria-hidden="true">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>
-          </svg>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
         </div>
-        <div class="feature-title">Multi-project</div>
-        <div class="feature-desc">Run Forge at the root of your repo and orchestrate multiple independent products from one dashboard.</div>
+        <div class="feature-title">Local Preview</div>
+        <div class="feature-desc">Auto-detects Docker Compose or your stack (FastAPI, Flask, Next.js). One-click run with live service health dots, port links, and streamed logs.</div>
+        <span class="feature-tag feature-tag--new">New in beta.25</span>
       </div>
 
-      <div class="feature-card">
+      <div class="feature-card" role="listitem">
         <div class="feature-icon" aria-hidden="true">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/>
-            <circle cx="9" cy="7" r="4"/>
-            <path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/>
-          </svg>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/><path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/></svg>
+        </div>
+        <div class="feature-title">Phase timeline</div>
+        <div class="feature-desc">Track delivery phases (MVP, v1.0, beta) parsed from roadmap docs. Merged, deployed, and in-progress statuses — with one-click deployment confirmation.</div>
+      </div>
+
+      <div class="feature-card" role="listitem">
+        <div class="feature-icon" aria-hidden="true">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/></svg>
+        </div>
+        <div class="feature-title">Stuck build detection</div>
+        <div class="feature-desc">Heartbeat ticker detects frozen git operations. Amber warning at 30s, prominent Stop button at 60s. Cancel kills the subprocess; Restart triggers a fresh branch.</div>
+        <span class="feature-tag feature-tag--new">New in beta.25</span>
+      </div>
+
+      <div class="feature-card" role="listitem">
+        <div class="feature-icon" aria-hidden="true">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
         </div>
         <div class="feature-title">Team collaboration</div>
-        <div class="feature-desc">Admins publish an org config once; every team member connects by entering the org name. Roles: admin, member, viewer.</div>
+        <div class="feature-desc">Admins publish an org config once. Every member connects by entering the org name. Roles: admin, member, viewer. Shared knowledge base across all projects.</div>
       </div>
 
-      <div class="feature-card">
+      <div class="feature-card" role="listitem">
         <div class="feature-icon" aria-hidden="true">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <polyline points="23 4 23 10 17 10"/>
-            <polyline points="1 20 1 14 7 14"/>
-            <path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/>
-          </svg>
-        </div>
-        <div class="feature-title">Silent auto-updates</div>
-        <div class="feature-desc">Ships as a self-updating desktop app. Background downloads, release notes in the restart prompt, retry on transient errors.</div>
-      </div>
-
-      <div class="feature-card">
-        <div class="feature-icon" aria-hidden="true">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
-            <path d="M7 11V7a5 5 0 0110 0v4"/>
-          </svg>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
         </div>
         <div class="feature-title">Deploy &amp; secrets</div>
-        <div class="feature-desc">Tracks required secrets, pushes them to GitHub via API, and reports environment readiness before you ship.</div>
+        <div class="feature-desc">Tracks required secrets, pushes them to GitHub via API, and reports environment readiness. Separate staging, production, and preview environments.</div>
       </div>
 
-      <div class="feature-card">
+      <div class="feature-card" role="listitem">
         <div class="feature-icon" aria-hidden="true">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <rect x="2" y="3" width="20" height="14" rx="2"/>
-            <path d="M8 21h8M12 17v4"/>
-          </svg>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
         </div>
-        <div class="feature-title">Cross-platform</div>
-        <div class="feature-desc">Native desktop app for macOS (Apple Silicon + Intel), Windows 10+, and Linux (AppImage). GitHub Device Flow auth — no plain-text credentials.</div>
+        <div class="feature-title">Knowledge base</div>
+        <div class="feature-desc">Export reviewed docs to a separate KB repo as a PR. AI distills global patterns, decisions, and learnings across all your projects over time.</div>
       </div>
+
+      <div class="feature-card" role="listitem">
+        <div class="feature-icon" aria-hidden="true">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        </div>
+        <div class="feature-title">Issue tracker</div>
+        <div class="feature-desc">Lightweight built-in tracker linked directly to your pipeline stages. Log bugs and tasks without leaving the dashboard — no JIRA required.</div>
+      </div>
+
+      <div class="feature-card" role="listitem">
+        <div class="feature-icon" aria-hidden="true">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/></svg>
+        </div>
+        <div class="feature-title">Multi-project</div>
+        <div class="feature-desc">Manage unlimited independent projects from one dashboard. Each has its own pipeline, review state, builds, and deployment config.</div>
+      </div>
+
+      <div class="feature-card" role="listitem">
+        <div class="feature-icon" aria-hidden="true">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+        </div>
+        <div class="feature-title">Cross-platform desktop</div>
+        <div class="feature-desc">Native app for macOS (Apple Silicon + Intel), Windows 10+, and Linux. Silent auto-updates. GitHub Device Flow auth — no plain-text credentials stored.</div>
+      </div>
+
     </div>
   </div>
 </section>
 
 <!-- LIFECYCLE -->
-<section id="how-it-works">
+<section id="how-it-works" aria-labelledby="lifecycle-heading">
   <div class="container">
     <div class="lifecycle-header">
       <span class="eyebrow">Lifecycle</span>
-      <h2 class="section-heading">From input to deploy</h2>
-      <p class="section-sub">A structured pipeline with AI at every stage and gates before each transition.</p>
+      <h2 class="section-heading" id="lifecycle-heading">From input to deploy</h2>
+      <p class="section-sub">A structured pipeline with AI at every stage, review gates at key transitions, and full observability throughout.</p>
     </div>
 
-    <div class="lifecycle-strip" role="list">
+    <div class="lifecycle-strip" role="list" aria-label="Delivery lifecycle phases">
       <div class="lifecycle-phase" role="listitem">
         <div class="phase-num">01</div>
         <div class="phase-name">Input</div>
@@ -941,38 +1285,193 @@
       <div class="lifecycle-phase" role="listitem">
         <div class="phase-num">04</div>
         <div class="phase-name">Build</div>
-        <div class="phase-desc">Generate build systems and CI/CD, commit, and open pull requests automatically</div>
+        <div class="phase-desc">Generate code, commit atomically with conventional commits, open PRs, and preview locally</div>
       </div>
       <div class="lifecycle-phase" role="listitem">
         <div class="phase-num">05</div>
         <div class="phase-name">Deploy</div>
-        <div class="phase-desc">Push secrets to GitHub, validate environments, and ship</div>
+        <div class="phase-desc">Push secrets to GitHub, validate environments, confirm live URL, track deployment status</div>
       </div>
     </div>
 
-    <div class="stage-pills" aria-label="Pipeline stages">
-      <span class="stage-pill">context</span>
-      <span class="stage-pill">requirements</span>
-      <span class="stage-pill">design</span>
-      <span class="stage-pill">analysis</span>
-      <span class="stage-pill">architecture</span>
-      <span class="stage-pill">delivery</span>
-      <span class="stage-pill">engineering</span>
-      <span class="stage-pill">quality</span>
-      <span class="stage-pill">operations</span>
-      <span class="stage-pill">release</span>
-      <span class="stage-pill">marketing</span>
+    <div class="stage-pills" role="list" aria-label="Pipeline stages">
+      <span class="stage-pill" role="listitem">context</span>
+      <span class="stage-pill" role="listitem">requirements</span>
+      <span class="stage-pill" role="listitem">design</span>
+      <span class="stage-pill" role="listitem">analysis</span>
+      <span class="stage-pill" role="listitem">architecture</span>
+      <span class="stage-pill" role="listitem">delivery</span>
+      <span class="stage-pill" role="listitem">engineering</span>
+      <span class="stage-pill" role="listitem">quality</span>
+      <span class="stage-pill" role="listitem">operations</span>
+      <span class="stage-pill" role="listitem">release</span>
+      <span class="stage-pill" role="listitem">marketing</span>
+    </div>
+  </div>
+</section>
+
+<!-- AI TOOLS -->
+<section id="ai-tools" aria-labelledby="tools-heading">
+  <div class="container">
+    <span class="eyebrow">AI Integrations</span>
+    <h2 class="section-heading" id="tools-heading">Works with the tools you already use</h2>
+    <p class="section-sub">Connect whichever AI tool is installed. Switch models per project without changing your workflow.</p>
+
+    <div class="tools-grid" role="list">
+
+      <div class="tool-card" role="listitem">
+        <div class="tool-card-header">
+          <div class="tool-icon" style="background:rgba(66,133,244,.12);">🔷</div>
+          <div>
+            <div class="tool-name">Gemini CLI</div>
+            <div class="tool-desc">Google · Default tool</div>
+          </div>
+        </div>
+        <div class="tool-models">
+          <div class="tool-model">gemini-2.5-pro</div>
+          <div class="tool-model">gemini-2.5-flash</div>
+          <div class="tool-model">gemini-3-pro-preview</div>
+          <div class="tool-model">gemini-3-flash-preview</div>
+          <div class="tool-model">gemini-2.5-flash-lite</div>
+        </div>
+      </div>
+
+      <div class="tool-card" role="listitem">
+        <div class="tool-card-header">
+          <div class="tool-icon" style="background:rgba(212,160,23,.12);">🟠</div>
+          <div>
+            <div class="tool-name">Claude Code</div>
+            <div class="tool-desc">Anthropic · CLI</div>
+          </div>
+        </div>
+        <div class="tool-models">
+          <div class="tool-model">claude-sonnet-4-6</div>
+          <div class="tool-model">claude-opus-4-7</div>
+          <div class="tool-model">claude-haiku-4-5</div>
+        </div>
+      </div>
+
+      <div class="tool-card" role="listitem">
+        <div class="tool-card-header">
+          <div class="tool-icon" style="background:rgba(16,185,129,.12);">⬛</div>
+          <div>
+            <div class="tool-name">Codex CLI</div>
+            <div class="tool-desc">OpenAI · Terminal</div>
+          </div>
+        </div>
+        <div class="tool-models">
+          <div class="tool-model">o4-mini</div>
+          <div class="tool-model">o3</div>
+          <div class="tool-model">gpt-5.5</div>
+          <div class="tool-model">gpt-4.1</div>
+          <div class="tool-model">gpt-4.1-mini</div>
+        </div>
+      </div>
+
+      <div class="tool-card" role="listitem">
+        <div class="tool-card-header">
+          <div class="tool-icon" style="background:rgba(100,100,255,.12);">🔵</div>
+          <div>
+            <div class="tool-name">OpenAI API</div>
+            <div class="tool-desc">OpenAI · Direct API</div>
+          </div>
+        </div>
+        <div class="tool-models">
+          <div class="tool-model">gpt-5.5</div>
+          <div class="tool-model">gpt-4o</div>
+          <div class="tool-model">gpt-4o-mini</div>
+          <div class="tool-model">o3-mini</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- QUICK START -->
+<section id="quick-start" aria-labelledby="qs-heading">
+  <div class="container">
+    <span class="eyebrow">Quick Start</span>
+    <h2 class="section-heading" id="qs-heading">Running in under 2 minutes</h2>
+    <p class="section-sub">Install the desktop app or run the CLI directly. No account. No API keys required to start.</p>
+
+    <div class="quickstart-grid">
+      <ol class="qs-steps" aria-label="Quick start steps">
+        <li class="qs-step">
+          <div class="qs-num" aria-hidden="true">1</div>
+          <div class="qs-body">
+            <div class="qs-title">Download &amp; open</div>
+            <div class="qs-desc">Get the installer for your platform from the Downloads section below. Run it — the app starts on first launch.</div>
+          </div>
+        </li>
+        <li class="qs-step">
+          <div class="qs-num" aria-hidden="true">2</div>
+          <div class="qs-body">
+            <div class="qs-title">Create a project</div>
+            <div class="qs-desc">Click <span class="inline-code">+ New Project</span> in the Projects view. Give it a name and Forge initializes the workspace.</div>
+          </div>
+        </li>
+        <li class="qs-step">
+          <div class="qs-num" aria-hidden="true">3</div>
+          <div class="qs-body">
+            <div class="qs-title">Add your idea</div>
+            <div class="qs-desc">Paste product notes in the Input tab — as rough as you like. One Markdown file is enough to start the pipeline.</div>
+          </div>
+        </li>
+        <li class="qs-step">
+          <div class="qs-num" aria-hidden="true">4</div>
+          <div class="qs-body">
+            <div class="qs-title">Run the pipeline</div>
+            <div class="qs-desc">Click <span class="inline-code">Generate All</span>. Forge runs all 11 stages and produces a complete product spec from your raw input.</div>
+          </div>
+        </li>
+        <li class="qs-step">
+          <div class="qs-num" aria-hidden="true">5</div>
+          <div class="qs-body">
+            <div class="qs-title">Build &amp; preview</div>
+            <div class="qs-desc">Review docs, approve gates, run <span class="inline-code">Build All</span> to generate code, then click <span class="inline-code">Run Locally</span> to see it live.</div>
+          </div>
+        </li>
+      </ol>
+
+      <div>
+        <div class="terminal-block" role="img" aria-label="Forge OS CLI commands example">
+          <div class="terminal-titlebar" aria-hidden="true">
+            <div class="terminal-dot terminal-dot--red"></div>
+            <div class="terminal-dot terminal-dot--yellow"></div>
+            <div class="terminal-dot terminal-dot--green"></div>
+          </div>
+          <div class="terminal-body">
+            <div class="t-comment"># Install Forge CLI</div>
+            <div><span class="t-prompt">$ </span><span class="t-cmd">./forge init</span></div>
+            <div class="t-out">Initialized .forge/ in current directory</div>
+            <div>&nbsp;</div>
+            <div class="t-comment"># Generate all pipeline stages</div>
+            <div><span class="t-prompt">$ </span><span class="t-cmd">./forge pipeline</span></div>
+            <div class="t-out">✓ context · requirements · design …</div>
+            <div class="t-out">✓ architecture · engineering · qa</div>
+            <div>&nbsp;</div>
+            <div class="t-comment"># Start the dashboard</div>
+            <div><span class="t-prompt">$ </span><span class="t-cmd">./forge dashboard 8080</span></div>
+            <div class="t-out">Dashboard ready → http://localhost:8080</div>
+            <div>&nbsp;</div>
+            <div class="t-comment"># Upgrade after rebuild</div>
+            <div><span class="t-prompt">$ </span><span class="t-cmd">./forge upgrade</span></div>
+            <div class="t-out">Runtime scripts updated, data preserved</div>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 </section>
 
 <!-- TEAM -->
-<section id="team">
+<section id="team" aria-labelledby="team-heading">
   <div class="container">
     <div class="team-header">
       <span class="eyebrow">Team setup</span>
-      <h2 class="section-heading">One install, one org, whole team connected</h2>
-      <p class="section-sub">Admin registers once. Every team member connects in under a minute.</p>
+      <h2 class="section-heading" id="team-heading">One install, one org, whole team connected</h2>
+      <p class="section-sub">Admin registers once. Every team member connects in under a minute with their GitHub credentials.</p>
     </div>
 
     <div class="team-cards">
@@ -1035,15 +1534,17 @@
   </div>
 </section>
 
-<!-- PLATFORMS -->
-<section id="platforms">
+<!-- PLATFORMS / DOWNLOADS -->
+<section id="platforms" aria-labelledby="platforms-heading">
   <div class="container">
     <div class="platforms-header">
       <span class="eyebrow">Supported platforms</span>
-      <h2 class="section-heading">macOS &middot; Windows &middot; Linux</h2>
+      <h2 class="section-heading" id="platforms-heading">macOS &middot; Windows &middot; Linux</h2>
+      <p class="section-sub" style="margin-top:8px;">All builds are published automatically on every version bump. Download links below always reflect the latest release.</p>
     </div>
 
     <div class="platform-cards">
+
       <!-- macOS -->
       <div class="platform-card">
         <div class="platform-card-header">
@@ -1059,26 +1560,22 @@
         </div>
 
         <div class="platform-downloads">
-          <a id="dl-mac-arm" class="dl-link loading" href="#downloads" aria-label="Download macOS Apple Silicon PKG">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
-            </svg>
+          <a id="dl-mac-arm" class="dl-link loading" href="https://github.com/saturday-connect/forge-os/releases" aria-label="Download macOS Apple Silicon PKG installer">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
             Apple Silicon (.pkg)
           </a>
-          <a id="dl-mac-intel" class="dl-link loading" href="#downloads" aria-label="Download macOS Intel PKG">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
-            </svg>
+          <a id="dl-mac-intel" class="dl-link loading" href="https://github.com/saturday-connect/forge-os/releases" aria-label="Download macOS Intel PKG installer">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
             Intel x64 (.pkg)
           </a>
         </div>
 
         <div class="platform-install-note">
-          Download and run the installer. The installer automatically configures the app to run on your system.<br /><br />
-          <strong style="color:var(--accent);font-weight:600;">Current beta Gatekeeper fix:</strong> until the app is Apple notarized, macOS may show <span class="inline-code">"Forge OS" is damaged and can't be opened</span>. After installing, run this once in Terminal:
+          The .pkg installer auto-clears the quarantine attribute — no Terminal steps needed for most users.<br /><br />
+          <strong style="color:var(--accent);font-weight:600;">If Gatekeeper blocks the app:</strong> until notarized, macOS may show <span class="inline-code">"Forge OS" is damaged</span>. Run once:
           <span class="code-block">xattr -cr "/Applications/Forge OS.app"
 open "/Applications/Forge OS.app"</span>
-          Or open <span class="inline-code">System Settings</span> &rarr; <span class="inline-code">Privacy &amp; Security</span>, scroll to <span class="inline-code">Security</span>, and click <span class="inline-code">Open Anyway</span> for Forge OS if macOS shows that option.
+          Or go to <span class="inline-code">System Settings → Privacy &amp; Security → Open Anyway</span>.
         </div>
       </div>
 
@@ -1097,16 +1594,16 @@ open "/Applications/Forge OS.app"</span>
         </div>
 
         <div class="platform-downloads">
-          <a id="dl-win" class="dl-link loading" href="#downloads" aria-label="Download Windows x64 installer">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
-            </svg>
+          <a id="dl-win" class="dl-link loading" href="https://github.com/saturday-connect/forge-os/releases" aria-label="Download Windows x64 NSIS installer">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
             x64 NSIS Installer (.exe)
           </a>
         </div>
 
         <div class="platform-install-note">
-          Run the installer. Windows SmartScreen may warn — click "More info &rarr; Run anyway" for unsigned builds.
+          Run the installer. Windows SmartScreen may warn on unsigned builds — click <span class="inline-code">More info → Run anyway</span>.
+          <br /><br />
+          Auto-updates are delivered silently once the app is running.
         </div>
       </div>
 
@@ -1121,17 +1618,15 @@ open "/Applications/Forge OS.app"</span>
           <div>
             <div class="platform-name-row">
               <div class="platform-name">Linux</div>
-              <span class="badge-new">New</span>
+              <span class="badge-new">AppImage</span>
             </div>
             <div class="platform-req">Ubuntu 20.04+ / Debian / Fedora (x64)</div>
           </div>
         </div>
 
         <div class="platform-downloads">
-          <a id="dl-linux" class="dl-link loading" href="#downloads" aria-label="Download Linux AppImage">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
-            </svg>
+          <a id="dl-linux" class="dl-link loading" href="https://github.com/saturday-connect/forge-os/releases" aria-label="Download Linux x64 AppImage">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
             x64 AppImage (.AppImage)
           </a>
         </div>
@@ -1140,36 +1635,53 @@ open "/Applications/Forge OS.app"</span>
           Make the file executable, then run it:
           <span class="code-block">chmod +x forge-os-*.AppImage
 ./forge-os-*.AppImage</span>
-          Secure credential storage requires <span class="inline-code">libsecret</span>:<br />
+          For secure credential storage:
           <span class="code-block">sudo apt install libsecret-1-0</span>
         </div>
       </div>
+
     </div>
   </div>
 </section>
+</main>
 
 <!-- FOOTER -->
-<footer>
-  <div class="footer-left">
-    <div class="footer-logo" aria-label="Forge OS">
-      <svg width="13" height="13" viewBox="0 0 24 24" fill="none">
-        <rect x="6"   y="4.5" width="3"  height="15"  rx="0.5" fill="currentColor"/>
-        <rect x="6"   y="4.5" width="12" height="2.8"  rx="0.5" fill="currentColor"/>
-        <rect x="6"   y="12"  width="9"  height="2.5"  rx="0.5" fill="currentColor"/>
-      </svg>
+<footer role="contentinfo">
+  <div class="footer-inner">
+    <div class="footer-left">
+      <div class="footer-brand">
+        <div class="footer-logo" aria-hidden="true">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none">
+            <rect x="6" y="4.5" width="3"  height="15" rx="0.5" fill="currentColor"/>
+            <rect x="6" y="4.5" width="12" height="2.8" rx="0.5" fill="currentColor"/>
+            <rect x="6" y="12"  width="9"  height="2.5" rx="0.5" fill="currentColor"/>
+          </svg>
+        </div>
+        Forge OS
+      </div>
+      <div class="footer-copy">
+        &copy; 2026 <a href="https://github.com/saturday-connect" target="_blank" rel="noopener noreferrer" style="color:var(--text-3);text-decoration:underline;text-underline-offset:2px;">Saturday Connect</a>
+        &nbsp;&middot;&nbsp; Apache 2.0 License
+      </div>
     </div>
-    <span>Forge OS &middot; Apache 2.0 &middot; &copy; 2026</span>
-  </div>
-  <div class="footer-right">
-    <a href="https://github.com/saturday-connect/forge-os" target="_blank" rel="noopener">GitHub</a>
-    <a href="https://github.com/saturday-connect/forge-os/releases" target="_blank" rel="noopener">Releases</a>
-    <a href="https://github.com/saturday-connect/forge-os/issues" target="_blank" rel="noopener">Issues</a>
+    <div class="footer-links">
+      <a href="https://github.com/saturday-connect/forge-os" target="_blank" rel="noopener noreferrer">GitHub</a>
+      <a href="https://github.com/saturday-connect/forge-os/releases" target="_blank" rel="noopener noreferrer">Releases</a>
+      <a href="https://github.com/saturday-connect/forge-os/issues" target="_blank" rel="noopener noreferrer">Issues</a>
+      <a href="https://github.com/saturday-connect/forge-os/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">License</a>
+      <a href="https://github.com/saturday-connect" target="_blank" rel="noopener noreferrer">Saturday Connect</a>
+    </div>
   </div>
 </footer>
 
 <script>
-  var REPO = 'saturday-connect/forge-os'
+(function () {
+  'use strict'
 
+  var REPO = 'saturday-connect/forge-os'
+  var GH_API = 'https://api.github.com/repos/' + REPO
+
+  // ── OS / arch detection ───────────────────────────────────────────────────
   function detectOS() {
     var p = (navigator.platform || '').toLowerCase()
     var ua = navigator.userAgent.toLowerCase()
@@ -1182,14 +1694,13 @@ open "/Applications/Forge OS.app"</span>
   function detectArch() {
     var ua = (navigator.userAgent || '').toLowerCase()
     var uaData = navigator.userAgentData
-    if (uaData && Array.isArray(uaData.brands)) {
+    if (uaData) {
       var platform = (uaData.platform || '').toLowerCase()
-      var arches = Array.isArray(uaData.architecture) ? uaData.architecture : [uaData.architecture]
-      var archText = arches.filter(Boolean).join(' ').toLowerCase()
+      var archText = (uaData.architecture || '').toLowerCase()
       if (platform.includes('mac') && (archText.includes('arm') || archText.includes('aarch'))) return 'arm64'
       if (archText.includes('x86') || archText.includes('amd64') || archText.includes('x64')) return 'x64'
     }
-    if (ua.includes('arm64') || ua.includes('aarch64') || ua.includes('apple silicon')) return 'arm64'
+    if (ua.includes('arm64') || ua.includes('aarch64')) return 'arm64'
     if (ua.includes('x86_64') || ua.includes('win64') || ua.includes('x64') || ua.includes('amd64')) return 'x64'
     return null
   }
@@ -1200,13 +1711,13 @@ open "/Applications/Forge OS.app"</span>
       var ext = gl && gl.getExtension('WEBGL_debug_renderer_info')
       if (!ext) return false
       return (gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) || '').includes('Apple')
-    } catch(e) { return false }
+    } catch (e) { return false }
   }
 
+  // ── Asset matching ─────────────────────────────────────────────────────────
   function pickAsset(assets, patterns) {
-    for (var i = 0; i < patterns.length; i += 1) {
-      var regex = patterns[i]
-      var found = assets.find(function(a){ return regex.test(a.name) })
+    for (var i = 0; i < patterns.length; i++) {
+      var found = assets.find(function (a) { return patterns[i].test(a.name) })
       if (found) return found
     }
     return null
@@ -1214,16 +1725,13 @@ open "/Applications/Forge OS.app"</span>
 
   function getPreferredAssets(assets) {
     var byId = {
-      macArm: pickAsset(assets, [/arm64.*\.pkg$/i, /arm64.*\.dmg$/i, /arm64.*\.zip$/i]),
-      macIntel: pickAsset(assets, [/(x64|amd64).*\.pkg$/i, /(x64|amd64).*\.dmg$/i, /(x64|amd64).*\.zip$/i, /\.pkg$/i, /\.dmg$/i]),
-      win: pickAsset(assets, [/(x64|amd64).*\.exe$/i, /\.exe$/i, /(x64|amd64).*\.msi$/i, /\.msi$/i]),
-      linux: pickAsset(assets, [/(x64|amd64).*\.AppImage$/i, /\.AppImage$/i, /(x64|amd64).*\.(deb|rpm|tar\.gz)$/i, /\.(deb|rpm|tar\.gz)$/i])
+      macArm:   pickAsset(assets, [/arm64.*\.pkg$/i, /arm64.*\.dmg$/i, /arm64.*\.zip$/i]),
+      macIntel: pickAsset(assets, [/(x64|amd64).*\.pkg$/i, /(x64|amd64).*\.dmg$/i, /\.pkg$/i, /\.dmg$/i]),
+      win:      pickAsset(assets, [/(x64|amd64).*\.exe$/i, /\.exe$/i, /(x64|amd64).*\.msi$/i]),
+      linux:    pickAsset(assets, [/(x64|amd64).*\.AppImage$/i, /\.AppImage$/i, /\.(deb|rpm)$/i]),
     }
 
-    var os = detectOS()
-    var arch = detectArch()
-    var primary = null
-
+    var os = detectOS(), arch = detectArch(), primary = null
     if (os === 'mac') {
       var preferArm = arch === 'arm64' || (arch == null && isAppleSilicon())
       primary = preferArm ? (byId.macArm || byId.macIntel) : (byId.macIntel || byId.macArm)
@@ -1232,10 +1740,45 @@ open "/Applications/Forge OS.app"</span>
     } else if (os === 'linux') {
       primary = byId.linux
     }
-
     return { byId: byId, primary: primary }
   }
 
+  // ── Version comparison (semver-aware) ──────────────────────────────────────
+  function parseTag(tag) {
+    var m = String(tag || '').match(/^v?(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?$/)
+    if (!m) return null
+    return {
+      major: +m[1], minor: +m[2], patch: +m[3],
+      pre: m[4] ? m[4].split('.') : [],
+    }
+  }
+
+  function comparePre(a, b) {
+    if (!a.length && !b.length) return 0
+    if (!a.length) return 1
+    if (!b.length) return -1
+    var len = Math.max(a.length, b.length)
+    for (var i = 0; i < len; i++) {
+      if (a[i] == null) return -1
+      if (b[i] == null) return 1
+      var an = /^\d+$/.test(a[i]), bn = /^\d+$/.test(b[i])
+      if (an && bn) { var d = +a[i] - +b[i]; if (d) return d }
+      else if (an !== bn) return an ? -1 : 1
+      else if (a[i] !== b[i]) return a[i] > b[i] ? 1 : -1
+    }
+    return 0
+  }
+
+  function compareVersions(l, r) {
+    var lv = parseTag(l.tag_name), rv = parseTag(r.tag_name)
+    if (lv && rv) {
+      var d = (lv.major - rv.major) || (lv.minor - rv.minor) || (lv.patch - rv.patch) || comparePre(lv.pre, rv.pre)
+      if (d) return d
+    } else if (lv || rv) return lv ? 1 : -1
+    return new Date(l.published_at || 0) - new Date(r.published_at || 0)
+  }
+
+  // ── DOM helpers ─────────────────────────────────────────────────────────────
   function setBtn(id, asset, fallback) {
     var el = document.getElementById(id)
     if (!el) return
@@ -1243,76 +1786,66 @@ open "/Applications/Forge OS.app"</span>
     el.classList.remove('loading')
   }
 
-  function parseReleaseTag(tag) {
-    var match = String(tag || '').match(/^v?(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?$/)
-    if (!match) return null
-    var prerelease = match[4] ? match[4].split('.') : []
-    return {
-      major: Number(match[1]),
-      minor: Number(match[2]),
-      patch: Number(match[3]),
-      prerelease: prerelease
-    }
-  }
-
-  function comparePrerelease(left, right) {
-    if (!left.length && !right.length) return 0
-    if (!left.length) return 1
-    if (!right.length) return -1
-    var length = Math.max(left.length, right.length)
-    for (var i = 0; i < length; i += 1) {
-      if (left[i] == null) return -1
-      if (right[i] == null) return 1
-      var leftNumber = /^\d+$/.test(left[i])
-      var rightNumber = /^\d+$/.test(right[i])
-      if (leftNumber && rightNumber) {
-        var numericDiff = Number(left[i]) - Number(right[i])
-        if (numericDiff) return numericDiff
-      } else if (leftNumber !== rightNumber) {
-        return leftNumber ? -1 : 1
-      } else if (left[i] !== right[i]) {
-        return left[i] > right[i] ? 1 : -1
+  function markRecommended(preferred, byId) {
+    if (!preferred) return
+    var map = { 'btn-mac-arm': byId.macArm, 'btn-mac-intel': byId.macIntel, 'btn-win': byId.win, 'btn-linux': byId.linux }
+    for (var id in map) {
+      if (map[id] && map[id].browser_download_url === preferred.browser_download_url) {
+        var el = document.getElementById(id)
+        if (!el) continue
+        el.classList.remove('btn-secondary')
+        el.classList.add('btn-primary', 'recommended')
+        if (el.parentElement) el.parentElement.prepend(el)
+        var sub = el.querySelector('.btn-sub')
+        if (sub) sub.textContent = 'Recommended for your system'
+        break
       }
     }
-    return 0
   }
 
-  function compareReleaseVersions(left, right) {
-    var leftVersion = parseReleaseTag(left.tag_name)
-    var rightVersion = parseReleaseTag(right.tag_name)
-    if (leftVersion && rightVersion) {
-      var versionDiff =
-        leftVersion.major - rightVersion.major ||
-        leftVersion.minor - rightVersion.minor ||
-        leftVersion.patch - rightVersion.patch ||
-        comparePrerelease(leftVersion.prerelease, rightVersion.prerelease)
-      if (versionDiff) return versionDiff
-    } else if (leftVersion || rightVersion) {
-      return leftVersion ? 1 : -1
+  // ── GitHub API fetch with retry ─────────────────────────────────────────────
+  async function apiFetch(url, attempt) {
+    attempt = attempt || 0
+    try {
+      var res = await fetch(url, { headers: { Accept: 'application/vnd.github+json' } })
+      if (res.status === 403 && attempt < 2) {
+        // Rate limited — wait and retry once
+        await new Promise(function (r) { setTimeout(r, 2000) })
+        return apiFetch(url, attempt + 1)
+      }
+      if (!res.ok) throw new Error('HTTP ' + res.status)
+      return res.json()
+    } catch (e) {
+      if (attempt < 2) {
+        await new Promise(function (r) { setTimeout(r, 1500 * (attempt + 1)) })
+        return apiFetch(url, attempt + 1)
+      }
+      throw e
     }
-
-    return new Date(left.published_at || left.created_at || 0) - new Date(right.published_at || right.created_at || 0)
   }
 
-  async function fetchCurrentRelease() {
-    var res = await fetch('https://api.github.com/repos/' + REPO + '/releases?per_page=100', {
-      headers: { Accept: 'application/vnd.github+json' }
-    })
-    if (!res.ok) throw new Error('no releases')
-    var releases = await res.json()
-    var candidates = releases
-      .filter(function(item){ return item && !item.draft })
-      .filter(function(item){ return (item.assets || []).length > 0 })
-      .sort(function(left, right){ return compareReleaseVersions(right, left) })
-    var release = candidates[0]
-    if (!release) throw new Error('no published release')
-    return release
+  // ── Load GitHub stars ───────────────────────────────────────────────────────
+  async function loadStars() {
+    try {
+      var data = await apiFetch(GH_API)
+      var count = data.stargazers_count || 0
+      var label = count >= 1000 ? (count / 1000).toFixed(1) + 'k' : String(count)
+      var el = document.getElementById('stars-count')
+      if (el) el.textContent = label + ' stars'
+    } catch (e) { /* non-fatal */ }
   }
 
+  // ── Load latest release ─────────────────────────────────────────────────────
   async function loadRelease() {
     var fallback = 'https://github.com/' + REPO + '/releases'
     try {
-      var release = await fetchCurrentRelease()
+      var releases = await apiFetch(GH_API + '/releases?per_page=100')
+      var candidates = releases
+        .filter(function (r) { return r && !r.draft && (r.assets || []).length > 0 })
+        .sort(function (a, b) { return compareVersions(b, a) })
+
+      if (!candidates.length) throw new Error('no releases')
+      var release = candidates[0]
       var assets = release.assets || []
       var tag = release.tag_name || ''
       var preferred = getPreferredAssets(assets)
@@ -1327,36 +1860,26 @@ open "/Applications/Forge OS.app"</span>
       setBtn('dl-win',        byId.win,      fallback)
       setBtn('dl-linux',      byId.linux,    fallback)
 
-      if (preferred.primary) {
-        var primaryIds = ['btn-mac-arm', 'btn-mac-intel', 'btn-win', 'btn-linux']
-        for (var i = 0; i < primaryIds.length; i += 1) {
-          var candidate = document.getElementById(primaryIds[i])
-          if (candidate && candidate.href === preferred.primary.browser_download_url) {
-            candidate.classList.remove('btn-secondary')
-            candidate.classList.add('btn-primary', 'recommended')
-            if (candidate.parentElement) candidate.parentElement.prepend(candidate)
-            var sub = candidate.querySelector('.btn-sub')
-            if (sub) sub.textContent = 'Recommended for your system'
-            break
-          }
-        }
-      }
+      markRecommended(preferred.primary, byId)
 
       var note = document.getElementById('version-note')
       if (note && tag) {
-        note.innerHTML = tag + ' &nbsp;&middot;&nbsp; <a href="https://github.com/' + REPO + '/releases" target="_blank" rel="noopener">All releases →</a>'
+        note.innerHTML = tag + ' &nbsp;&middot;&nbsp; <a href="https://github.com/' + REPO + '/releases" target="_blank" rel="noopener noreferrer">All releases →</a>'
       }
-    } catch(e) {
-      document.querySelectorAll('.btn.loading').forEach(function(el){ el.classList.remove('loading') })
-      document.querySelectorAll('.dl-link.loading').forEach(function(el){ el.classList.remove('loading') })
+    } catch (e) {
+      // Gracefully degrade — remove loading state and show link
+      document.querySelectorAll('.btn.loading, .dl-link.loading').forEach(function (el) {
+        el.classList.remove('loading')
+      })
       var note = document.getElementById('version-note')
-      if (note) {
-        note.innerHTML = '<a href="https://github.com/' + REPO + '/releases" target="_blank" rel="noopener">View all releases on GitHub →</a>'
-      }
+      if (note) note.innerHTML = '<a href="' + fallback + '" target="_blank" rel="noopener noreferrer">View all releases on GitHub →</a>'
     }
   }
 
+  // Bootstrap
   loadRelease()
+  loadStars()
+})()
 </script>
 </body>
 </html>
