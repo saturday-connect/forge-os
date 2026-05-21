@@ -255,6 +255,8 @@ async function loadState() {
     }
     _prevAllReviewed = nowAllReviewed;
 
+    // Kick off tool detection in background — doesn't block render
+    fetchToolStatus(false).then(function() { renderAll(); });
     renderAll();
   } catch (e) {
     console.warn('State fetch failed', e);
@@ -834,6 +836,32 @@ function renderOverview() {
   const attentionEl = document.getElementById('overview-attention');
   const isRunning = processing.status === 'running';
 
+  // Tool-not-installed is a system-level blocker — show before phase cards
+  const _ovTool = state.tool || 'gemini';
+  const _ovToolInfo = detectedTools ? detectedTools[_ovTool] : null;
+  const _ovToolMissing = detectedTools && _ovToolInfo && !_ovToolInfo.installed;
+  if (_ovToolMissing && !isRunning && phase !== 'input') {
+    const _cmd = _ovToolInfo.install_cmd || '';
+    attentionEl.innerHTML = '<div class="overview-attention-card overview-attention-card--error">'
+      + '<div class="overview-attention-icon overview-attention-icon--error">' + icon('alert', 15) + '</div>'
+      + '<div class="overview-attention-body">'
+      + '<div class="overview-attention-title">' + escapeHtml(_ovToolInfo.label) + ' is not installed</div>'
+      + '<div class="overview-attention-desc">The configured AI tool is not available on this machine. Generation will fail until it is installed.</div>'
+      + (_cmd
+        ? '<div class="install-banner-cmd-row" style="margin:8px 0 4px">'
+          + '<code class="install-banner-cmd">' + escapeHtml(_cmd) + '</code>'
+          + '<button class="btn btn-ghost btn-xs install-banner-copy" onclick="copyToClipboard(\'' + _cmd.replace(/\\/g,'\\\\').replace(/'/g,"\\'") + '\',this)">' + icon('copy', 11) + ' Copy</button>'
+          + '</div>'
+        : '')
+      + '<div class="overview-attention-actions">'
+      + '<button class="btn btn-secondary btn-sm" onclick="switchView(\'settings\')">' + icon('settings', 12) + ' Configure Tool</button>'
+      + (_ovToolInfo.install_url ? '<a href="' + escapeHtml(_ovToolInfo.install_url) + '" target="_blank" class="btn btn-ghost btn-sm">' + icon('link', 12) + ' Install docs</a>' : '')
+      + '</div>'
+      + '</div>'
+      + '</div>';
+    return;
+  }
+
   if (isRunning) {
     const stageLabel = (STAGES.find(s => s.key === processing.stage) || {}).label || processing.stage || 'pipeline';
     attentionEl.innerHTML = `
@@ -1292,6 +1320,47 @@ function renderGenerate() {
   const summary = state.stageReviewSummary || {};
   const hasInputs = (state.rawInputs || []).length > 0;
 
+  // ── Tool gate — blocks generation when configured CLI is not installed ─────
+  const toolGateEl = document.getElementById('generate-tool-gate');
+  const currentTool = state.tool || 'gemini';
+  const toolInfo = detectedTools ? detectedTools[currentTool] : null;
+  const toolMissing = detectedTools && toolInfo && !toolInfo.installed;
+
+  if (toolGateEl) {
+    if (toolMissing) {
+      const cmd = toolInfo.install_cmd || '';
+      const url = toolInfo.install_url || '';
+      toolGateEl.style.display = '';
+      toolGateEl.innerHTML = '<div class="tool-gate-card">'
+        + '<div class="tool-gate-icon">'
+        + '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>'
+        + '</div>'
+        + '<div class="tool-gate-body">'
+        + '<div class="tool-gate-title">' + escapeHtml(toolInfo.label) + ' is not installed</div>'
+        + '<div class="tool-gate-desc">Generation requires ' + escapeHtml(toolInfo.label) + ' to be installed on this machine. Install it, then click Refresh and generation will unlock.</div>'
+        + (cmd
+          ? '<div class="tool-gate-cmd-row"><code class="tool-gate-cmd">' + escapeHtml(cmd) + '</code>'
+            + '<button class="btn btn-ghost btn-xs" onclick="copyToClipboard(\'' + cmd.replace(/\\/g,'\\\\').replace(/'/g,"\\'") + '\', this)">' + icon('copy', 11) + ' Copy</button>'
+            + '</div>'
+          : '')
+        + '<div class="tool-gate-actions">'
+        + '<button class="btn btn-primary btn-sm" onclick="refreshToolStatus()">'
+        + '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0115-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 01-15 6.7L3 16"/></svg>'
+        + ' Refresh Detection</button>'
+        + '<button class="btn btn-ghost btn-sm" onclick="switchView(\'settings\')">'
+        + icon('settings', 12) + ' Change Tool</button>'
+        + (url ? '<a href="' + escapeHtml(url) + '" target="_blank" class="btn btn-ghost btn-sm">' + icon('link', 12) + ' Install docs</a>' : '')
+        + '</div>'
+        + '</div>'
+        + '</div>';
+      // Disable generation while tool is missing
+      const genAllBtn = document.getElementById('btn-generate-all');
+      if (genAllBtn) genAllBtn.disabled = true;
+    } else {
+      toolGateEl.style.display = 'none';
+    }
+  }
+
   // ── Input gate ────────────────────────────────────────────────────────────
   const gateEl = document.getElementById('generate-gate');
   const generateTopEl = document.querySelector('.generate-top');
@@ -1488,6 +1557,17 @@ function renderGenerate() {
 }
 
 async function generate(stage) {
+  // Guard: configured CLI must be installed
+  const _gTool = state.tool || 'gemini';
+  if (detectedTools) {
+    const _gInfo = detectedTools[_gTool];
+    if (_gInfo && !_gInfo.installed) {
+      showToast(_gInfo.label + ' is not installed — go to Settings to install it or choose a different tool', 'error');
+      switchView('generate');
+      return;
+    }
+  }
+
   // Show spinner on the card immediately WITHOUT touching state.processing.
   // Mutating state.processing would corrupt lastProcessingStatus and fire false toasts.
   optimisticRunning = { stage: stage === 'all' ? null : stage, startTime: Date.now() };
@@ -3588,24 +3668,138 @@ async function updateIssue(id, data) {
 }
 
 // ============================================================
-// Settings
+// Tool detection (shared across Settings, Generate, Overview)
 // ============================================================
-let detectedTools = null;  // populated from /api/tools on settings open
+let detectedTools = null;
+let _toolsFetchedAt = 0;
+const _TOOLS_TTL_MS = 30000; // re-detect if >30 s old
 
-async function fetchDetectedTools() {
+async function fetchToolStatus(force) {
+  const now = Date.now();
+  if (!force && detectedTools && (now - _toolsFetchedAt) < _TOOLS_TTL_MS) return;
   try {
     const res = await apiFetch('/api/tools');
     detectedTools = await res.json();
-    // Rebuild tool dropdown to show only installed tools (with badge for uninstalled)
-    const toolSel = document.getElementById('settings-tool');
-    if (!toolSel) return;
-    const currentTool = getValue('settings-tool') || state.tool || 'gemini';
-    toolSel.innerHTML = Object.entries(detectedTools).map(([id, info]) => {
-      const badge = info.installed ? '' : ' (not installed)';
-      return `<option value="${id}" ${id === currentTool ? 'selected' : ''} ${info.installed ? '' : 'style="color:var(--text-3)"'}>${info.label}${badge}</option>`;
-    }).join('');
-    populateModelDropdown(currentTool, state.model || '');
+    _toolsFetchedAt = now;
   } catch(e) {}
+}
+
+async function refreshToolStatus() {
+  const btn = document.getElementById('btn-refresh-tools');
+  if (btn) { btn.disabled = true; btn.textContent = 'Detecting…'; }
+  await fetchToolStatus(true);
+  if (btn) { btn.disabled = false; btn.innerHTML = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0115-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 01-15 6.7L3 16"/></svg> Refresh'; }
+  if (currentView === 'settings') renderToolPicker();
+  if (currentView === 'generate') renderGenerate();
+  if (currentView === 'overview') renderOverview();
+}
+
+function _toolReady(toolId) {
+  // Returns true when a tool is usable (installed CLI or API-only mode)
+  if (!detectedTools) return true; // unknown → optimistic, don't block
+  const info = detectedTools[toolId];
+  if (!info) return false;
+  return info.installed;
+}
+
+function copyToClipboard(text, btn) {
+  navigator.clipboard.writeText(text).then(function() {
+    if (btn) {
+      const orig = btn.innerHTML;
+      btn.innerHTML = icon('check', 11) + ' Copied';
+      btn.classList.add('btn--copied');
+      setTimeout(function() { btn.innerHTML = orig; btn.classList.remove('btn--copied'); }, 2000);
+    }
+  }).catch(function() {
+    showToast('Copy failed — select and copy manually', 'error');
+  });
+}
+
+// ============================================================
+// Settings
+// ============================================================
+
+function renderToolPicker() {
+  const pickerEl = document.getElementById('settings-tool-picker');
+  if (!pickerEl) return;
+
+  if (!detectedTools) {
+    pickerEl.innerHTML = '<div class="tool-picker-loading">Detecting installed CLIs…</div>';
+    fetchToolStatus(false).then(function() { renderToolPicker(); });
+    return;
+  }
+
+  const currentTool = getValue('settings-tool') || state.tool || 'gemini';
+
+  pickerEl.innerHTML = Object.entries(detectedTools).map(function(_entry) {
+    var id = _entry[0], info = _entry[1];
+    var isActive = id === currentTool;
+    var installed = info.installed;
+    var apiOnly = info.api_only;
+    var statusText = apiOnly ? 'API key' : (installed ? 'Installed' : 'Not installed');
+    var statusCls  = (installed || apiOnly) ? 'tool-option-status--ok' : 'tool-option-status--missing';
+    var statusDot  = (installed || apiOnly)
+      ? '<svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>'
+      : '<svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
+    return '<div class="tool-option' + (isActive ? ' tool-option--active' : '') + ((!installed && !apiOnly) ? ' tool-option--missing' : '') + '"'
+      + ' data-tool="' + id + '" onclick="selectTool(\'' + id + '\')">'
+      + '<div class="tool-option-name">' + escapeHtml(info.label) + '</div>'
+      + '<div class="tool-option-status ' + statusCls + '">'
+      + statusDot + ' ' + statusText
+      + '</div>'
+      + '</div>';
+  }).join('');
+
+  // sync hidden input
+  const hidden = document.getElementById('settings-tool');
+  if (hidden && !hidden.value) hidden.value = currentTool;
+
+  _updateInstallBanner(currentTool);
+  populateModelDropdown(currentTool, state.model || '');
+}
+
+function selectTool(toolId) {
+  // Update hidden value
+  const hidden = document.getElementById('settings-tool');
+  if (hidden) hidden.value = toolId;
+  // Update visual state
+  document.querySelectorAll('.tool-option').forEach(function(el) {
+    el.classList.toggle('tool-option--active', el.dataset.tool === toolId);
+  });
+  _updateInstallBanner(toolId);
+  populateModelDropdown(toolId, '');
+}
+
+function _updateInstallBanner(toolId) {
+  const banner = document.getElementById('settings-install-banner');
+  if (!banner || !detectedTools) return;
+  const info = detectedTools[toolId];
+  if (!info || info.installed) { banner.style.display = 'none'; return; }
+
+  if (info.api_only) {
+    banner.style.display = '';
+    banner.innerHTML = '<div class="install-banner install-banner--info">'
+      + '<div class="install-banner-title">' + icon('info', 13) + ' ' + escapeHtml(info.label) + ' uses a direct API key</div>'
+      + '<div class="install-banner-body">' + escapeHtml(info.setup_hint || 'Set your API key in your environment') + '.</div>'
+      + (info.install_url ? '<div class="install-banner-footer"><a href="' + escapeHtml(info.install_url) + '" target="_blank" class="install-banner-link">Platform docs →</a></div>' : '')
+      + '</div>';
+    return;
+  }
+
+  // CLI not installed
+  const cmd = info.install_cmd || '';
+  banner.style.display = '';
+  banner.innerHTML = '<div class="install-banner">'
+    + '<div class="install-banner-title">' + icon('alert', 13) + ' ' + escapeHtml(info.label) + ' is not installed</div>'
+    + (cmd ? '<div class="install-banner-cmd-row">'
+        + '<code class="install-banner-cmd">' + escapeHtml(cmd) + '</code>'
+        + '<button class="btn btn-ghost btn-xs install-banner-copy" onclick="copyToClipboard(\'' + cmd.replace(/'/g, "\\'") + '\', this)">' + icon('copy', 11) + ' Copy</button>'
+        + '</div>' : '')
+    + '<div class="install-banner-footer">'
+    + (info.install_url ? '<a href="' + escapeHtml(info.install_url) + '" target="_blank" class="install-banner-link">Install docs →</a>' : '')
+    + '<span class="install-banner-hint">After installing, click Refresh to detect it.</span>'
+    + '</div>'
+    + '</div>';
 }
 
 function populateModelDropdown(tool, currentModel) {
@@ -3614,16 +3808,25 @@ function populateModelDropdown(tool, currentModel) {
   if (!sel) return;
   const toolInfo = detectedTools ? detectedTools[tool] : null;
   const opts = toolInfo ? toolInfo.models : [];
-  sel.innerHTML = opts.map(o =>
-    `<option value="${o.id}" ${o.id === currentModel ? 'selected' : ''}>${o.label}</option>`
-  ).join('');
-  if (currentModel && !opts.find(o => o.id === currentModel)) {
-    sel.insertAdjacentHTML('afterbegin', `<option value="${currentModel}" selected>${currentModel}</option>`);
+  sel.innerHTML = opts.map(function(o) {
+    return '<option value="' + o.id + '"' + (o.id === currentModel ? ' selected' : '') + '>' + escapeHtml(o.label) + '</option>';
+  }).join('');
+  if (currentModel && !opts.find(function(o) { return o.id === currentModel; })) {
+    sel.insertAdjacentHTML('afterbegin', '<option value="' + escapeHtml(currentModel) + '" selected>' + escapeHtml(currentModel) + '</option>');
   }
-  const installed = toolInfo ? toolInfo.installed : true;
-  if (hint) hint.textContent = installed
-    ? `Passed as -m flag to the ${tool} CLI`
-    : `⚠ ${tool} is not installed — generation will fail`;
+  if (hint) {
+    const info = toolInfo || {};
+    if (info.api_only) {
+      hint.textContent = 'Direct API call — no CLI subprocess';
+      hint.className = 'settings-model-hint';
+    } else if (info.installed === false) {
+      hint.textContent = '⚠ ' + (info.label || tool) + ' not installed — generation will fail';
+      hint.className = 'settings-model-hint settings-model-hint--warn';
+    } else {
+      hint.textContent = 'Passed as -m flag to the ' + tool + ' CLI';
+      hint.className = 'settings-model-hint';
+    }
+  }
 }
 
 function renderSettings() {
@@ -3632,10 +3835,18 @@ function renderSettings() {
 
   setValue('settings-product-name', state.project_name || '');
   const vl = document.getElementById('settings-version-label');
-  if (vl) vl.textContent = state.version ? `v${state.version}` : 'v—';
-  setValue('settings-tool', state.tool || 'gemini');
-  populateModelDropdown(state.tool || 'gemini', state.model || '');
-  fetchDetectedTools();
+  if (vl) vl.textContent = state.version ? 'v' + state.version : 'v—';
+
+  // Seed hidden tool value from state, then render picker (picker reads it)
+  const hidden = document.getElementById('settings-tool');
+  if (hidden) hidden.value = state.tool || 'gemini';
+
+  if (detectedTools) {
+    renderToolPicker();
+  } else {
+    fetchToolStatus(false).then(function() { renderToolPicker(); });
+  }
+
   setValue('settings-repo-url', git.repo_url || '');
   setValue('settings-username', git.username || '');
   setValue('settings-email', git.email || '');
@@ -3702,6 +3913,13 @@ function switchView(name) {
   if (navEl) navEl.classList.add('active');
 
   if (name === 'knowledge') renderKnowledge();
+  // Re-detect tools when user opens Generate or Settings — they may have just installed a CLI
+  if (name === 'generate') {
+    fetchToolStatus(true).then(function() { renderGenerate(); });
+  }
+  if (name === 'settings') {
+    fetchToolStatus(true).then(function() { renderToolPicker(); });
+  }
 }
 
 // ============================================================

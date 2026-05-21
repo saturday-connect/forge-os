@@ -1,6 +1,8 @@
 {
   "gemini": {
     "label": "Gemini CLI",
+    "install_cmd": "npm install -g @google/gemini-cli",
+    "install_url": "https://github.com/google-gemini/gemini-cli",
     "models": [
       {"id": "gemini-3-flash-preview",  "label": "Gemini 3 Flash (recommended)"},
       {"id": "gemini-3-pro-preview",    "label": "Gemini 3 Pro"},
@@ -11,6 +13,8 @@
   },
   "claude": {
     "label": "Claude Code CLI",
+    "install_cmd": "npm install -g @anthropic-ai/claude-code",
+    "install_url": "https://github.com/anthropics/claude-code",
     "models": [
       {"id": "claude-sonnet-4-6",        "label": "Claude Sonnet 4.6 (recommended)"},
       {"id": "claude-opus-4-7",          "label": "Claude Opus 4.7"},
@@ -19,6 +23,8 @@
   },
   "codex": {
     "label": "Codex CLI",
+    "install_cmd": "npm install -g @openai/codex",
+    "install_url": "https://github.com/openai/codex",
     "models": [
       {"id": "o4-mini",      "label": "o4 Mini (recommended)"},
       {"id": "o3",           "label": "o3"},
@@ -28,7 +34,10 @@
     ]
   },
   "openai": {
-    "label": "OpenAI API (direct)",
+    "label": "OpenAI API",
+    "api_only": true,
+    "install_url": "https://platform.openai.com/docs/quickstart",
+    "setup_hint": "Set the OPENAI_API_KEY environment variable",
     "models": [
       {"id": "gpt-5.5",     "label": "GPT-5.5"},
       {"id": "gpt-4o",      "label": "GPT-4o"},

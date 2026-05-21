@@ -1676,12 +1676,12 @@ class ForgeHandler(BaseHTTPRequestHandler):
         if path == "/api/tools":
             result = {}
             for tool_id, info in KNOWN_TOOLS.items():
-                found = shutil.which(tool_id)
+                api_only = bool(info.get("api_only", False))
+                found = shutil.which(tool_id) if not api_only else None
                 result[tool_id] = {
-                    "installed": bool(found),
+                    **info,
+                    "installed": bool(found) or api_only,
                     "path": found,
-                    "label": info["label"],
-                    "models": info["models"],
                 }
             self._json_response(200, result)
             return
