@@ -150,6 +150,8 @@ BUILD_STATUS_PUSHING = "pushing"
 BUILD_STATUS_PUSHED = "pushed"
 BUILD_STATUS_PR_CREATED = "pr_created"
 BUILD_STATUS_MERGED = "merged"
+BUILD_STATUS_LOCAL = "local"           # committed locally; no remote configured
+BUILD_STATUS_VALIDATING = "validating" # running syntax / test / docker-config checks
 
 # ---------------------------------------------------------------------------
 # Gate status values

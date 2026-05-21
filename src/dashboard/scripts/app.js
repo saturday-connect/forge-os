@@ -2186,6 +2186,8 @@ const BUILD_STATUS_LABELS = {
   pushing:    'Pushing…',
   committed:  'Committed',
   branched:   'Branched',
+  validating: 'Validating…',
+  local:      'Local Build',
   pending:    'Pending',
   error:      'Error',
 };
@@ -2196,6 +2198,8 @@ const BUILD_STEP_ICONS = {
   pushing:    'cloudUp',
   committed:  'gitBranch',
   branched:   'gitBranch',
+  local:      'server',
+  validating: 'clock',
   pending:    'clock',
   error:      'xCircle',
 };
@@ -2309,10 +2313,14 @@ function renderBuild() {
           </svg>
         </div>
         <div class="build-gate-body">
-          <div class="build-gate-title">Git repository not configured</div>
-          <div class="build-gate-desc">A repository URL and default branch are needed to commit and open a pull request. Add them in Settings.</div>
+          <div class="build-gate-title">Git not configured — local builds only</div>
+          <div class="build-gate-desc">No remote repository set. You can still commit locally and run validation (syntax check, tests, docker config). Configure a repo to push and open a PR.</div>
           <div class="build-gate-actions">
-            <button class="btn btn-primary btn-sm" onclick="switchView('settings')">Open Settings</button>
+            <button class="btn btn-secondary btn-sm" onclick="startLocalBuild()">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+              Commit &amp; Validate Locally
+            </button>
+            <button class="btn btn-ghost btn-sm" onclick="switchView('settings')">Configure Git →</button>
           </div>
         </div>
       </div>`;
@@ -2406,8 +2414,51 @@ function renderBuild() {
 
     const copyBtn = `<button class="btn btn-ghost btn-sm" onclick="navigator.clipboard.writeText('${escapeHtml(b.branch)}')" style="margin-left:4px;padding:2px 6px;" title="Copy branch name">${icon('clipboardCopy',11)}</button>`;
 
+    // ── Validation results card ─────────────────────────────────────────────
+    const validCard = (() => {
+      const v = b.validation;
+      if (!v || v.status === 'skipped') return '';
+      const vColor = v.status === 'passed' ? 'var(--primary)' : v.status === 'failed' ? '#f87171' : 'var(--text-3)';
+      const vBg    = v.status === 'passed' ? 'rgba(74,222,128,.07)' : v.status === 'failed' ? 'rgba(248,113,113,.08)' : 'var(--bg-2)';
+      const parts = [];
+      const syn = v.syntax || {};
+      if (syn.status === 'passed') parts.push(`${icon('checkCircle',11)} ${syn.checked} Python files OK`);
+      else if (syn.status === 'failed') parts.push(`${icon('xCircle',11)} Syntax: ${syn.errors.slice(0,1).join('; ')}`);
+      const tst = v.tests || {};
+      if (tst.status === 'passed')  parts.push(`${icon('checkCircle',11)} ${tst.passed} tests passed`);
+      else if (tst.status === 'failed')  parts.push(`${icon('xCircle',11)} ${tst.failed} test(s) failed`);
+      else if (tst.status === 'timeout') parts.push(`${icon('clock',11)} Tests timed out`);
+      const dkr = v.docker || {};
+      if (dkr.status === 'passed') parts.push(`${icon('checkCircle',11)} Docker config OK`);
+      else if (dkr.status === 'failed') parts.push(`${icon('xCircle',11)} Docker config invalid`);
+      const testOut = tst.output ? `
+        <details style="margin-top:6px;"><summary style="font-size:10px;color:var(--text-3);cursor:pointer;">Test output</summary>
+          <pre style="margin-top:4px;font-size:10px;color:var(--text-2);background:var(--bg-3,var(--bg-2));padding:8px;border-radius:4px;overflow-x:auto;max-height:200px;">${escapeHtml(tst.output)}</pre>
+        </details>` : '';
+      const synErrs = syn.errors && syn.errors.length ? `
+        <details style="margin-top:6px;"><summary style="font-size:10px;color:var(--text-3);cursor:pointer;">Syntax errors (${syn.errors.length})</summary>
+          <pre style="margin-top:4px;font-size:10px;color:#f87171;background:var(--bg-2);padding:8px;border-radius:4px;overflow-x:auto;max-height:120px;">${escapeHtml(syn.errors.join('\n'))}</pre>
+        </details>` : '';
+      return `
+        <div style="padding:8px 12px;background:${vBg};border:1px solid ${vColor};border-radius:6px;margin-top:8px;">
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+            <span style="font-size:11px;font-weight:700;color:${vColor};white-space:nowrap;">Validation ${v.status.toUpperCase()}</span>
+            <span style="font-size:11px;color:var(--text-2);">${parts.join(' &nbsp;·&nbsp; ') || 'No checks ran'}</span>
+          </div>
+          ${synErrs}${testOut}
+        </div>`;
+    })();
+
+    // ── "Push to Git" nudge for local builds once git gets configured ────────
+    const localPushNudge = (b.status === 'local' && hasGit) ? `
+      <div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:rgba(74,222,128,.05);border:1px solid rgba(74,222,128,.2);border-radius:6px;margin-top:8px;font-size:11px;color:var(--text-2);">
+        ${icon('cloudUp',13)}
+        <span>Git is now configured — you can push this local build.</span>
+        <button class="btn btn-secondary btn-xs" style="margin-left:auto;" onclick="startReviewAndPush()">Push to Git</button>
+      </div>` : '';
+
     return `
-      <div class="build-history-item" ${isLive ? 'style="border-color:var(--blue)"' : ''}>
+      <div class="build-history-item" ${isLive ? 'style="border-color:var(--blue)"' : b.status === 'local' ? 'style="border-color:rgba(74,222,128,.3)"' : ''}>
         <div class="build-history-header">
           <span class="badge badge-${b.status}">${statusLabel}</span>
           <span class="build-branch">${escapeHtml(b.branch)}</span>
@@ -2416,6 +2467,8 @@ function renderBuild() {
         </div>
         ${liveProgress}
         ${prCard}
+        ${validCard}
+        ${localPushNudge}
         ${logs ? `<details style="margin-top:8px;"><summary style="font-size:11px;color:var(--text-3);cursor:pointer;">Build log (${(b.log||[]).length} lines)</summary><div class="build-log" style="margin-top:4px;">${escapeHtml(logs)}</div></details>` : ''}
       </div>
     `;
@@ -2500,6 +2553,22 @@ async function startReviewAndPush() {
     showToast('Review failed to start', 'error');
     btn.disabled = false;
     btn.innerHTML = `${icon('eye',14)} Review &amp; Push`;
+  }
+}
+
+// Local-only build: skip diff review, go straight to commit+validate
+async function startLocalBuild() {
+  try {
+    const res = await apiFetch('/api/build', { method: 'POST', body: JSON.stringify({ action: 'push' }) });
+    const d = await res.json();
+    if (d.status === 'started') {
+      showToast('Local build started — validating generated code…', 'info');
+      setTimeout(loadState, 2000);
+    } else {
+      showToast(d.error || 'Could not start local build', 'error');
+    }
+  } catch (e) {
+    showToast('Local build failed to start', 'error');
   }
 }
 

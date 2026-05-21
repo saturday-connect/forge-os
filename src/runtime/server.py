@@ -18,9 +18,11 @@ from constants import (
     ALL_GATE_NAMES,
     ALL_STAGE_DIRS,
     BUILD_STATUS_COMMITTED,
+    BUILD_STATUS_LOCAL,
     BUILD_STATUS_PUSHED,
     BUILD_STATUS_PR_CREATED,
     BUILD_STATUS_MERGED,
+    BUILD_STATUS_VALIDATING,
     BUILD_STEP_DIRS,
     BUILD_STEP_KEYS,
     CACHE_CONTROL_NO_CACHE,
@@ -2529,6 +2531,116 @@ class ForgeHandler(BaseHTTPRequestHandler):
             return
 
         if path == "/api/build":
+
+            def _run_local_validation(repo_root, copied_dirs, vlogs):
+                """Syntax-check Python files, run pytest, and validate docker-compose config.
+                Returns a structured validation dict stored on the build entry."""
+                import sys as _sys
+                import re as _vr
+                vresult = {
+                    "status": "skipped",
+                    "ran_at": datetime.now().isoformat(),
+                    "syntax": {"status": "skipped", "checked": 0, "errors": []},
+                    "tests":  {"status": "skipped", "passed": 0, "failed": 0, "output": ""},
+                    "docker": {"status": "skipped"},
+                }
+
+                # ── 1. Python syntax check ──────────────────────────────────
+                py_files = []
+                for d in copied_dirs:
+                    dpath = os.path.join(repo_root, d)
+                    if not os.path.isdir(dpath):
+                        continue
+                    for root_, _, fnames in os.walk(dpath):
+                        for fn in fnames:
+                            if fn.endswith(".py"):
+                                py_files.append(os.path.join(root_, fn))
+
+                if py_files:
+                    syntax_errors = []
+                    for fp in py_files:
+                        try:
+                            sr = subprocess.run(
+                                [_sys.executable, "-m", "py_compile", fp],
+                                capture_output=True, text=True, timeout=10
+                            )
+                            if sr.returncode != 0:
+                                rel = os.path.relpath(fp, repo_root)
+                                syntax_errors.append(f"{rel}: {sr.stderr.strip()[:200]}")
+                        except (subprocess.TimeoutExpired, OSError):
+                            pass
+                    if syntax_errors:
+                        vresult["syntax"] = {"status": "failed", "checked": len(py_files), "errors": syntax_errors}
+                        vlogs.append(f"Syntax: FAILED — {len(syntax_errors)} error(s) in {len(py_files)} Python files")
+                    else:
+                        vresult["syntax"] = {"status": "passed", "checked": len(py_files), "errors": []}
+                        vlogs.append(f"Syntax: passed — {len(py_files)} Python files OK")
+
+                # ── 2. Run pytest if tests/ was generated ───────────────────
+                if "tests" in copied_dirs:
+                    tests_dir = os.path.join(repo_root, "tests")
+                    if os.path.isdir(tests_dir):
+                        try:
+                            req_file = os.path.join(tests_dir, "requirements.txt")
+                            if os.path.exists(req_file):
+                                subprocess.run(
+                                    [_sys.executable, "-m", "pip", "install", "-r", req_file,
+                                     "-q", "--disable-pip-version-check"],
+                                    capture_output=True, text=True, timeout=120, cwd=tests_dir
+                                )
+                            pr = subprocess.run(
+                                [_sys.executable, "-m", "pytest", tests_dir,
+                                 "--tb=short", "-q", "--no-header", "--timeout=30"],
+                                capture_output=True, text=True, timeout=180, cwd=repo_root
+                            )
+                            out = (pr.stdout + pr.stderr)[:3000]
+                            passed = failed = 0
+                            pm = _vr.search(r'(\d+) passed', out)
+                            if pm: passed = int(pm.group(1))
+                            fm = _vr.search(r'(\d+) failed', out)
+                            if fm: failed = int(fm.group(1))
+                            em = _vr.search(r'(\d+) error', out)
+                            if em: failed += int(em.group(1))
+                            ts = "passed" if pr.returncode == 0 else "failed"
+                            vresult["tests"] = {"status": ts, "passed": passed, "failed": failed, "output": out}
+                            vlogs.append(f"Tests: {ts} ({passed} passed, {failed} failed)")
+                        except subprocess.TimeoutExpired:
+                            vresult["tests"] = {"status": "timeout", "passed": 0, "failed": 0, "output": "Test run timed out after 180s"}
+                            vlogs.append("Tests: timed out")
+                        except Exception as ve:
+                            vresult["tests"] = {"status": "skipped", "passed": 0, "failed": 0, "output": str(ve)[:200]}
+                            vlogs.append(f"Tests: skipped ({ve})")
+
+                # ── 3. Docker compose config syntax check ───────────────────
+                if "infra" in copied_dirs:
+                    infra_dir = os.path.join(repo_root, "infra")
+                    compose_file = None
+                    for cf in ["docker-compose.yml", "docker-compose.yaml", "compose.yml", "compose.yaml"]:
+                        c = os.path.join(infra_dir, cf)
+                        if os.path.exists(c):
+                            compose_file = c
+                            break
+                    if compose_file:
+                        try:
+                            dr = subprocess.run(
+                                ["docker", "compose", "-f", compose_file, "config", "--quiet"],
+                                capture_output=True, text=True, timeout=30
+                            )
+                            ds = "passed" if dr.returncode == 0 else "failed"
+                            vresult["docker"] = {"status": ds, "error": dr.stderr.strip()[:500] if dr.returncode != 0 else ""}
+                            vlogs.append(f"Docker compose config: {ds}")
+                        except (subprocess.TimeoutExpired, FileNotFoundError):
+                            vresult["docker"] = {"status": "skipped"}
+                            vlogs.append("Docker config: skipped (docker not available)")
+
+                # ── Overall status ───────────────────────────────────────────
+                sub = [vresult["syntax"]["status"], vresult["tests"]["status"], vresult["docker"]["status"]]
+                if "failed" in sub:
+                    vresult["status"] = "failed"
+                elif any(s == "passed" for s in sub):
+                    vresult["status"] = "passed"
+                return vresult
+
             proj = load_project_state()
             git_cfg = proj.get("git", {})
             repo_url = git_cfg.get("repo_url", "")
@@ -2607,6 +2719,17 @@ class ForgeHandler(BaseHTTPRequestHandler):
                                 _shutil.copytree(src, dst, dirs_exist_ok=True)
                                 copied_dirs.append(dest_name)
                                 logs.append(f"Copied .forge/15-build/{step_key}/ -> {dest_name}/")
+
+                    # ── Local validation (syntax + tests + docker config) ────
+                    if copied_dirs:
+                        build_entry["status"] = BUILD_STATUS_VALIDATING
+                        save_build_progress(build_entry)
+                        logs.append("Running local validation…")
+                        validation = _run_local_validation(REPO_ROOT, copied_dirs, logs)
+                        build_entry["validation"] = validation
+                        logs.append(f"Validation complete: {validation['status']}")
+                    else:
+                        build_entry["validation"] = {"status": "skipped", "syntax": {"status": "skipped"}, "tests": {"status": "skipped"}, "docker": {"status": "skipped"}}
 
                     project_name = proj.get("project_name", "") or os.path.basename(REPO_ROOT)
                     dir_descriptions = {
@@ -2827,7 +2950,14 @@ class ForgeHandler(BaseHTTPRequestHandler):
                         else:
                             build_entry["status"] = "error"
                     else:
-                        build_entry["status"] = "committed"
+                        # No remote configured — build lives locally only
+                        build_entry["status"] = BUILD_STATUS_LOCAL
+                        val_status = build_entry.get("validation", {}).get("status", "skipped")
+                        logs.append(
+                            f"No git remote configured — build committed locally "
+                            f"(branch: {branch_name}, validation: {val_status}). "
+                            "Configure a repo URL in Settings to push."
+                        )
                 except Exception as e:
                     logs.append(f"Error: {e}")
                     build_entry["status"] = "error"
