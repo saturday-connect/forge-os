@@ -2102,9 +2102,25 @@ async function runBuildStep(step, phaseId) {
 async function openBuildCodePanel(step) {
   buildCodePanelStep = step;
   const panel = document.getElementById('build-code-panel');
-  const title = document.getElementById('build-code-panel-title');
+
+  // Stamp panel structure if not already present
+  if (!document.getElementById('build-file-tree')) {
+    panel.innerHTML = `
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+        <span id="build-code-panel-title" style="font-size:13px;font-weight:700;color:var(--text);"></span>
+        <button class="btn btn-ghost btn-sm" onclick="closeBuildCodePanel()">Close</button>
+      </div>
+      <div style="display:flex;gap:12px;height:480px;overflow:hidden;">
+        <div id="build-file-tree" style="width:220px;flex-shrink:0;overflow-y:auto;border-right:1px solid var(--border);padding-right:8px;"></div>
+        <div style="flex:1;overflow:auto;">
+          <pre id="build-file-content" style="margin:0;font-family:var(--mono);font-size:11px;line-height:1.6;color:var(--text-2);white-space:pre;tab-size:2;"></pre>
+        </div>
+      </div>`;
+  }
+
   panel.style.display = 'block';
-  title.textContent = BUILD_STEPS_META[step]?.label + ' — Generated Files';
+  document.getElementById('build-code-panel-title').textContent =
+    (BUILD_STEPS_META[step]?.label || step) + ' — Generated Files';
   document.getElementById('build-file-content').textContent = '';
 
   const files = (buildStepsState[step] || {}).files || [];
@@ -2113,29 +2129,53 @@ async function openBuildCodePanel(step) {
     tree.innerHTML = '<div style="font-size:11px;color:var(--text-3);padding:8px;">No files yet.</div>';
     return;
   }
+
   tree.innerHTML = files.map(f => `
-    <div class="tree-file" onclick="loadBuildFile('${step}','${escapeHtml(f)}')"
-      style="padding:3px 6px;border-radius:4px;cursor:pointer;font-size:11px;color:var(--text-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"
-      onmouseover="this.style.background='var(--bg-2)'" onmouseout="this.style.background=''">
+    <div class="tree-file"
+      onclick="loadBuildFile('${step}','${escapeHtml(f)}',this)"
+      style="padding:4px 6px;border-radius:4px;cursor:pointer;font-size:11px;color:var(--text-2);
+             white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"
+      onmouseover="this.style.background='var(--surface-2)'" onmouseout="this.style.background=''">
       ${escapeHtml(f)}
     </div>`).join('');
 
   // Auto-load first file
-  if (files.length > 0) loadBuildFile(step, files[0]);
+  const firstRow = tree.querySelector('.tree-file');
+  if (firstRow) loadBuildFile(step, files[0], firstRow);
 }
 
-async function loadBuildFile(step, path) {
+async function loadBuildFile(step, path, rowEl) {
+  // Highlight selected row
+  document.querySelectorAll('#build-file-tree .tree-file').forEach(el => {
+    el.style.background = '';
+    el.style.color = 'var(--text-2)';
+    el.style.fontWeight = '';
+  });
+  if (rowEl) {
+    rowEl.style.background = 'rgba(74,222,128,.1)';
+    rowEl.style.color = 'var(--primary)';
+    rowEl.style.fontWeight = '600';
+  }
+
+  const contentEl = document.getElementById('build-file-content');
+  if (contentEl) contentEl.textContent = 'Loading…';
+
   try {
     const res = await apiFetch('/api/build-file?step=' + encodeURIComponent(step) + '&path=' + encodeURIComponent(path));
     if (res.ok) {
       const data = await res.json();
-      document.getElementById('build-file-content').textContent = data.content;
+      if (contentEl) contentEl.textContent = data.content;
+    } else {
+      if (contentEl) contentEl.textContent = 'Error loading file.';
     }
-  } catch (e) {}
+  } catch (e) {
+    if (contentEl) contentEl.textContent = 'Error loading file.';
+  }
 }
 
 function closeBuildCodePanel() {
-  document.getElementById('build-code-panel').style.display = 'none';
+  const panel = document.getElementById('build-code-panel');
+  if (panel) panel.style.display = 'none';
   buildCodePanelStep = null;
 }
 
