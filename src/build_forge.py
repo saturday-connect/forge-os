@@ -69,6 +69,7 @@ from build_constants import (
     HOT_DEPLOY_GLOBS,
     HOT_DEPLOY_SIBLING_GLOB,
     HOT_DEPLOY_HOME_DIR,
+    HOT_DEPLOY_HOME_PROJECTS_GLOB,
     HOT_DEPLOY_FILES,
     LOG_BUILD_SUCCESS,
     LOG_HOT_DEPLOY_SINGULAR,
@@ -320,6 +321,11 @@ def _hot_deploy_runtime():
     scripts_dirs.extend(glob.glob(os.path.join(parent_dir, HOT_DEPLOY_SIBLING_GLOB)))
     if os.path.isdir(home_forge_scripts):
         scripts_dirs.append(home_forge_scripts)
+    # Also deploy to ~/.forge/projects/<uuid>/scripts (new-style project data dirs)
+    home_forge_projects = os.path.join(
+        os.path.expanduser("~"), HOT_DEPLOY_HOME_DIR, HOT_DEPLOY_HOME_PROJECTS_GLOB
+    )
+    scripts_dirs.extend(glob.glob(home_forge_projects))
 
     copied = 0
     for sd in scripts_dirs:

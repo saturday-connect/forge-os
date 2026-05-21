@@ -134,6 +134,7 @@ HOT_DEPLOY_GLOBS = [
 ]
 HOT_DEPLOY_SIBLING_GLOB = "*/.forge/scripts"
 HOT_DEPLOY_HOME_DIR = ".forge"
+HOT_DEPLOY_HOME_PROJECTS_GLOB = "projects/*/scripts"  # ~/.forge/projects/<uuid>/scripts
 
 # ---------------------------------------------------------------------------
 # Hot-deploy target file names

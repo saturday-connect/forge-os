@@ -2,6 +2,17 @@
 // Knowledge Base view
 // ============================================================
 
+// Thin wrapper: knowledge.js uses api(url, method, body) → Promise<parsed JSON>
+// The rest of the app exposes apiFetch(url, options) → Promise<Response>.
+function api(url, method, body) {
+  var opts = { method: method || 'GET' };
+  if (body !== undefined) {
+    opts.headers = { 'Content-Type': 'application/json' };
+    opts.body = JSON.stringify(body);
+  }
+  return apiFetch(url, opts).then(function(r) { return r.json(); });
+}
+
 var _kbState = null;
 var _kbPolling = null;
 
