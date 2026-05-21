@@ -684,7 +684,28 @@ def _parse_phases_from_docs():
                     "source": f"{d}/{fname}",
                 })
 
-    found.sort(key=lambda x: x["order"])
+    # Deduplicate by order_key — "Phase 1" and "Sprint 1" both extract
+    # order=1 from the number, producing two entries at the same slot.
+    # Keep only the highest-priority type per order slot.
+    # Priority: Phase(0) > Release(1) > Milestone(2) > MVP(3) > Sprint(4) > other(9)
+    _type_rank = {"phase": 0, "release": 1, "milestone": 2, "mvp": 3, "sprint": 4}
+
+    def _heading_rank(name):
+        low = name.lower()
+        for t, r in _type_rank.items():
+            if low.startswith(t):
+                return r
+        return 9
+
+    order_best = {}
+    for entry in found:
+        ok = entry["order"]
+        if ok not in order_best:
+            order_best[ok] = entry
+        elif _heading_rank(entry["name"]) < _heading_rank(order_best[ok]["name"]):
+            order_best[ok] = entry
+
+    found = sorted(order_best.values(), key=lambda x: x["order"])
     return found
 
 
