@@ -376,6 +376,12 @@ PHASE_STATUS_BUILT = "built"
 PHASE_STATUS_DEPLOYED = "deployed"
 
 # ---------------------------------------------------------------------------
+# Phase build env vars (passed to build_runner subprocess)
+# ---------------------------------------------------------------------------
+FORGE_PHASE_ID_ENV   = "FORGE_PHASE_ID"
+FORGE_PHASE_NAME_ENV = "FORGE_PHASE_NAME"
+
+# ---------------------------------------------------------------------------
 # Issue defaults
 # ---------------------------------------------------------------------------
 ISSUE_ID_PREFIX = "ISSUE-"

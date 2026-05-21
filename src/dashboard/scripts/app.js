@@ -2018,6 +2018,7 @@ const BUILD_STEPS_META = {
 };
 
 let buildStepsState = {};  // populated from /api/build-system
+let buildStepsActivePhaseId = '';  // phase the current buildStepsState was built for
 let buildCodePanelStep = null;
 
 async function fetchBuildSteps() {
@@ -2026,6 +2027,7 @@ async function fetchBuildSteps() {
     if (res.ok) {
       const data = await res.json();
       buildStepsState = data.steps || {};
+      buildStepsActivePhaseId = data.active_phase_id || '';
       renderBuildSteps();
     }
   } catch (e) {}
@@ -2075,14 +2077,16 @@ function renderBuildSteps() {
   }).join('');
 }
 
-async function runBuildStep(step) {
+async function runBuildStep(step, phaseId) {
   try {
     optimisticRunning = { stage: step, startTime: Date.now() };
     renderBuildSteps();
+    const body = { step };
+    if (phaseId) body.phase_id = phaseId;
     const res = await apiFetch('/api/build-system', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ step })
+      body: JSON.stringify(body)
     });
     if (!res.ok) {
       const data = await res.json();
@@ -2176,6 +2180,26 @@ function renderBuild() {
     buildSysGate = document.createElement('div');
     buildSysGate.id = 'build-system-gate';
     buildSysEl.parentNode.insertBefore(buildSysGate, buildSysEl);
+  }
+
+  // ── Phase context banner ─────────────────────────────────────────────────
+  let phaseBanner = document.getElementById('build-phase-banner');
+  if (!phaseBanner) {
+    phaseBanner = document.createElement('div');
+    phaseBanner.id = 'build-phase-banner';
+    buildSysEl.parentNode.insertBefore(phaseBanner, buildSysGate);
+  }
+  const activePhase = (state.phases || []).find(p => p.id === (state.active_phase_id || ''));
+  if (activePhase) {
+    phaseBanner.innerHTML = `
+      <div style="display:flex;align-items:center;gap:10px;padding:8px 14px;background:rgba(74,222,128,.07);border:1px solid rgba(74,222,128,.2);border-radius:8px;margin-bottom:14px;">
+        ${icon('bolt', 13)}
+        <span style="font-size:12px;color:var(--text-2);">Building for phase:</span>
+        <span style="font-size:12px;font-weight:700;color:var(--primary);">${escapeHtml(activePhase.name)}</span>
+        <span style="font-size:11px;color:var(--text-3);margin-left:4px;">— output in <code style="font-size:10px;color:var(--text-2);">15-build/${escapeHtml(activePhase.id)}/</code></span>
+      </div>`;
+  } else {
+    phaseBanner.innerHTML = '';
   }
 
   if (!hasGenDocs) {
@@ -2384,9 +2408,10 @@ async function checkPrStatus(prUrl) {
     const res = await apiFetch('/api/pr-status?pr_url=' + encodeURIComponent(prUrl));
     const d = await res.json();
     if (d.merged) {
-      // Remove from checked cache so the badge re-renders on next loadState()
       _checkedPrUrls.delete(prUrl);
-      loadState();  // force immediate re-poll so merged badge appears without waiting
+      // Server already transitioned phase to deployed in pr-status handler.
+      // Force immediate re-poll so merged badge + phase status appear without waiting.
+      loadState();
     }
   } catch (e) { /* silent */ }
 }
@@ -3651,9 +3676,11 @@ function renderPhases() {
           ${canActivate
             ? `<button class="btn btn-primary btn-xs" onclick="activatePhase('${p.id}')">Start Phase</button>`
             : isActive && canBuild
-              ? `<button class="btn btn-primary btn-xs" onclick="runBuildStep('all')" title="Build this phase">Build Phase</button>
-                 <button class="btn btn-ghost btn-xs" onclick="completePhase('${p.id}')">Mark Built</button>`
-              : ''
+              ? `<button class="btn btn-primary btn-xs" onclick="runBuildStep('all','${p.id}')" title="Build all steps scoped to this phase">Build Phase</button>
+                 <button class="btn btn-ghost btn-xs" onclick="completePhase('${p.id}')" title="Mark built (validates all steps complete)">Mark Built</button>`
+              : p.status === 'built'
+                ? `<button class="btn btn-primary btn-xs" onclick="deployPhase('${p.id}')">Mark Deployed</button>`
+                : ''
           }
         </div>
       </div>
@@ -3721,22 +3748,46 @@ async function activatePhase(id) {
   }
 }
 
-async function completePhase(id) {
+async function completePhase(id, force = false) {
   try {
     const res = await apiFetch('/api/phases', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'complete', id })
+      body: JSON.stringify({ action: 'complete', id, ...(force ? { force: true } : {}) })
     });
     const data = await res.json();
     if (data.status === 'ok') {
       showToast('Phase marked as built', 'success');
       loadState();
+    } else if (data.incomplete_steps && !force) {
+      const steps = data.incomplete_steps.join(', ');
+      if (confirm(`Build steps not complete for this phase: ${steps}.\n\nMark built anyway?`)) {
+        completePhase(id, true);
+      }
     } else {
       showToast(data.error || 'Failed', 'error');
     }
   } catch (e) {
     showToast('Failed to update phase', 'error');
+  }
+}
+
+async function deployPhase(id) {
+  try {
+    const res = await apiFetch('/api/phases', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'deploy', id })
+    });
+    const data = await res.json();
+    if (data.status === 'ok') {
+      showToast('Phase marked as deployed', 'success');
+      loadState();
+    } else {
+      showToast(data.error || 'Failed to mark deployed', 'error');
+    }
+  } catch (e) {
+    showToast('Failed to deploy phase', 'error');
   }
 }
 

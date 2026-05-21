@@ -139,6 +139,8 @@ from constants import (
     CONSISTENCY_CHECK_MAX_DOWNSTREAM,
     CONSISTENCY_CHECK_DOC_CHARS,
     CONSISTENCY_CHECK_FIXED_CHARS,
+    FORGE_PHASE_ID_ENV,
+    FORGE_PHASE_NAME_ENV,
 )
 
 # ---------------------------------------------------------------------------
@@ -1724,29 +1726,51 @@ class ForgeHandler(BaseHTTPRequestHandler):
                         build_status = json.load(f)
                 except (OSError, json.JSONDecodeError) as exc:
                     logger.debug("build_status_file load: %s", exc)
+            # Resolve active phase for filtering
+            _bsproj = load_project_state()
+            _active_pid = _bsproj.get("active_phase_id", "") or ""
             step_keys = ["backend", "frontend", "integration", "tests", "infra"]
             steps_out = {}
             for key in step_keys:
                 st = build_status.get(key, {})
+                # Show step as relevant only if it was built for the active phase
+                # (or there is no active phase — legacy / phase-unscoped build)
+                step_phase = st.get("phase_id") or ""
+                if _active_pid and step_phase and step_phase != _active_pid:
+                    # Built for a different phase — show idle for current phase
+                    st = {}
                 steps_out[key] = {
                     "status": st.get("status", STATUS_IDLE),
                     "files": st.get("files", []),
                     "generated_at": st.get("generated_at", ""),
                     "error": st.get("error"),
+                    "phase_id": st.get("phase_id"),
                 }
-            self._json_response(200, {"steps": steps_out})
+            self._json_response(200, {"steps": steps_out, "active_phase_id": _active_pid})
             return
 
         if path == "/api/build-file":
             step = params.get("step", [""])[0]
-            rel = params.get("path", [""])[0]
+            rel  = params.get("path", [""])[0]
+            # Optional explicit phase_id; if omitted use active phase
+            bf_phase = params.get("phase_id", [""])[0].strip()
             if not step or not rel:
                 self._json_response(400, {"error": "Missing step or path"})
                 return
-            step_dirs = BUILD_STEP_DIRS
-            base = step_dirs.get(step, DIR_BUILD + "/" + step)
+            if not bf_phase:
+                _bfproj = load_project_state()
+                bf_phase = _bfproj.get("active_phase_id", "") or ""
+            # Resolve base dir: phase-scoped if phase known, else global
+            if bf_phase:
+                base = f"{DIR_BUILD}/{bf_phase}/{step}"
+            else:
+                base = BUILD_STEP_DIRS.get(step, DIR_BUILD + "/" + step)
             parts = [p for p in rel.replace("\\", "/").split("/") if p and p != ".."]
             full_path = os.path.join(FORGE_DIR, base, *parts)
+            # Fallback to global path if phase-scoped file not found
+            if not os.path.exists(full_path) and bf_phase:
+                base_global = BUILD_STEP_DIRS.get(step, DIR_BUILD + "/" + step)
+                full_path = os.path.join(FORGE_DIR, base_global, *parts)
             if not os.path.exists(full_path):
                 self._json_response(404, {"error": "File not found"})
                 return
@@ -1794,6 +1818,14 @@ class ForgeHandler(BaseHTTPRequestHandler):
                                     f"https://api.github.com/repos/{gh_owner}/{gh_repo}/git/refs/heads/{branch_ref}",
                                 ], capture_output=True, text=True, timeout=GIT_TIMEOUT_SECS)
                                 b["branch_deleted"] = del_r.stdout.strip() in ("204", "422")
+                            # Auto-deploy phase when its PR merges
+                            phase_id = b.get("phase_id", "")
+                            if phase_id:
+                                for p in proj.get("phases", []):
+                                    if p["id"] == phase_id and p.get("status") == PHASE_STATUS_BUILT:
+                                        p["status"] = PHASE_STATUS_DEPLOYED
+                                        p["deployed_at"] = merged_at
+                                        p["deployed_by"] = merged_by
                             updated = True
                     if updated:
                         save_project_state(proj)
@@ -2485,13 +2517,19 @@ class ForgeHandler(BaseHTTPRequestHandler):
             email = git_cfg.get("email", "")
 
             timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-            branch_name = f"{branch_prefix}/build-{timestamp}"
+            # Phase-aware branch naming: forge/<phase-id>-<timestamp>
+            _active_pid = proj.get("active_phase_id", "") or ""
+            if _active_pid:
+                branch_name = f"{branch_prefix}/{_active_pid}-{timestamp}"
+            else:
+                branch_name = f"{branch_prefix}/build-{timestamp}"
             build_entry = {
                 "id": timestamp,
                 "branch": branch_name,
                 "status": "pending",
                 "pr_url": "",
                 "created_at": datetime.now().isoformat(),
+                "phase_id": _active_pid or None,
                 "log": []
             }
 
@@ -2844,8 +2882,44 @@ class ForgeHandler(BaseHTTPRequestHandler):
                 phase = next((p for p in phases if p["id"] == phase_id), None)
                 if not phase:
                     self._json_response(404, {"error": "Phase not found"}); return
-                phase["status"] = "built"
+                # Validate: all build steps must be complete for this phase
+                build_status_file = os.path.join(FORGE_DIR, FILE_BUILD_SYSTEM)
+                build_status = {}
+                if os.path.exists(build_status_file):
+                    try:
+                        with open(build_status_file) as f:
+                            build_status = json.load(f)
+                    except (OSError, json.JSONDecodeError):
+                        pass
+                step_keys = ["backend", "frontend", "integration", "tests", "infra"]
+                incomplete = [
+                    s for s in step_keys
+                    if build_status.get(s, {}).get("status") != "complete"
+                    or (build_status.get(s, {}).get("phase_id") or "") != phase_id
+                ]
+                if incomplete and not data.get("force"):
+                    self._json_response(400, {
+                        "error": f"Build steps not complete for this phase: {', '.join(incomplete)}. "
+                                 "Run all build steps first, or pass force=true to override.",
+                        "incomplete_steps": incomplete,
+                    }); return
+                phase["status"] = PHASE_STATUS_BUILT
                 phase["completed_at"] = datetime.now().isoformat()
+                save_project_state(proj)
+                self._json_response(200, {"status": "ok", "phases": phases})
+                return
+
+            if action == "deploy":
+                phase_id = data.get("id")
+                phases = proj.get("phases", [])
+                phase = next((p for p in phases if p["id"] == phase_id), None)
+                if not phase:
+                    self._json_response(404, {"error": "Phase not found"}); return
+                if phase.get("status") not in (PHASE_STATUS_BUILT, PHASE_STATUS_DEPLOYED):
+                    self._json_response(400, {"error": "Phase must be built before it can be deployed"}); return
+                phase["status"] = PHASE_STATUS_DEPLOYED
+                phase["deployed_at"] = datetime.now().isoformat()
+                phase["deployed_by"] = data.get("deployed_by", "")
                 save_project_state(proj)
                 self._json_response(200, {"status": "ok", "phases": phases})
                 return
@@ -3351,6 +3425,8 @@ class ForgeHandler(BaseHTTPRequestHandler):
 
         if path == "/api/build-system":
             step = data.get("step", "")
+            # Allow caller to pass explicit phase_id; fall back to active_phase_id in state
+            req_phase_id = data.get("phase_id", "").strip()
             step_keys = ["backend", "frontend", "integration", "tests", "infra"]
             if step != "all" and step not in step_keys:
                 self._json_response(400, {"error": "Unknown step: " + step})
@@ -3360,11 +3436,20 @@ class ForgeHandler(BaseHTTPRequestHandler):
                 set_processing(STATUS_RUNNING, step)
                 try:
                     proj = load_project_state()
+                    # Resolve phase: explicit > active > none
+                    phase_id = req_phase_id or proj.get("active_phase_id", "") or ""
+                    phase_name = ""
+                    if phase_id:
+                        phase_name = next(
+                            (p["name"] for p in proj.get("phases", []) if p["id"] == phase_id), ""
+                        )
                     env = {
                         **os.environ,
-                        "FORGE_TOOL": proj.get("tool", DEFAULT_TOOL),
+                        "FORGE_TOOL":  proj.get("tool", DEFAULT_TOOL),
                         "FORGE_MODEL": proj.get("model", ""),
                         "AEOS_REPO_ROOT": REPO_ROOT,
+                        FORGE_PHASE_ID_ENV:   phase_id,
+                        FORGE_PHASE_NAME_ENV: phase_name,
                     }
                     steps_to_run = step_keys if step == "all" else [step]
                     build_runner = os.path.join(FORGE_DIR, "scripts", "build_runner.py")

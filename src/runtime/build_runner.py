@@ -12,6 +12,8 @@ from constants import (
     FILE_API_CONTRACT,
     FILE_BUILD_SYSTEM,
     FILE_ENCODING,
+    FORGE_PHASE_ID_ENV,
+    FORGE_PHASE_NAME_ENV,
     GEMINI_ARG_MODEL,
     GEMINI_ARG_PROMPT,
     GEMINI_ARG_SKIP_TRUST,
@@ -35,7 +37,16 @@ REPO_ROOT = os.environ.get("FORGE_REPO_ROOT", os.path.dirname(os.path.dirname(SC
 _forge_data = os.environ.get("FORGE_DATA_DIR")
 FORGE_DIR = os.path.expanduser(_forge_data) if _forge_data else os.path.dirname(SCRIPT_DIR)
 BUILD_STATUS_FILE = os.path.join(FORGE_DIR, FILE_BUILD_SYSTEM)
-API_CONTRACT_FILE = os.path.join(FORGE_DIR, FILE_API_CONTRACT)
+
+# Phase context — set by server when a phase is active
+ACTIVE_PHASE_ID   = os.environ.get(FORGE_PHASE_ID_ENV, "").strip()
+ACTIVE_PHASE_NAME = os.environ.get(FORGE_PHASE_NAME_ENV, "").strip()
+
+# Phase-scoped api-contract path: 15-build/<phase-id>/api-contract.md or global fallback
+API_CONTRACT_FILE = os.path.join(
+    FORGE_DIR,
+    DIR_BUILD, ACTIVE_PHASE_ID, "api-contract.md"
+) if ACTIVE_PHASE_ID else os.path.join(FORGE_DIR, FILE_API_CONTRACT)
 
 # Build order matters: backend must run before frontend/integration/tests
 STEPS = {}  # __FORGE_BUILD_STEPS__
@@ -60,6 +71,7 @@ def save_step_status(step, status_val, files=None, error=None):
         "files": files if files is not None else existing.get("files", []),
         "generated_at": datetime.now().isoformat() if status_val == STATUS_COMPLETE else existing.get("generated_at", ""),
         "error": error,
+        "phase_id": ACTIVE_PHASE_ID or None,
     }
     with open(BUILD_STATUS_FILE, "w", encoding=FILE_ENCODING) as f:
         json.dump(status, f, indent=2)
@@ -187,9 +199,26 @@ def _contract_block(api_contract, header):
     return ""
 
 
+def _phase_context_block():
+    if not ACTIVE_PHASE_NAME:
+        return ""
+    return (
+        _section("PHASE SCOPE — CRITICAL: BUILD ONLY THIS PHASE") + "\n"
+        "You are generating code for ONE specific delivery phase of a multi-phase product.\n\n"
+        f"  Phase: {ACTIVE_PHASE_NAME}\n\n"
+        "RULES:\n"
+        "1. Implement ONLY the features, endpoints, and UI screens that belong to this phase.\n"
+        "2. Do NOT implement features described in later phases — leave clear extension points instead.\n"
+        "3. The code you produce must be shippable as a standalone increment for this phase.\n"
+        "4. If a feature is ambiguous, scope it to the minimum needed for this phase only.\n"
+    )
+
+
 def build_backend_prompt(persona, docs):
-    return "\n\n".join([
-        persona,
+    parts = [persona]
+    if _phase_context_block():
+        parts.append(_phase_context_block())
+    parts += [
         _section("SPEC COMPLIANCE RULES — NON-NEGOTIABLE"),
         (
             "1. TECH STACK: Read the architecture documents below. Identify every technology, "
@@ -223,7 +252,8 @@ def build_backend_prompt(persona, docs):
         COMMON_FORMAT_RULE,
         _section("SPECIFICATION DOCUMENTS (your source of truth — follow these exactly)"),
         docs,
-    ])
+    ]
+    return "\n\n".join(parts)
 
 def build_frontend_prompt(persona, docs, api_contract):
     contract_block = (
@@ -232,8 +262,10 @@ def build_frontend_prompt(persona, docs, api_contract):
         "WARNING: Backend API contract not yet generated. "
         "Infer endpoints from the engineering spec documents.\n"
     )
-    return "\n\n".join([
-        persona,
+    parts = [persona]
+    if _phase_context_block():
+        parts.append(_phase_context_block())
+    parts += [
         _section("SPEC COMPLIANCE RULES — NON-NEGOTIABLE"),
         (
             "1. TECH STACK: Read the design and architecture documents below. Use EXACTLY the "
@@ -264,12 +296,15 @@ def build_frontend_prompt(persona, docs, api_contract):
         contract_block,
         _section("SPECIFICATION DOCUMENTS"),
         docs,
-    ])
+    ]
+    return "\n\n".join(parts)
 
 def build_integration_prompt(persona, docs, api_contract):
     contract_block = _contract_block(api_contract, "BACKEND API CONTRACT")
-    return "\n\n".join([
-        persona,
+    parts = [persona]
+    if _phase_context_block():
+        parts.append(_phase_context_block())
+    parts += [
         _section("SPEC COMPLIANCE RULES — NON-NEGOTIABLE"),
         (
             "1. TECH STACK: Use ONLY the third-party services and SDKs named in the integration spec.\n\n"
@@ -287,12 +322,15 @@ def build_integration_prompt(persona, docs, api_contract):
         contract_block,
         _section("SPECIFICATION DOCUMENTS"),
         docs,
-    ])
+    ]
+    return "\n\n".join(parts)
 
 def build_tests_prompt(persona, docs, api_contract):
     contract_block = _contract_block(api_contract, "BACKEND API CONTRACT — TEST THESE EXACT ENDPOINTS")
-    return "\n\n".join([
-        persona,
+    parts = [persona]
+    if _phase_context_block():
+        parts.append(_phase_context_block())
+    parts += [
         _section("SPEC COMPLIANCE RULES — NON-NEGOTIABLE"),
         (
             "1. TEST FRAMEWORK: Use ONLY the frameworks named in the quality spec "
@@ -315,12 +353,15 @@ def build_tests_prompt(persona, docs, api_contract):
         contract_block,
         _section("SPECIFICATION DOCUMENTS"),
         docs,
-    ])
+    ]
+    return "\n\n".join(parts)
 
 def build_infra_prompt(persona, docs, api_contract):
     contract_block = _contract_block(api_contract, "API CONTRACT (use to derive all required env vars and service dependencies)")
-    return "\n\n".join([
-        persona,
+    parts = [persona]
+    if _phase_context_block():
+        parts.append(_phase_context_block())
+    parts += [
         _section("YOUR MISSION"),
         (
             "Read EVERY specification document below. Identify:\n"
@@ -402,7 +443,8 @@ def build_infra_prompt(persona, docs, api_contract):
         contract_block,
         _section("SPECIFICATION DOCUMENTS (read all of these to derive the infra)"),
         docs,
-    ])
+    ]
+    return "\n\n".join(parts)
 
 def build_prompt_for_step(step, persona, docs, api_contract):
     _prompt_builders = {
@@ -463,7 +505,11 @@ def run_step(step):
     if not parsed:
         parsed = {"output.md": output}
 
-    out_dir = os.path.join(FORGE_DIR, meta["output_dir"])
+    # Phase-scoped output: 15-build/<phase-id>/<step>/ when a phase is active
+    if ACTIVE_PHASE_ID:
+        out_dir = os.path.join(FORGE_DIR, DIR_BUILD, ACTIVE_PHASE_ID, step)
+    else:
+        out_dir = os.path.join(FORGE_DIR, meta["output_dir"])
     os.makedirs(out_dir, exist_ok=True)
 
     file_list = []
