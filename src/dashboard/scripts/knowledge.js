@@ -10,7 +10,12 @@ function api(url, method, body) {
     opts.headers = { 'Content-Type': 'application/json' };
     opts.body = JSON.stringify(body);
   }
-  return apiFetch(url, opts).then(function(r) { return r.json(); });
+  return apiFetch(url, opts).then(function(r) {
+    return r.json().then(function(d) {
+      if (!r.ok) { throw new Error(d.error || ('HTTP ' + r.status)); }
+      return d;
+    });
+  });
 }
 
 var _kbState = null;
