@@ -267,6 +267,20 @@ PIPELINE_STAGE_NAMES = [
 ALL_GATE_NAMES = list(GATE_STAGE_MAP.keys())
 
 # ---------------------------------------------------------------------------
+# Local preview runner
+# ---------------------------------------------------------------------------
+FILE_LOCAL_RUN = "runs/local-run.json"
+LOCAL_RUN_MAX_LOG = 300          # keep last N lines of process output
+LOCAL_RUN_HEALTH_TIMEOUT = 90    # seconds to wait for a service to become reachable
+LOCAL_RUN_HEALTH_POLL = 3        # seconds between health-check probes
+
+# ---------------------------------------------------------------------------
+# Build stuck-detection thresholds (seconds since last heartbeat)
+# ---------------------------------------------------------------------------
+BUILD_STUCK_WARN_SECS = 30   # show "taking longer than expected" strip
+BUILD_STUCK_KILL_SECS = 60   # show prominent Stop button
+
+# ---------------------------------------------------------------------------
 # Build steps
 # ---------------------------------------------------------------------------
 BUILD_STEP_KEYS = ["backend", "frontend", "integration", "tests", "infra"]
@@ -375,7 +389,8 @@ MARKDOWN_EXTENSION = ".md"
 PHASE_STATUS_PENDING = "pending"
 PHASE_STATUS_ACTIVE = "active"
 PHASE_STATUS_BUILT = "built"
-PHASE_STATUS_DEPLOYED = "deployed"
+PHASE_STATUS_MERGED = "merged"   # PR merged to main — code in mainline, not yet running
+PHASE_STATUS_DEPLOYED = "deployed"  # Live URL confirmed
 
 # ---------------------------------------------------------------------------
 # Phase build env vars (passed to build_runner subprocess)

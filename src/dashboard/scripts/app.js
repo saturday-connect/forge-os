@@ -2270,7 +2270,12 @@ const BUILD_STATUS_LABELS = {
   local:      'Local Build',
   pending:    'Pending',
   error:      'Error',
+  cancelled:  'Stopped',
 };
+
+// Seconds since last heartbeat before we alert the user
+const BUILD_STUCK_WARN_SECS = 30;
+const BUILD_STUCK_KILL_SECS = 60;
 
 const BUILD_STEP_ICONS = {
   pr_created: 'checkCircle',
@@ -2284,10 +2289,227 @@ const BUILD_STEP_ICONS = {
   error:      'xCircle',
 };
 
+// ============================================================
+// Local Preview
+// ============================================================
+let _localRunData = null;
+let _localRunPollTimer = null;
+
+async function fetchLocalRun() {
+  try {
+    const r = await apiFetch('/api/local-run');
+    if (!r.ok) return;
+    _localRunData = await r.json();
+    renderLocalRun();
+    // Poll more frequently while starting or running
+    const status = _localRunData && _localRunData.status;
+    if (status === 'starting' || status === 'running') {
+      if (!_localRunPollTimer) {
+        _localRunPollTimer = setInterval(fetchLocalRun, 2500);
+      }
+    } else {
+      if (_localRunPollTimer) { clearInterval(_localRunPollTimer); _localRunPollTimer = null; }
+    }
+  } catch (e) { /* non-fatal */ }
+}
+
+function renderLocalRun() {
+  const el = document.getElementById('local-preview-section');
+  if (!el) return;
+
+  const d = _localRunData;
+  const detect = d && d.detect;
+
+  // ── Nothing built yet ───────────────────────────────────────────────────
+  if (!detect || !detect.available) {
+    el.innerHTML = `
+      <div class="local-preview-card local-preview-empty">
+        <div class="local-preview-icon">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+        </div>
+        <div class="local-preview-empty-body">
+          <div class="local-preview-title">Local Preview</div>
+          <div class="local-preview-desc">No runnable code found in this project. Build code first using Build All, then run it here.</div>
+        </div>
+      </div>`;
+    return;
+  }
+
+  const status   = d.status || 'stopped';
+  const method   = detect.method;
+  const services = detect.services || [];
+  const health   = d.health || {};
+  const envWarns = detect.env_warnings || [];
+
+  // ── Manual mode — show copy-pasteable commands ──────────────────────────
+  if (method === 'manual') {
+    const cmds = detect.manual_cmds || [];
+    el.innerHTML = `
+      <div class="local-preview-card">
+        <div class="local-preview-header">
+          <div style="display:flex;align-items:center;gap:10px;">
+            <div class="local-preview-icon-sm">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+            </div>
+            <div>
+              <div class="local-preview-title">Local Preview</div>
+              <div class="local-preview-subtitle">No docker-compose found — run services in your terminal</div>
+            </div>
+          </div>
+          <span class="badge" style="background:var(--bg-2);color:var(--text-3);border:1px solid var(--border);">Manual</span>
+        </div>
+        <div class="local-preview-services-grid">
+          ${cmds.map(c => `
+            <div class="local-preview-manual-cmd">
+              <div class="local-preview-svc-name">
+                <span class="local-run-dot local-run-dot--idle"></span>
+                ${escapeHtml(c.name)}
+                ${c.port ? `<span style="font-size:10px;color:var(--text-3);margin-left:4px;">:${c.port}</span>` : ''}
+              </div>
+              <div class="local-preview-cmd-block">
+                <code>${escapeHtml('cd ' + c.dir + ' && ' + c.command)}</code>
+                <button class="btn btn-ghost btn-xs local-preview-copy-btn"
+                  onclick="navigator.clipboard.writeText(${JSON.stringify('cd ' + c.dir + ' && ' + c.command)})"
+                  title="Copy command">
+                  ${icon('clipboard', 11)}
+                </button>
+              </div>
+            </div>`).join('')}
+        </div>
+      </div>`;
+    return;
+  }
+
+  // ── Docker-compose mode ─────────────────────────────────────────────────
+  const isRunning  = status === 'running';
+  const isStarting = status === 'starting';
+  const isError    = status === 'error';
+  const isStopping = status === 'stopping';
+
+  const statusBadge = isRunning  ? `<span class="badge-local-run badge-local-run--running">Running</span>`
+    : isStarting ? `<span class="badge-local-run badge-local-run--starting">Starting…</span>`
+    : isError    ? `<span class="badge-local-run badge-local-run--error">Error</span>`
+    : isStopping ? `<span class="badge-local-run badge-local-run--starting">Stopping…</span>`
+    : `<span class="badge-local-run">Stopped</span>`;
+
+  const ctaBtn = (isRunning || isStarting || isStopping)
+    ? `<button class="btn btn-sm" style="background:#ef4444;color:#fff;border-color:#ef4444;" onclick="stopLocalRun()">Stop</button>`
+    : `<button class="btn btn-primary btn-sm" onclick="startLocalRun()">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+        Run Locally
+       </button>`;
+
+  const servicesHtml = services.map(svc => {
+    const h = health[svc.name] || 'starting';
+    const dotCls = isRunning && h === 'healthy' ? 'local-run-dot--healthy'
+      : isRunning ? 'local-run-dot--starting' : 'local-run-dot--idle';
+    const urlLink = svc.url && isRunning
+      ? `<a href="${escapeHtml(svc.url)}" target="_blank" class="local-preview-svc-url">${escapeHtml(svc.url)}</a>`
+      : svc.url ? `<span class="local-preview-svc-url-dim">${escapeHtml(svc.url)}</span>` : '';
+    return `
+      <div class="local-preview-svc-row">
+        <span class="local-run-dot ${dotCls}"></span>
+        <span class="local-preview-svc-name-label">${escapeHtml(svc.name)}</span>
+        ${urlLink}
+        ${isRunning && h === 'healthy' ? `<span class="local-preview-health-ok">●&nbsp;Live</span>` : ''}
+        ${isRunning && h === 'starting' ? `<span class="local-preview-health-wait">◌&nbsp;Waiting</span>` : ''}
+      </div>`;
+  }).join('');
+
+  const envWarnsHtml = envWarns.length ? `
+    <div class="local-preview-env-warns">
+      ${envWarns.map(w => `
+        <div class="local-preview-env-warn-row">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          ${escapeHtml(w)}
+        </div>`).join('')}
+    </div>` : '';
+
+  const errorHtml = isError && d.error
+    ? `<div class="local-preview-error">${escapeHtml(d.error)}</div>` : '';
+
+  const logs = (d.log || []);
+  const logsHtml = logs.length ? `
+    <details class="local-preview-log-details">
+      <summary>Output log (${logs.length} lines)</summary>
+      <pre class="local-preview-log">${escapeHtml(logs.slice(-80).join('\n'))}</pre>
+    </details>` : '';
+
+  const startedStr = d.started_at
+    ? `Started ${new Date(d.started_at).toLocaleTimeString()}` : '';
+
+  el.innerHTML = `
+    <div class="local-preview-card ${isRunning ? 'local-preview-card--running' : isError ? 'local-preview-card--error' : ''}">
+      <div class="local-preview-header">
+        <div style="display:flex;align-items:center;gap:10px;">
+          <div class="local-preview-icon-sm ${isRunning ? 'local-preview-icon-sm--active' : ''}">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+          </div>
+          <div>
+            <div class="local-preview-title">Local Preview</div>
+            <div class="local-preview-subtitle">
+              Docker Compose &nbsp;·&nbsp; <code style="font-size:10px;">${escapeHtml(detect.compose_file || '')}</code>
+              ${startedStr ? `&nbsp;·&nbsp; ${escapeHtml(startedStr)}` : ''}
+            </div>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;">
+          ${statusBadge}
+          ${ctaBtn}
+        </div>
+      </div>
+      ${envWarnsHtml}
+      ${errorHtml}
+      <div class="local-preview-services">
+        ${servicesHtml || '<div style="font-size:11px;color:var(--text-3);">No port mappings detected in compose file.</div>'}
+      </div>
+      ${logsHtml}
+    </div>`;
+}
+
+async function startLocalRun() {
+  try {
+    const r = await apiFetch('/api/local-run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'start' }),
+    });
+    const d = await r.json();
+    if (!r.ok) {
+      showToast(d.error || 'Failed to start', 'error');
+      return;
+    }
+    showToast('Local preview starting…', 'info');
+    await fetchLocalRun();
+  } catch (e) {
+    showToast('Start failed: ' + e.message, 'error');
+  }
+}
+
+async function stopLocalRun() {
+  try {
+    const r = await apiFetch('/api/local-run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'stop' }),
+    });
+    if (!r.ok) {
+      const d = await r.json();
+      showToast(d.error || 'Stop failed', 'error');
+      return;
+    }
+    showToast('Local preview stopped', 'info');
+    await fetchLocalRun();
+  } catch (e) {
+    showToast('Stop failed: ' + e.message, 'error');
+  }
+}
+
 function renderBuild() {
   fetchBuildSteps();
   syncReviewStatus();
   checkAllPrStatuses();
+  fetchLocalRun();
   const git = state.git || {};
   const builds = state.builds || [];
 
@@ -2295,6 +2517,9 @@ function renderBuild() {
   const hasGit      = !!(git.repo_url);
   const hasGenDocs  = Object.values(state.stageReviewSummary || {}).some(s => (s.generated || 0) > 0);
   const hasBuildFiles = Object.values(buildStepsState).some(s => s.status === 'complete');
+
+  // A build step or AI pipeline is actively running — lock Git/PR actions.
+  const isBuildRunning = (state.processing && state.processing.status === 'running') || !!optimisticRunning;
 
   // ── Build System section gate (requires generated docs) ──────────────────
   const buildSysEl = document.getElementById('build-steps-grid');
@@ -2349,11 +2574,28 @@ function renderBuild() {
     buildSysGate.innerHTML = '';
     buildSysEl.style.opacity = '';
     buildSysEl.style.pointerEvents = '';
-    if (buildAllBtn) buildAllBtn.disabled = false;
+    if (buildAllBtn) buildAllBtn.disabled = isBuildRunning;
   }
 
   // ── Git & PR section ──────────────────────────────────────────────────────
   const gitPrEl = document.getElementById('git-pr-section');
+
+  // Lock entire Git & PR section while build is running — prevents committing
+  // incomplete or mid-write output files.
+  if (isBuildRunning) {
+    const runningStage = (state.processing && state.processing.stage) || 'build';
+    gitPrEl.innerHTML = `
+      <div class="build-running-lock">
+        <div class="build-running-lock-left">
+          <span class="build-running-lock-spinner"></span>
+          <div>
+            <div class="build-running-lock-title">Build pipeline running</div>
+            <div class="build-running-lock-desc">Git actions are locked while <strong>${escapeHtml(runningStage)}</strong> is running. Committing mid-build would capture incomplete output. Actions unlock automatically when the step finishes.</div>
+          </div>
+        </div>
+      </div>`;
+    return;
+  }
 
   if (!hasGit && !hasBuildFiles) {
     // Both missing — show a checklist-style gate (GitHub Actions / Vercel pattern)
@@ -2451,10 +2693,31 @@ function renderBuild() {
     return;
   }
 
+  // Capture open state before destroying DOM
+  historyEl.querySelectorAll('details[data-build-log]').forEach(el => {
+    if (el.open) _openBuildLogs.add(el.dataset.buildLog);
+    else _openBuildLogs.delete(el.dataset.buildLog);
+  });
+  historyEl.querySelectorAll('details[data-build-commits]').forEach(el => {
+    if (el.open) _openBuildCommits.add(el.dataset.buildCommits);
+    else _openBuildCommits.delete(el.dataset.buildCommits);
+  });
+
   historyEl.innerHTML = [...builds].reverse().map(b => {
     const logs = (b.log || []).join('\n');
     const statusLabel = BUILD_STATUS_LABELS[b.status] || b.status;
-    const isLive = !b.log; // in-progress entries have no log yet
+    // _live is injected by compute_full_state() only for the in-progress entry
+    const isLive = !!b._live;
+    const isCancelled = b.status === 'cancelled';
+
+    // ── Stuck-detection ──────────────────────────────────────────────────────
+    // heartbeat is written every 10 s by the server-side heartbeat ticker.
+    // If it goes silent the build thread has likely blocked on a git/network op.
+    const heartbeatAge = b.heartbeat
+      ? Math.floor((Date.now() - Date.parse(b.heartbeat)) / 1000)
+      : null;
+    const isStuckWarn  = isLive && !isCancelled && heartbeatAge !== null && heartbeatAge >= BUILD_STUCK_WARN_SECS;
+    const isStuckKill  = isLive && !isCancelled && heartbeatAge !== null && heartbeatAge >= BUILD_STUCK_KILL_SECS;
 
     const isMerged = b.status === 'merged';
     const prCard = b.pr_url ? (isMerged ? `
@@ -2486,13 +2749,46 @@ function renderBuild() {
         </a>
       </div>`) : '';
 
-    const liveProgress = isLive ? `
+    // Live progress pill — suppressed once the build is cancelled/stuck-critical
+    const liveProgress = (isLive && !isCancelled) ? `
       <div style="margin-top:8px;padding:8px 10px;background:var(--bg-2);border-radius:6px;font-size:11px;color:var(--text-2);display:flex;align-items:center;gap:8px;">
-        <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--blue);animation:pulse 1.2s ease-in-out infinite;"></span>
+        <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${isStuckWarn ? '#f59e0b' : 'var(--blue)'};animation:pulse 1.2s ease-in-out infinite;flex-shrink:0;"></span>
         ${statusLabel} — branch <code>${escapeHtml(b.branch)}</code>
+        ${heartbeatAge !== null ? `<span style="margin-left:auto;color:var(--text-3);font-size:10px;">${heartbeatAge}s ago</span>` : ''}
       </div>` : '';
 
-    const copyBtn = `<button class="btn btn-ghost btn-sm" onclick="navigator.clipboard.writeText('${escapeHtml(b.branch)}')" style="margin-left:4px;padding:2px 6px;" title="Copy branch name">${icon('clipboardCopy',11)}</button>`;
+    // Stuck banners — escalating from warning → critical Stop
+    const stuckBanner = (() => {
+      if (!isLive || isCancelled) return '';
+      if (isStuckKill) return `
+        <div class="build-stuck-critical">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;color:#f87171"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          <div style="flex:1;min-width:0;">
+            <div style="font-size:12px;font-weight:700;color:#f87171;">Build appears stuck — ${heartbeatAge}s with no activity</div>
+            <div style="font-size:11px;color:var(--text-3);margin-top:2px;">The build process may be blocked on a network operation. Stop it and restart when ready.</div>
+          </div>
+          <div style="display:flex;gap:8px;flex-shrink:0;">
+            <button class="btn btn-sm" style="background:#ef4444;color:#fff;border-color:#ef4444;" onclick="stopBuild()">Stop Build</button>
+          </div>
+        </div>`;
+      if (isStuckWarn) return `
+        <div class="build-stuck-warn">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          <span>Taking longer than expected (${heartbeatAge}s since last update)</span>
+          <button class="btn btn-ghost btn-xs" style="margin-left:auto;flex-shrink:0;" onclick="stopBuild()">Stop</button>
+        </div>`;
+      return '';
+    })();
+
+    // Restart nudge shown after a manual stop
+    const cancelledNudge = (isCancelled && isLive) ? `
+      <div style="display:flex;align-items:center;gap:10px;margin-top:8px;padding:10px 12px;background:rgba(248,113,113,.07);border:1px solid rgba(248,113,113,.25);border-radius:6px;font-size:12px;color:var(--text-2);">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#f87171" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+        <span>Build was stopped. Any partial commits on branch <code>${escapeHtml(b.branch)}</code> are preserved locally.</span>
+        <button class="btn btn-secondary btn-xs" style="margin-left:auto;flex-shrink:0;" onclick="restartBuild()">Restart Build</button>
+      </div>` : '';
+
+    const copyBtn = `<button class="btn btn-ghost btn-sm" onclick="navigator.clipboard.writeText('${escapeHtml(b.branch)}')" style="margin-left:4px;padding:2px 6px;" title="Copy branch name">${icon('clipboard',11)}</button>`;
 
     // ── Validation results card ─────────────────────────────────────────────
     const validCard = (() => {
@@ -2537,27 +2833,111 @@ function renderBuild() {
         <button class="btn btn-secondary btn-xs" style="margin-left:auto;" onclick="startReviewAndPush()">Push to Git</button>
       </div>` : '';
 
+    // ── Commit list card ──────────────────────────────────────────────────────
+    const commits = b.commits || [];
+    const commitCard = commits.length > 0 ? `
+      <details data-build-commits="${escapeHtml(b.created_at)}" style="margin-top:8px;"${_openBuildCommits.has(b.created_at) ? ' open' : ''}>
+        <summary style="font-size:11px;color:var(--text-3);cursor:pointer;user-select:none;">
+          ${icon('gitBranch',11)} ${commits.length} commit${commits.length !== 1 ? 's' : ''}
+        </summary>
+        <div class="build-commit-list">
+          ${commits.map(c => `
+            <div class="build-commit-row">
+              <code class="build-commit-sha">${escapeHtml(c.sha || '')}</code>
+              <span class="build-commit-msg">${escapeHtml(c.message || '')}</span>
+            </div>`).join('')}
+        </div>
+      </details>` : '';
+
     return `
-      <div class="build-history-item" ${isLive ? 'style="border-color:var(--blue)"' : b.status === 'local' ? 'style="border-color:rgba(74,222,128,.3)"' : ''}>
+      <div class="build-history-item" ${isStuckKill ? 'style="border-color:#ef4444"' : isLive ? 'style="border-color:var(--blue)"' : b.status === 'cancelled' ? 'style="border-color:rgba(248,113,113,.3)"' : b.status === 'local' ? 'style="border-color:rgba(74,222,128,.3)"' : ''}>
         <div class="build-history-header">
           <span class="badge badge-${b.status}">${statusLabel}</span>
-          <span class="build-branch">${escapeHtml(b.branch)}</span>
+          <code class="build-branch">${escapeHtml(b.branch)}</code>
           ${copyBtn}
           <span class="build-date" style="margin-left:auto;">${new Date(b.created_at).toLocaleString()}</span>
         </div>
+        ${stuckBanner}
         ${liveProgress}
+        ${cancelledNudge}
         ${prCard}
         ${validCard}
+        ${commitCard}
         ${localPushNudge}
-        ${logs ? `<details style="margin-top:8px;"><summary style="font-size:11px;color:var(--text-3);cursor:pointer;">Build log (${(b.log||[]).length} lines)</summary><div class="build-log" style="margin-top:4px;">${escapeHtml(logs)}</div></details>` : ''}
+        ${logs ? `<details data-build-log="${escapeHtml(b.created_at)}" style="margin-top:8px;"${_openBuildLogs.has(b.created_at) ? ' open' : ''}><summary style="font-size:11px;color:var(--text-3);cursor:pointer;">Build log (${(b.log||[]).length} lines)</summary><div class="build-log" style="margin-top:4px;">${escapeHtml(logs)}</div></details>` : ''}
       </div>
     `;
   }).join('');
+
+  // Attach toggle listeners so open/closed state is tracked in real time
+  historyEl.querySelectorAll('details[data-build-log]').forEach(el => {
+    el.addEventListener('toggle', () => {
+      if (el.open) _openBuildLogs.add(el.dataset.buildLog);
+      else _openBuildLogs.delete(el.dataset.buildLog);
+    });
+  });
+  historyEl.querySelectorAll('details[data-build-commits]').forEach(el => {
+    el.addEventListener('toggle', () => {
+      if (el.open) _openBuildCommits.add(el.dataset.buildCommits);
+      else _openBuildCommits.delete(el.dataset.buildCommits);
+    });
+  });
 }
 
 // ============================================================
 // Pre-push review flow
 // ============================================================
+// Build log / commit details open-state persistence
+// Keyed by build `created_at` timestamp string.
+// ============================================================
+const _openBuildLogs    = new Set();   // build IDs whose log <details> is open
+const _openBuildCommits = new Set();   // build IDs whose commits <details> is open
+
+// ============================================================
+// Build stuck — stop and restart
+// ============================================================
+async function stopBuild() {
+  try {
+    const r = await apiFetch('/api/build', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'cancel' }),
+    });
+    if (!r.ok) {
+      const j = await r.json().catch(() => ({}));
+      showToast('Stop failed: ' + (j.error || r.status), 'error');
+      return;
+    }
+    showToast('Build stopped', 'info');
+    // Force immediate UI refresh; the progress file will be stamped "cancelled"
+    await fetchState();
+  } catch (e) {
+    showToast('Stop failed: ' + e.message, 'error');
+  }
+}
+
+async function restartBuild() {
+  // Trigger a fresh build — same path as "Commit & Push" in the review panel.
+  // The stopped branch is preserved locally; the new run gets a new branch name.
+  try {
+    const res = await apiFetch('/api/build', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    if (!res.ok) {
+      const j = await res.json().catch(() => ({}));
+      showToast('Restart failed: ' + (j.error || res.status), 'error');
+      return;
+    }
+    const d = await res.json();
+    showToast(`Build restarted: ${d.branch || ''}`, 'info');
+    await fetchState();
+  } catch (e) {
+    showToast('Restart failed: ' + e.message, 'error');
+  }
+}
+
 // ============================================================
 // PR merge status
 // ============================================================
@@ -3974,28 +4354,35 @@ function renderPhases() {
 
   el.innerHTML = phases.map((p, i) => {
     const isActive = p.id === activeId;
-    const statusCls = p.status === 'built' ? 'phase-built'
-      : p.status === 'deployed' ? 'phase-deployed'
-      : p.status === 'in-progress' ? 'phase-active'
-      : 'phase-pending';
-    const statusLabel = p.status === 'built' ? 'Built'
-      : p.status === 'deployed' ? 'Deployed'
-      : p.status === 'in-progress' ? 'In Progress'
-      : 'Pending';
+    const statusCls = _phaseStatusCls(p.status);
+    const statusLabel = _phaseStatusLabel(p.status);
 
     const prevPhase = i > 0 ? phases[i - 1] : null;
-    const canActivate = p.status === 'pending' && (!prevPhase || prevPhase.status === 'built' || prevPhase.status === 'deployed');
+    const prevDone = !prevPhase || ['built','merged','deployed'].includes(prevPhase.status);
+    const canActivate = p.status === 'pending' && prevDone;
     const canBuild = p.status === 'in-progress';
     const issueCount = (p.issue_ids || []).length;
+    const orderLabel = i === 0 ? 'MVP' : `P${i}`;
+
+    // Deployment URL strip shown when deployed
+    const deployUrlHtml = p.deploy_url
+      ? `<a class="phase-deploy-url" href="${escapeHtml(p.deploy_url)}" target="_blank" title="${escapeHtml(p.deploy_url)}">
+           ${icon('externalLink', 10)} ${escapeHtml(_truncUrl(p.deploy_url))}
+         </a>`
+      : '';
 
     return `
       <div class="phase-card ${isActive ? 'phase-card-active' : ''}">
         <div class="phase-card-top">
-          <div class="phase-card-order">${i === 0 ? 'MVP' : `P${i}`}</div>
+          <div class="phase-card-order">${orderLabel}</div>
           <div class="phase-card-name">${escapeHtml(p.name)}</div>
           <span class="phase-badge ${statusCls}">${statusLabel}</span>
         </div>
-        ${p.description ? `<div class="phase-card-desc">${escapeHtml(p.description)}</div>` : ''}
+        ${p.description
+          ? `<div class="phase-card-desc">${escapeHtml(p.description)}</div>`
+          : `<div class="phase-card-desc" style="color:var(--text-3);font-style:italic;">Click for details</div>`
+        }
+        ${deployUrlHtml}
         <div class="phase-card-meta">
           ${issueCount > 0 ? `<span class="phase-issue-count">${issueCount} issue${issueCount !== 1 ? 's' : ''}</span>` : ''}
         </div>
@@ -4005,15 +4392,283 @@ function renderPhases() {
             : isActive && canBuild
               ? `<button class="btn btn-primary btn-xs" onclick="runBuildStep('all','${p.id}')" title="Build all steps scoped to this phase">Build Phase</button>
                  <button class="btn btn-ghost btn-xs" onclick="completePhase('${p.id}')" title="Mark built (validates all steps complete)">Mark Built</button>`
-              : p.status === 'built'
-                ? `<button class="btn btn-primary btn-xs" onclick="deployPhase('${p.id}')">Mark Deployed</button>`
-                : ''
+              : (p.status === 'built' || p.status === 'merged')
+                ? `<button class="btn btn-primary btn-xs" onclick="openDeployDialog('${p.id}')" title="Record live deployment URL">
+                     ${icon('cloudUp', 10)} Record Deployment
+                   </button>`
+                : p.status === 'deployed'
+                  ? `<button class="btn btn-ghost btn-xs" onclick="openDeployDialog('${p.id}')" title="Update deployment URL">
+                       ${icon('cloudUp', 10)} Update URL
+                     </button>`
+                  : ''
           }
+          <button class="phase-card-details-btn" onclick="showPhaseDrawer('${p.id}')" title="View full phase details">
+            ${icon('file', 10)} Details
+          </button>
         </div>
       </div>
       ${i < phases.length - 1 ? '<div class="phase-connector"></div>' : ''}
     `;
   }).join('');
+}
+
+// ============================================================
+// Phase Detail Drawer
+// ============================================================
+
+function showPhaseDrawer(phaseId) {
+  const phases = (state && state.phases) || [];
+  const p = phases.find(x => x.id === phaseId);
+  if (!p) return;
+
+  const i = phases.indexOf(p);
+  const orderLabel = i === 0 ? 'MVP' : `P${i}`;
+
+  const orderEl = document.getElementById('phase-drawer-order');
+  const nameEl  = document.getElementById('phase-drawer-name');
+  const badgeEl = document.getElementById('phase-drawer-badge');
+  if (orderEl) orderEl.textContent = orderLabel;
+  if (nameEl)  nameEl.textContent  = p.name;
+  if (badgeEl) { badgeEl.textContent = _phaseStatusLabel(p.status); badgeEl.className = `phase-badge ${_phaseStatusCls(p.status)}`; }
+
+  const bodyEl = document.getElementById('phase-drawer-body');
+  if (bodyEl) bodyEl.innerHTML = _renderPhaseDrawerBody(p);
+
+  const drawer = document.getElementById('phase-detail-drawer');
+  const backdrop = document.getElementById('phase-drawer-backdrop');
+  if (drawer) drawer.classList.remove('hidden');
+  if (backdrop) backdrop.classList.remove('hidden');
+}
+
+function closePhaseDrawer() {
+  const drawer = document.getElementById('phase-detail-drawer');
+  const backdrop = document.getElementById('phase-drawer-backdrop');
+  if (drawer) drawer.classList.add('hidden');
+  if (backdrop) backdrop.classList.add('hidden');
+}
+
+function _renderPhaseDrawerBody(p) {
+  const issues = (state && state.issues) || [];
+  const phaseIssues = (p.issue_ids || [])
+    .map(id => issues.find(iss => iss.id === id))
+    .filter(Boolean);
+
+  let html = '';
+
+  // ── Deployment status card ────────────────────────────────────────────────
+  if (p.status === 'deployed' && p.deploy_url) {
+    const envLabel = { staging: 'Staging', production: 'Production', preview: 'Preview', local: 'Local / Dev' }[p.deploy_env] || p.deploy_env || 'Production';
+    const deployedAt = p.deployed_at ? new Date(p.deployed_at).toLocaleString() : '';
+    html += `<div class="phase-deploy-card phase-deploy-card--live">
+      <div class="phase-deploy-card-row">
+        <span class="phase-deploy-env-badge">${escapeHtml(envLabel)}</span>
+        ${p.deployed_by ? `<span class="phase-deploy-meta">by ${escapeHtml(p.deployed_by)}</span>` : ''}
+        ${deployedAt ? `<span class="phase-deploy-meta">${deployedAt}</span>` : ''}
+      </div>
+      <a class="phase-deploy-url-full" href="${escapeHtml(p.deploy_url)}" target="_blank">
+        ${icon('externalLink', 11)} ${escapeHtml(p.deploy_url)}
+      </a>
+      <button class="btn btn-ghost btn-xs" style="margin-top:8px;align-self:flex-start;" onclick="closePhaseDrawer();openDeployDialog('${p.id}')">
+        ${icon('cloudUp', 10)} Update URL
+      </button>
+    </div>`;
+  } else if (p.status === 'merged') {
+    html += `<div class="phase-deploy-card phase-deploy-card--merged">
+      <div class="phase-deploy-card-row">
+        ${icon('gitBranch', 13)}
+        <span style="font-size:12px;font-weight:600;color:var(--purple);">Merged to mainline</span>
+        ${p.merged_at ? `<span class="phase-deploy-meta">${new Date(p.merged_at).toLocaleString()}</span>` : ''}
+      </div>
+      <p class="phase-deploy-card-hint">Code is in the main branch but not yet running anywhere. Record a deployment URL once it's live.</p>
+      <button class="btn btn-primary btn-xs" style="align-self:flex-start;" onclick="closePhaseDrawer();openDeployDialog('${p.id}')">
+        ${icon('cloudUp', 10)} Record Deployment
+      </button>
+    </div>`;
+  } else if (p.status === 'built') {
+    html += `<div class="phase-deploy-card phase-deploy-card--pending">
+      <p class="phase-deploy-card-hint">Built and pushed — no deployment recorded yet. Once you push to an environment, record the URL here.</p>
+      <button class="btn btn-ghost btn-xs" style="align-self:flex-start;" onclick="closePhaseDrawer();openDeployDialog('${p.id}')">
+        ${icon('cloudUp', 10)} Record Deployment
+      </button>
+    </div>`;
+  }
+
+  // ── Source doc reference ──────────────────────────────────────────────────
+  if (p.doc_source) {
+    html += `<div class="phase-drawer-section">
+      <div class="phase-drawer-section-label">Source</div>
+      <span class="phase-drawer-source">${escapeHtml(p.doc_source)}</span>
+    </div>`;
+  }
+
+  // ── Full doc body ─────────────────────────────────────────────────────────
+  html += `<div class="phase-drawer-section">
+    <div class="phase-drawer-section-label">Deliverables &amp; Scope</div>
+    <div class="phase-doc-body">${_renderDocBodyHtml(p.doc_body || '')}</div>
+  </div>`;
+
+  // ── Issues ────────────────────────────────────────────────────────────────
+  if (phaseIssues.length > 0) {
+    const issueRows = phaseIssues.map(iss => {
+      const severityCls = iss.severity === 'critical' ? 'issue-sev-critical'
+        : iss.severity === 'high' ? 'issue-sev-high'
+        : '';
+      return `<div class="phase-drawer-issue-row">
+        <span class="phase-drawer-issue-id">#${escapeHtml(String(iss.id || ''))}</span>
+        <span class="phase-drawer-issue-title">${escapeHtml(iss.title || '')}</span>
+        ${iss.severity ? `<span class="issue-badge ${severityCls}">${escapeHtml(iss.severity)}</span>` : ''}
+      </div>`;
+    }).join('');
+    html += `<div class="phase-drawer-section">
+      <div class="phase-drawer-section-label">Issues (${phaseIssues.length})</div>
+      <div class="phase-drawer-issues">${issueRows}</div>
+    </div>`;
+  }
+
+  return html;
+}
+
+// Lightweight Markdown → safe HTML for doc_body content.
+// Handles: headings (## ###), bullets (- * •), bold (**), inline code (`).
+// Everything is escaped before inline processing.
+function _renderDocBodyHtml(text) {
+  if (!text || !text.trim()) {
+    return '<p class="phase-doc-body-empty">No content extracted from docs. Use <strong>Sync from docs</strong> after generating delivery documents.</p>';
+  }
+  const lines = text.split('\n');
+  const out = [];
+  let inList = false;
+
+  for (let i = 0; i < lines.length; i++) {
+    const raw = lines[i];
+    const stripped = raw.trim();
+
+    if (!stripped) {
+      if (inList) { out.push('</ul>'); inList = false; }
+      continue;
+    }
+
+    // Headings
+    const hm = stripped.match(/^(#{2,4})\s+(.*)/);
+    if (hm) {
+      if (inList) { out.push('</ul>'); inList = false; }
+      const level = Math.min(hm[1].length, 4);
+      out.push(`<h${level}>${_inlineMarkdown(hm[2])}</h${level}>`);
+      continue;
+    }
+
+    // Bullets: - * • or numbered 1.
+    const bm = stripped.match(/^(?:[-*•]|\d+\.)\s+(.*)/);
+    if (bm) {
+      if (!inList) { out.push('<ul>'); inList = true; }
+      out.push(`<li>${_inlineMarkdown(bm[1])}</li>`);
+      continue;
+    }
+
+    // Normal paragraph line
+    if (inList) { out.push('</ul>'); inList = false; }
+    out.push(`<p>${_inlineMarkdown(stripped)}</p>`);
+  }
+  if (inList) out.push('</ul>');
+  return out.join('');
+}
+
+// Process inline Markdown: bold, italic, code, escape HTML
+function _inlineMarkdown(text) {
+  let s = escapeHtml(text);
+  s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  s = s.replace(/(?:\*|_)([^*_]+)(?:\*|_)/g, '<em>$1</em>');
+  s = s.replace(/`([^`]+)`/g, '<code>$1</code>');
+  return s;
+}
+
+// ── Phase status helpers ──────────────────────────────────────────────────────
+function _phaseStatusCls(status) {
+  return status === 'built'       ? 'phase-built'
+    : status === 'merged'         ? 'phase-merged'
+    : status === 'deployed'       ? 'phase-deployed'
+    : status === 'in-progress'    ? 'phase-active'
+    : 'phase-pending';
+}
+
+function _phaseStatusLabel(status) {
+  return status === 'built'       ? 'Built'
+    : status === 'merged'         ? 'Merged'
+    : status === 'deployed'       ? 'Live'
+    : status === 'in-progress'    ? 'In Progress'
+    : 'Pending';
+}
+
+// Truncate long URLs to host + short path for card display
+function _truncUrl(url) {
+  try {
+    const u = new URL(url);
+    const path = u.pathname.length > 18 ? u.pathname.slice(0, 16) + '…' : u.pathname;
+    return u.host + (path === '/' ? '' : path);
+  } catch (_) { return url.slice(0, 32); }
+}
+
+// ── Deployment dialog ─────────────────────────────────────────────────────────
+let _deployingPhaseId = null;
+
+function openDeployDialog(phaseId) {
+  _deployingPhaseId = phaseId;
+  const phases = (state && state.phases) || [];
+  const p = phases.find(x => x.id === phaseId);
+
+  // Pre-fill if already deployed
+  const urlInput = document.getElementById('deploy-url-input');
+  const envSelect = document.getElementById('deploy-env-select');
+  if (urlInput) urlInput.value = (p && p.deploy_url) || '';
+  if (envSelect) envSelect.value = (p && p.deploy_env) || 'staging';
+
+  const dlg = document.getElementById('deploy-dialog');
+  if (dlg) {
+    dlg.classList.remove('hidden');
+    if (urlInput) setTimeout(() => urlInput.focus(), 50);
+  }
+}
+
+function closeDeployDialog() {
+  _deployingPhaseId = null;
+  const dlg = document.getElementById('deploy-dialog');
+  if (dlg) dlg.classList.add('hidden');
+}
+
+async function confirmDeployPhase() {
+  const urlInput  = document.getElementById('deploy-url-input');
+  const envSelect = document.getElementById('deploy-env-select');
+  const url = (urlInput && urlInput.value.trim()) || '';
+  const env = (envSelect && envSelect.value) || 'production';
+
+  if (!url) {
+    urlInput && urlInput.focus();
+    showToast('Paste the live deployment URL to confirm', 'error');
+    return;
+  }
+
+  const btn = document.getElementById('btn-confirm-deploy');
+  if (btn) { btn.disabled = true; btn.textContent = 'Recording…'; }
+
+  try {
+    const res = await apiFetch('/api/phases', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'deploy', id: _deployingPhaseId, deploy_url: url, deploy_env: env })
+    });
+    const data = await res.json();
+    if (data.status === 'ok') {
+      showToast('Deployment recorded — phase is live ✓', 'success');
+      closeDeployDialog();
+      loadState();
+    } else {
+      showToast(data.error || 'Failed to record deployment', 'error');
+    }
+  } catch (e) {
+    showToast('Failed to record deployment', 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = `${icon('cloudUp',12)} Confirm Deployment`; }
+  }
 }
 
 async function _autoSyncPhases() {

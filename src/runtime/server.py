@@ -17,7 +17,13 @@ from constants import (
     AI_POLL_TIMEOUT_SECS,
     ALL_GATE_NAMES,
     ALL_STAGE_DIRS,
+    BUILD_STUCK_KILL_SECS,
+    BUILD_STUCK_WARN_SECS,
     BUILD_STATUS_COMMITTED,
+    FILE_LOCAL_RUN,
+    LOCAL_RUN_MAX_LOG,
+    LOCAL_RUN_HEALTH_TIMEOUT,
+    LOCAL_RUN_HEALTH_POLL,
     BUILD_STATUS_LOCAL,
     BUILD_STATUS_PUSHED,
     BUILD_STATUS_PR_CREATED,
@@ -90,6 +96,7 @@ from constants import (
     PHASE_STATUS_ACTIVE,
     PHASE_STATUS_BUILT,
     PHASE_STATUS_DEPLOYED,
+    PHASE_STATUS_MERGED,
     PHASE_STATUS_PENDING,
     PIPELINE_STAGE_NAMES,
     PROJECT_STATUS_ACTIVE,
@@ -185,6 +192,14 @@ _reviews_lock  = threading.Lock()
 _index_lock    = threading.Lock()
 _generate_lock = threading.Lock()   # guards _active_generate_proc
 _active_generate_proc = None        # current Popen for the running forge-generate subprocess
+
+_build_lock       = threading.Lock()  # guards _active_build_pid + _build_cancel
+_active_build_pid = None              # PID of the current blocking git/curl subprocess
+_build_cancel     = threading.Event() # set() to request cancellation of do_build
+
+_local_run_lock = threading.Lock()    # guards _local_run_proc + _local_run_stop
+_local_run_proc = None                # Popen handle for docker compose / manual service
+_local_run_stop = threading.Event()   # set() to signal log-reader + health threads to exit
 
 # Module-level security constants — read from env at startup
 FORGE_TOKEN = os.environ.get("FORGE_TOKEN", "")
@@ -662,17 +677,45 @@ def _parse_phases_from_docs():
                 if key in seen_names:
                     continue
                 seen_names.add(key)
-                # Grab first non-empty line after heading as description
+                # Grab first non-empty line after heading as description.
+                # Include bullet lines (strip leading -/*) so Sprint-style
+                # sections with no prose still get a description.
                 desc_lines = []
-                for j in range(i + 1, min(i + 6, len(lines))):
+                for j in range(i + 1, min(i + 8, len(lines))):
                     l = lines[j].strip()
                     if not l or l.startswith('#'):
                         break
-                    if not l.startswith('|') and not l.startswith('-'):
-                        desc_lines.append(l)
-                        if len(desc_lines) >= 2:
-                            break
+                    if l.startswith('|'):
+                        continue  # skip table rows
+                    # Strip bullet markers for prose display
+                    bare = _re.sub(r'^[-*]\s+', '', l)
+                    desc_lines.append(bare)
+                    if len(desc_lines) >= 2:
+                        break
                 desc = ' '.join(desc_lines)[:DESCRIPTION_MAX_LEN]
+
+                # Capture full section body for detail drawer.
+                # Collect until the next heading at same or higher level,
+                # or until we've seen 50 lines, capped at 3 KB.
+                heading_level = len(_re.match(r'^#+', line).group())
+                next_heading_re = _re.compile(r'^#{1,' + str(heading_level) + r'}\s')
+                body_lines = []
+                body_chars = 0
+                _BODY_LINE_LIMIT = 50
+                _BODY_CHAR_LIMIT = 3000
+                for j in range(i + 1, len(lines)):
+                    bl = lines[j]
+                    if next_heading_re.match(bl):
+                        break
+                    body_lines.append(bl)
+                    body_chars += len(bl)
+                    if len(body_lines) >= _BODY_LINE_LIMIT or body_chars >= _BODY_CHAR_LIMIT:
+                        break
+                # Trim trailing blank lines
+                while body_lines and not body_lines[-1].strip():
+                    body_lines.pop()
+                doc_body = '\n'.join(body_lines)
+
                 # Order: MVP=0, Phase N = N, else alphabetical
                 if _re.match(r'mvp', key):
                     order_key = 0
@@ -683,6 +726,7 @@ def _parse_phases_from_docs():
                     "order": order_key,
                     "name": clean,
                     "description": desc,
+                    "doc_body": doc_body,
                     "source": f"{d}/{fname}",
                 })
 
@@ -725,6 +769,7 @@ def sync_phases(proj):
             p = existing[slug]
             p["name"]        = dp["name"]
             p["description"] = dp["description"] or p.get("description", "")
+            p["doc_body"]    = dp.get("doc_body", "")
             p["order"]       = dp["order"]
             p["doc_source"]  = dp["source"]
         else:
@@ -732,6 +777,7 @@ def sync_phases(proj):
                 "id":          slug,
                 "name":        dp["name"],
                 "description": dp["description"],
+                "doc_body":    dp.get("doc_body", ""),
                 "order":       dp["order"],
                 "status":      PHASE_STATUS_PENDING,
                 "doc_source":  dp["source"],
@@ -741,11 +787,18 @@ def sync_phases(proj):
             existing[slug] = p
         merged.append(p)
 
-    # Preserve any manually-created phases not in docs
+    # Preserve manually-created phases not in docs.
+    # Phases that carry doc_source were previously extracted from docs
+    # (not user-created) — if they no longer appear in the parse result
+    # (e.g. deduplicated out or deleted from the doc), drop them to avoid
+    # stale cards. Only phases WITHOUT doc_source are truly manual and
+    # should be kept unconditionally.
     doc_ids = {_re.sub(r'[^a-z0-9]+', '-', d["name"].lower()).strip('-') for d in doc_phases}
     for pid, p in existing.items():
         if pid not in doc_ids:
-            p.pop("doc_source", None)
+            if p.get("doc_source"):
+                # Was a doc-extracted phase that's now gone — discard
+                continue
             merged.append(p)
 
     merged.sort(key=lambda x: (x.get("order", 99), x["name"]))
@@ -1291,11 +1344,218 @@ def evaluate_gate(gate_name):
     return GATE_STATUS_PASSED
 
 
+# ---------------------------------------------------------------------------
+# Local-run state helpers
+# ---------------------------------------------------------------------------
+def _local_run_state_path():
+    return os.path.join(FORGE_DIR, FILE_LOCAL_RUN)
+
+
+def _load_local_run_state():
+    p = _local_run_state_path()
+    if os.path.exists(p):
+        try:
+            with open(p) as f:
+                return json.load(f)
+        except (OSError, json.JSONDecodeError):
+            pass
+    return {"status": "stopped", "method": "none", "services": [], "log": [], "health": {}}
+
+
+def _save_local_run_state(data):
+    p = _local_run_state_path()
+    runs_dir = os.path.dirname(p)
+    os.makedirs(runs_dir, exist_ok=True)
+    try:
+        with open(p, "w") as f:
+            json.dump(data, f)
+    except OSError as exc:
+        logger.debug("_save_local_run_state: %s", exc)
+
+
+def _detect_local_run(repo_root):
+    """Scan repo_root for runnable service configuration.
+
+    Returns a dict:
+      method          "docker-compose" | "manual" | "none"
+      compose_file    relative path (for docker-compose method)
+      services        [{name, host_port, url}]
+      manual_cmds     [{name, dir, command, port}]  (for manual method)
+      env_warnings    list of human-readable .env problems
+      docker_available  bool
+      available       bool  — True when there's something runnable
+    """
+    import re as _re
+    import socket as _socket
+
+    result = {
+        "method": "none",
+        "compose_file": None,
+        "services": [],
+        "manual_cmds": [],
+        "env_warnings": [],
+        "docker_available": False,
+        "available": False,
+    }
+
+    # ── Check docker availability ────────────────────────────────────────────
+    try:
+        _r = subprocess.run(
+            ["docker", "compose", "version"],
+            capture_output=True, text=True, timeout=5
+        )
+        result["docker_available"] = (_r.returncode == 0)
+    except (OSError, subprocess.TimeoutExpired):
+        result["docker_available"] = False
+
+    # ── Look for docker-compose file ─────────────────────────────────────────
+    compose_candidates = [
+        "docker-compose.yml", "docker-compose.yaml",
+        "compose.yml", "compose.yaml",
+        "infra/docker-compose.yml", "infra/docker-compose.yaml",
+        "infra/compose.yml", "infra/compose.yaml",
+    ]
+    compose_path = None
+    compose_rel = None
+    for rel in compose_candidates:
+        full = os.path.join(repo_root, rel)
+        if os.path.exists(full):
+            compose_path = full
+            compose_rel = rel
+            break
+
+    if compose_path:
+        result["method"] = "docker-compose"
+        result["compose_file"] = compose_rel
+        result["available"] = True
+
+        # Parse services + ports from compose YAML (no PyYAML dependency)
+        try:
+            content = open(compose_path, encoding="utf-8").read()
+            lines = content.splitlines()
+            services_raw = []
+            in_services_block = False
+            current_svc = None
+            in_ports_block = False
+
+            for line in lines:
+                if _re.match(r'^services:\s*$', line):
+                    in_services_block = True
+                    in_ports_block = False
+                    continue
+                if in_services_block:
+                    if _re.match(r'^[^\s]', line):
+                        in_services_block = False
+                        in_ports_block = False
+                        continue
+                    m = _re.match(r'^  ([a-zA-Z][a-zA-Z0-9_-]*):\s*$', line)
+                    if m:
+                        current_svc = {"name": m.group(1), "host_port": None, "url": None}
+                        services_raw.append(current_svc)
+                        in_ports_block = False
+                        continue
+                    if current_svc and _re.match(r'^\s+ports:\s*$', line):
+                        in_ports_block = True
+                        continue
+                    if in_ports_block and _re.match(r'^\s+- ', line):
+                        pm = _re.search(r'["\']?(\d+):(\d+)["\']?', line)
+                        if pm and current_svc and current_svc["host_port"] is None:
+                            hp = int(pm.group(1))
+                            current_svc["host_port"] = hp
+                            current_svc["url"] = f"http://localhost:{hp}"
+                    elif in_ports_block and not _re.match(r'^\s+- ', line):
+                        in_ports_block = False
+
+            result["services"] = services_raw
+
+            # Check for env_file requirements
+            env_file_re = _re.compile(r'^\s+- (.+\.env)\s*$')
+            compose_dir = os.path.dirname(compose_path)
+            for line in lines:
+                em = env_file_re.match(line)
+                if em:
+                    env_fname = em.group(1).strip()
+                    env_full = os.path.join(compose_dir, env_fname)
+                    if not os.path.exists(env_full):
+                        example = env_full + ".example"
+                        if os.path.exists(example):
+                            result["env_warnings"].append(
+                                f"{env_fname} missing — copy from {env_fname}.example"
+                            )
+                        else:
+                            result["env_warnings"].append(
+                                f"{env_fname} missing — create it with the required variables"
+                            )
+        except OSError:
+            pass
+        return result
+
+    # ── No compose file — scan for individual service dirs ───────────────────
+    manual_cmds = []
+
+    def _scan_service(name, rel_dir):
+        full = os.path.join(repo_root, rel_dir)
+        if not os.path.isdir(full):
+            return
+        req_file = os.path.join(full, "requirements.txt")
+        pkg_file = os.path.join(full, "package.json")
+        svc = {"name": name, "dir": rel_dir, "command": None, "port": None}
+        if os.path.exists(req_file):
+            try:
+                reqs = open(req_file, encoding="utf-8").read().lower()
+            except OSError:
+                reqs = ""
+            if "uvicorn" in reqs or "fastapi" in reqs:
+                svc["command"] = "pip install -r requirements.txt && uvicorn main:app --reload --host 0.0.0.0 --port 8000"
+                svc["port"] = 8000
+            elif "flask" in reqs:
+                svc["command"] = "pip install -r requirements.txt && flask run --host 0.0.0.0 --port 5000"
+                svc["port"] = 5000
+            elif "django" in reqs:
+                svc["command"] = "pip install -r requirements.txt && python manage.py runserver 0.0.0.0:8000"
+                svc["port"] = 8000
+            else:
+                svc["command"] = "pip install -r requirements.txt && python main.py"
+                svc["port"] = 8000
+        elif os.path.exists(pkg_file):
+            port = 3000 if name == "frontend" else 8000
+            try:
+                pkg_data = json.loads(open(pkg_file, encoding="utf-8").read())
+                dev_cmd = pkg_data.get("scripts", {}).get("dev", "")
+                pm = _re.search(r'--port[= ](\d+)', dev_cmd)
+                if pm:
+                    port = int(pm.group(1))
+            except (OSError, json.JSONDecodeError, ValueError):
+                pass
+            svc["command"] = "npm install && npm run dev"
+            svc["port"] = port
+        if svc["command"]:
+            manual_cmds.append(svc)
+
+    for svc_name in ("backend", "frontend", "integration"):
+        _scan_service(svc_name, svc_name)
+
+    if manual_cmds:
+        result["method"] = "manual"
+        result["manual_cmds"] = manual_cmds
+        result["available"] = True
+        for mc in manual_cmds:
+            result["services"].append({
+                "name": mc["name"],
+                "host_port": mc.get("port"),
+                "url": f"http://localhost:{mc['port']}" if mc.get("port") else None,
+            })
+
+    return result
+
+
 def save_build_progress(entry):
     progress_file = os.path.join(FORGE_DIR, FILE_BUILD_IN_PROGRESS)
     try:
+        copy = dict(entry)
+        copy["heartbeat"] = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
         with open(progress_file, "w") as f:
-            json.dump(entry, f)
+            json.dump(copy, f)
     except OSError as exc:
         logger.debug("save_build_progress: %s", exc)
 
@@ -1438,6 +1698,7 @@ def compute_full_state():
             with open(progress_file) as _pf:
                 in_progress = json.load(_pf)
             if not any(b.get("id") == in_progress.get("id") for b in builds):
+                in_progress["_live"] = True   # tells the UI this entry is still in-flight
                 builds = builds + [in_progress]
         except (OSError, json.JSONDecodeError) as exc:
             logger.debug("in-progress build load: %s", exc)
@@ -1841,14 +2102,16 @@ class ForgeHandler(BaseHTTPRequestHandler):
                                     f"https://api.github.com/repos/{gh_owner}/{gh_repo}/git/refs/heads/{branch_ref}",
                                 ], capture_output=True, text=True, timeout=GIT_TIMEOUT_SECS)
                                 b["branch_deleted"] = del_r.stdout.strip() in ("204", "422")
-                            # Auto-deploy phase when its PR merges
+                            # PR merged → advance phase to "merged" (code is in mainline).
+                            # "deployed" requires a confirmed live URL and is set
+                            # separately via the deploy action.
                             phase_id = b.get("phase_id", "")
                             if phase_id:
                                 for p in proj.get("phases", []):
                                     if p["id"] == phase_id and p.get("status") == PHASE_STATUS_BUILT:
-                                        p["status"] = PHASE_STATUS_DEPLOYED
-                                        p["deployed_at"] = merged_at
-                                        p["deployed_by"] = merged_by
+                                        p["status"] = PHASE_STATUS_MERGED
+                                        p["merged_at"] = merged_at
+                                        p["merged_by"] = merged_by
                             updated = True
                     if updated:
                         save_project_state(proj)
@@ -1858,6 +2121,15 @@ class ForgeHandler(BaseHTTPRequestHandler):
                 })
             except Exception as e:
                 self._json_response(500, {"error": str(e)})
+            return
+
+        if path == "/api/local-run":
+            cfg = _detect_local_run(REPO_ROOT)
+            st = _load_local_run_state()
+            resp = dict(st)
+            resp["detect"] = cfg
+            resp["repo_root"] = REPO_ROOT
+            self._json_response(200, resp)
             return
 
         if path == "/api/build-review":
@@ -2532,6 +2804,35 @@ class ForgeHandler(BaseHTTPRequestHandler):
 
         if path == "/api/build":
 
+            # ── Cancel a stuck build ─────────────────────────────────────────
+            if data.get("action") == "cancel":
+                import signal as _sig
+                with _build_lock:
+                    _build_cancel.set()
+                    _stuck_pid = _active_build_pid
+                if _stuck_pid:
+                    try:
+                        try:
+                            os.killpg(os.getpgid(_stuck_pid), _sig.SIGTERM)
+                        except (OSError, ProcessLookupError):
+                            os.kill(_stuck_pid, _sig.SIGTERM)
+                    except (OSError, ProcessLookupError) as _ke:
+                        logger.debug("build cancel kill pid=%s: %s", _stuck_pid, _ke)
+                # Immediately stamp the progress file as cancelled so the UI updates
+                _prog_path = os.path.join(FORGE_DIR, FILE_BUILD_IN_PROGRESS)
+                if os.path.exists(_prog_path):
+                    try:
+                        with open(_prog_path) as _pf:
+                            _pe = json.load(_pf)
+                        _pe["status"] = "cancelled"
+                        _pe["heartbeat"] = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+                        with open(_prog_path, "w") as _pf:
+                            json.dump(_pe, _pf)
+                    except (OSError, json.JSONDecodeError) as _ce:
+                        logger.debug("build cancel progress stamp: %s", _ce)
+                self._json_response(200, {"status": "cancelled"})
+                return
+
             def _run_local_validation(repo_root, copied_dirs, vlogs):
                 """Syntax-check Python files, run pytest, and validate docker-compose config.
                 Returns a structured validation dict stored on the build entry."""
@@ -2650,12 +2951,38 @@ class ForgeHandler(BaseHTTPRequestHandler):
             email = git_cfg.get("email", "")
 
             timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-            # Phase-aware branch naming: forge/<phase-id>-<timestamp>
             _active_pid = proj.get("active_phase_id", "") or ""
+
+            # ── Semantic branch naming ───────────────────────────────────────
+            # Pattern: {prefix}/{phase-slug}
+            # Timestamps belong in commits and tags, not branch names.
+            # If the branch already exists locally, append -v2, -v3 …
+            def _slugify(text, max_len=40):
+                import re as _re2
+                s = _re2.sub(r'[^a-z0-9]+', '-', text.lower()).strip('-')
+                return s[:max_len].rstrip('-')
+
             if _active_pid:
-                branch_name = f"{branch_prefix}/{_active_pid}-{timestamp}"
+                _active_phase = next(
+                    (p for p in proj.get("phases", []) if p["id"] == _active_pid), None
+                )
+                _phase_slug = _slugify(_active_phase["name"]) if _active_phase else _slugify(_active_pid)
+                _base_branch = f"{branch_prefix}/{_phase_slug}"
             else:
-                branch_name = f"{branch_prefix}/build-{timestamp}"
+                _project_slug = _slugify(proj.get("project_name", "") or os.path.basename(REPO_ROOT))
+                _base_branch = f"{branch_prefix}/{_project_slug}"
+
+            # Ensure uniqueness: if branch exists in local repo, append -v2, -v3
+            branch_name = _base_branch
+            if os.path.exists(os.path.join(REPO_ROOT, ".git")):
+                _existing = subprocess.run(
+                    ["git", "branch", "--list", _base_branch + "*"],
+                    cwd=REPO_ROOT, capture_output=True, text=True
+                ).stdout.strip()
+                if _existing:
+                    _version = len(_existing.splitlines()) + 1
+                    branch_name = f"{_base_branch}-v{_version}"
+
             build_entry = {
                 "id": timestamp,
                 "branch": branch_name,
@@ -2663,13 +2990,38 @@ class ForgeHandler(BaseHTTPRequestHandler):
                 "pr_url": "",
                 "created_at": datetime.now().isoformat(),
                 "phase_id": _active_pid or None,
+                "commits": [],   # [{step, message, sha}] — populated during build
                 "log": []
             }
 
             def do_build():
+                global _active_build_pid
                 import shutil as _shutil
                 import re as _re
+                import signal as _sig
+
+                # Register this thread and arm the heartbeat ticker
+                with _build_lock:
+                    _build_cancel.clear()
+
                 logs = []
+
+                # Lightweight result container (mirrors subprocess.CompletedProcess interface)
+                class _GitResult:
+                    def __init__(self, rc, out, err):
+                        self.returncode = rc
+                        self.stdout = out
+                        self.stderr = err
+
+                # Heartbeat thread: writes progress file every 10 s so the UI can
+                # detect whether the build is still alive or has gone silent.
+                _hb_stop = threading.Event()
+                def _hb_tick():
+                    while not _hb_stop.wait(10):
+                        save_build_progress(build_entry)
+                _hb_thread = threading.Thread(target=_hb_tick, daemon=True, name="build-heartbeat")
+                _hb_thread.start()
+
                 try:
                     def _redact(s):
                         if token:
@@ -2678,16 +3030,41 @@ class ForgeHandler(BaseHTTPRequestHandler):
                         return s
 
                     def run_git(args, cwd=REPO_ROOT):
-                        result = subprocess.run(
+                        """Run a git command with timeout and cancellation support."""
+                        global _active_build_pid
+                        if _build_cancel.is_set():
+                            raise RuntimeError("Build cancelled by user")
+                        safe_args = [
+                            a.replace(token, "***") if token and token in a else a
+                            for a in args
+                        ]
+                        proc = subprocess.Popen(
                             ["git"] + args, cwd=cwd,
-                            capture_output=True, text=True
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                            text=True, start_new_session=True,
                         )
-                        safe_args = [a.replace(token, "***") if token and token in a else a for a in args]
+                        with _build_lock:
+                            _active_build_pid = proc.pid
+                        try:
+                            try:
+                                stdout, stderr = proc.communicate(timeout=GIT_TIMEOUT_SECS * 4)
+                            except subprocess.TimeoutExpired:
+                                proc.kill()
+                                proc.communicate()
+                                logs.append(f"$ git {' '.join(safe_args)}: TIMEOUT")
+                                raise RuntimeError(
+                                    f"git {args[0]} timed out after {GIT_TIMEOUT_SECS * 4}s"
+                                )
+                        finally:
+                            with _build_lock:
+                                if _active_build_pid == proc.pid:
+                                    _active_build_pid = None
+                        result = _GitResult(proc.returncode, stdout, stderr)
                         logs.append(f"$ git {' '.join(safe_args)}: {result.returncode}")
-                        if result.stdout.strip():
-                            logs.append(_redact(result.stdout.strip()))
-                        if result.stderr.strip():
-                            logs.append(_redact(result.stderr.strip()))
+                        if stdout.strip():
+                            logs.append(_redact(stdout.strip()))
+                        if stderr.strip():
+                            logs.append(_redact(stderr.strip()))
                         return result
 
                     if not os.path.exists(os.path.join(REPO_ROOT, ".git")):
@@ -2702,25 +3079,78 @@ class ForgeHandler(BaseHTTPRequestHandler):
                         if username:
                             run_git(["config", "user.name", username])
 
-                    code_step_map = {
-                        "backend": "backend",
-                        "frontend": "frontend",
-                        "integration": "integration",
-                        "tests": "tests",
-                        "infra": "infra",
+                    project_name = proj.get("project_name", "") or os.path.basename(REPO_ROOT)
+                    _active_phase_name = ""
+                    _active_ph = next(
+                        (p for p in proj.get("phases", []) if p["id"] == (_active_pid or "")), None
+                    )
+                    if _active_ph:
+                        _active_phase_name = _active_ph.get("name", "")
+
+                    # Scope suffix used in every commit message: "ProjectName [Phase]"
+                    _scope_suffix = project_name
+                    if _active_phase_name:
+                        _scope_suffix += f" [{_active_phase_name}]"
+
+                    # ── Conventional commit metadata per step ────────────────
+                    # Maps step key → (conventional-type, scope, description)
+                    _step_meta = {
+                        "infra":       ("feat",  "infra",       "scaffold Docker, CI/CD pipeline and deployment config"),
+                        "backend":     ("feat",  "backend",     "generate REST API — models, services, database layer"),
+                        "frontend":    ("feat",  "frontend",    "generate UI components, pages and routing"),
+                        "integration": ("feat",  "integration", "generate third-party adapters and API clients"),
+                        "tests":       ("test",  "tests",       "generate unit, integration and end-to-end test suite"),
+                    }
+                    # Commit order: infra first (foundation), tests last
+                    _STEP_COMMIT_ORDER = ["infra", "backend", "frontend", "integration", "tests"]
+
+                    # Helper: get short SHA of HEAD after a commit
+                    def _head_sha():
+                        r = subprocess.run(
+                            ["git", "rev-parse", "--short", "HEAD"],
+                            cwd=REPO_ROOT, capture_output=True, text=True
+                        )
+                        return r.stdout.strip()
+
+                    # ── Checkout branch (before any file writes) ─────────────
+                    run_git(["checkout", "-b", branch_name])
+                    build_entry["status"] = "branched"
+                    save_build_progress(build_entry)
+
+                    # ── Phase 1: copy + commit each step individually ─────────
+                    dir_descriptions = {
+                        "backend":     "FastAPI backend — models, services, REST API endpoints",
+                        "frontend":    "Frontend UI — components, pages, routing",
+                        "integration": "Integration layer — third-party adapters, API clients",
+                        "tests":       "Test suite — unit, integration, and end-to-end tests",
+                        "infra":       "Infrastructure — Docker, CI/CD pipelines, deployment config",
                     }
                     copied_dirs = []
-                    for step_key, dest_name in code_step_map.items():
+                    for step_key in _STEP_COMMIT_ORDER:
                         src = os.path.join(FORGE_DIR, "15-build", step_key)
-                        if os.path.isdir(src):
-                            entries = list(os.scandir(src))
-                            if entries:
-                                dst = os.path.join(REPO_ROOT, dest_name)
-                                _shutil.copytree(src, dst, dirs_exist_ok=True)
-                                copied_dirs.append(dest_name)
-                                logs.append(f"Copied .forge/15-build/{step_key}/ -> {dest_name}/")
+                        if not os.path.isdir(src) or not list(os.scandir(src)):
+                            continue
+                        dst = os.path.join(REPO_ROOT, step_key)
+                        _shutil.copytree(src, dst, dirs_exist_ok=True)
+                        copied_dirs.append(step_key)
+                        logs.append(f"Copied .forge/15-build/{step_key}/ -> {step_key}/")
 
-                    # ── Local validation (syntax + tests + docker config) ────
+                        run_git(["add", step_key + "/"])
+
+                        ctype, cscope, cdesc = _step_meta.get(
+                            step_key, ("feat", step_key, f"generate {step_key} layer")
+                        )
+                        msg = (
+                            f"{ctype}({cscope}): {cdesc}\n\n"
+                            f"Source: .forge/15-build/{step_key}/\n"
+                            f"Project: {_scope_suffix}"
+                        )
+                        run_git(["commit", "-m", msg])
+                        sha = _head_sha()
+                        build_entry["commits"].append({"step": step_key, "sha": sha, "message": f"{ctype}({cscope}): {cdesc}"})
+                        logs.append(f"Committed {step_key} [{sha}]")
+
+                    # ── Phase 2: local validation (after all code is present) ─
                     if copied_dirs:
                         build_entry["status"] = BUILD_STATUS_VALIDATING
                         save_build_progress(build_entry)
@@ -2731,67 +3161,30 @@ class ForgeHandler(BaseHTTPRequestHandler):
                     else:
                         build_entry["validation"] = {"status": "skipped", "syntax": {"status": "skipped"}, "tests": {"status": "skipped"}, "docker": {"status": "skipped"}}
 
-                    project_name = proj.get("project_name", "") or os.path.basename(REPO_ROOT)
-                    dir_descriptions = {
-                        "backend": "FastAPI backend — models, services, REST API endpoints",
-                        "frontend": "Frontend UI — components, pages, routing",
-                        "integration": "Integration layer — third-party adapters, API clients",
-                        "tests": "Test suite — unit, integration, and end-to-end tests",
-                        "infra": "Infrastructure — Docker, CI/CD pipelines, deployment config",
-                    }
+                    # ── Phase 3: README commit ────────────────────────────────
                     dir_lines = "\n".join(
-                        f"├── {d}/{'  ← ' + dir_descriptions[d] if d in dir_descriptions else ''}"
-                        for d in copied_dirs
+                        f"├── {d}/  ← {dir_descriptions[d]}" for d in copied_dirs if d in dir_descriptions
                     )
                     readme_lines = [
                         f"# {project_name}",
                         "",
-                        f"> Generated by [Forge OS](https://github.com/mrinalxdev/forge-os) on {timestamp[:8][:4]}-{timestamp[:8][4:6]}-{timestamp[:8][6:]}",
+                        f"> Phase: **{_active_phase_name or 'Initial build'}** — generated by [Forge OS](https://github.com/mrinalxdev/forge-os)",
                         "",
                         "## Repository Structure",
                         "",
                         "```",
                         f"{project_name}/",
-                        f"├── .forge/          ← Spec docs, architecture decisions, agent definitions",
+                        "├── .forge/          ← Spec docs, architecture decisions, agent definitions",
                     ]
                     if dir_lines:
                         readme_lines.append(dir_lines)
-                    readme_lines += [
-                        "```",
-                        "",
-                        "## Getting Started",
-                        "",
-                    ]
+                    readme_lines += ["```", "", "## Getting Started", ""]
                     if "backend" in copied_dirs:
-                        readme_lines += [
-                            "### Backend",
-                            "```bash",
-                            "cd backend",
-                            "cp .env.example .env   # fill in your secrets",
-                            "docker compose up --build",
-                            "```",
-                            "",
-                        ]
+                        readme_lines += ["### Backend", "```bash", "cd backend", "cp .env.example .env", "docker compose up --build", "```", ""]
                     if "frontend" in copied_dirs:
-                        readme_lines += [
-                            "### Frontend",
-                            "```bash",
-                            "cd frontend",
-                            "npm install",
-                            "npm run dev",
-                            "```",
-                            "",
-                        ]
+                        readme_lines += ["### Frontend", "```bash", "cd frontend", "npm install", "npm run dev", "```", ""]
                     if "tests" in copied_dirs:
-                        readme_lines += [
-                            "### Tests",
-                            "```bash",
-                            "cd tests",
-                            "pip install -r requirements.txt",
-                            "pytest",
-                            "```",
-                            "",
-                        ]
+                        readme_lines += ["### Tests", "```bash", "cd tests", "pip install -r requirements.txt", "pytest", "```", ""]
                     readme_lines += [
                         "## Spec Docs",
                         "",
@@ -2810,43 +3203,67 @@ class ForgeHandler(BaseHTTPRequestHandler):
                     readme_path = os.path.join(REPO_ROOT, "README.md")
                     with open(readme_path, "w", encoding="utf-8") as rf:
                         rf.write("\n".join(readme_lines) + "\n")
-                    logs.append("Generated README.md")
-
-                    run_git(["add", ".forge/"])
                     run_git(["add", "README.md"])
-                    for d in copied_dirs:
-                        run_git(["add", d + "/"])
-
-                    run_git(["checkout", "-b", branch_name])
-                    build_entry["status"] = "branched"
-                    save_build_progress(build_entry)
-
-                    components_line = ", ".join(copied_dirs) if copied_dirs else "docs only"
-                    commit_msg = (
-                        f"forge: generated code [{timestamp}]\n\n"
-                        f"Components: {components_line}\n"
-                        f"Spec docs: .forge/01-requirements, .forge/04-architecture, .forge/06-engineering"
+                    readme_msg = (
+                        f"docs: add README and project overview\n\n"
+                        f"Project: {_scope_suffix}"
                     )
-                    run_git(["commit", "-m", commit_msg])
+                    run_git(["commit", "-m", readme_msg])
+                    sha = _head_sha()
+                    build_entry["commits"].append({"step": "readme", "sha": sha, "message": "docs: add README and project overview"})
+                    logs.append(f"Committed README [{sha}]")
+
+                    # ── Phase 4: spec docs commit ─────────────────────────────
+                    run_git(["add", ".forge/"])
+                    # Only commit if there's something to stage
+                    _diff = subprocess.run(
+                        ["git", "diff", "--cached", "--quiet"],
+                        cwd=REPO_ROOT, capture_output=True
+                    )
+                    if _diff.returncode != 0:  # returncode=1 means staged changes exist
+                        spec_msg = (
+                            f"chore(specs): include .forge spec documents\n\n"
+                            f"Spec docs, architecture decisions, agent definitions, gate results.\n"
+                            f"Project: {_scope_suffix}"
+                        )
+                        run_git(["commit", "-m", spec_msg])
+                        sha = _head_sha()
+                        build_entry["commits"].append({"step": "specs", "sha": sha, "message": "chore(specs): include .forge spec documents"})
+                        logs.append(f"Committed .forge specs [{sha}]")
+                    else:
+                        logs.append("No spec doc changes to commit")
+
                     build_entry["status"] = "committed"
                     save_build_progress(build_entry)
 
+                    # ── PR title + body ───────────────────────────────────────
+                    _phase_label = _active_phase_name or "Initial build"
+                    _commit_list = "\n".join(
+                        f"- `{c['sha']}` {c['message']}"
+                        for c in build_entry["commits"]
+                    ) or "- (no commits)"
+
                     pr_body_lines = [
-                        "## Generated by Forge OS",
+                        f"## {project_name} — {_phase_label}",
                         "",
-                        f"**Branch:** `{branch_name}`",
-                        f"**Timestamp:** {timestamp}",
+                        f"**Branch:** `{branch_name}`  ",
+                        f"**Commits:** {len(build_entry['commits'])}  ",
+                        f"**Generated:** {timestamp[:4]}-{timestamp[4:6]}-{timestamp[6:8]}",
                         "",
-                        "### Generated Components",
+                        "### Commits in this PR",
+                        "",
+                        _commit_list,
+                        "",
+                        "### Components",
                     ]
                     if copied_dirs:
                         for d in copied_dirs:
-                            pr_body_lines.append(f"- `{d}/` — sourced from `.forge/15-build/{d}/`")
+                            pr_body_lines.append(f"- `{d}/` — generated from `.forge/15-build/{d}/`")
                     else:
                         pr_body_lines.append("- Spec documents only (no code generated yet)")
                     pr_body_lines += [
                         "",
-                        "### Spec Documents Included",
+                        "### Spec References",
                         "- **Requirements:** `.forge/01-requirements/`",
                         "- **Architecture:** `.forge/04-architecture/`",
                         "- **Engineering specs:** `.forge/06-engineering/`",
@@ -2854,11 +3271,11 @@ class ForgeHandler(BaseHTTPRequestHandler):
                         "",
                         "### Review Checklist",
                         "- [ ] Code matches engineering spec in `.forge/06-engineering/`",
-                        "- [ ] Architecture decisions from `.forge/04-architecture/` are implemented",
-                        "- [ ] Tests in `tests/` cover all critical paths",
+                        "- [ ] Architecture decisions from `.forge/04-architecture/` are reflected",
+                        "- [ ] Tests in `tests/` cover all critical paths from `.forge/07-quality/`",
                         "- [ ] Environment variables and secrets are NOT hardcoded",
                         "- [ ] Docker/infra configs reviewed before merge",
-                        "- [ ] No generated placeholder comments (`# TODO`, `# IMPLEMENT`) remain",
+                        "- [ ] No placeholder comments (`# TODO`, `# IMPLEMENT`) remain",
                         "",
                         "_Generated by [Forge OS](https://github.com/mrinalxdev/forge-os)_",
                     ]
@@ -2894,9 +3311,11 @@ class ForgeHandler(BaseHTTPRequestHandler):
                                 gh_parts = gh_path.split("/")
                                 if len(gh_parts) >= 2:
                                     gh_owner, gh_repo = gh_parts[0], gh_parts[1]
-                                    pr_title = f"[Forge] Generated code — {timestamp}"
-                                    if copied_dirs:
-                                        pr_title = f"[Forge] {', '.join(d.capitalize() for d in copied_dirs)} — {timestamp}"
+                                    _components = ", ".join(d.capitalize() for d in copied_dirs) if copied_dirs else "Docs"
+                                    pr_title = f"[{project_name}] {_phase_label} — {_components}"
+                                    # Keep under GitHub's 256-char title limit
+                                    if len(pr_title) > 200:
+                                        pr_title = pr_title[:197] + "…"
                                     api_payload = json.dumps({
                                         "title": pr_title,
                                         "body": pr_body,
@@ -2959,9 +3378,19 @@ class ForgeHandler(BaseHTTPRequestHandler):
                             "Configure a repo URL in Settings to push."
                         )
                 except Exception as e:
-                    logs.append(f"Error: {e}")
-                    build_entry["status"] = "error"
+                    if _build_cancel.is_set():
+                        build_entry["status"] = "cancelled"
+                        logs.append("Build cancelled by user")
+                    else:
+                        logs.append(f"Error: {e}")
+                        build_entry["status"] = "error"
                 finally:
+                    # Stop the heartbeat ticker before final state flush
+                    _hb_stop.set()
+                    _hb_thread.join(timeout=2)
+                    with _build_lock:
+                        if _active_build_pid is not None:
+                            _active_build_pid = None
                     build_entry["log"] = logs
                     proj2 = load_project_state()
                     proj2.setdefault("builds", []).append(build_entry)
@@ -2971,6 +3400,202 @@ class ForgeHandler(BaseHTTPRequestHandler):
             t = threading.Thread(target=do_build, daemon=True)
             t.start()
             self._json_response(200, {"status": "started", "branch": branch_name})
+            return
+
+        # ── Local Preview runner ─────────────────────────────────────────────
+        if path == "/api/local-run":
+            import socket as _socket
+            global _local_run_proc, _local_run_stop
+
+            action = data.get("action", "") if data else ""
+
+            if action == "stop":
+                with _local_run_lock:
+                    _local_run_stop.set()
+                    _lrp = _local_run_proc
+                if _lrp is not None:
+                    try:
+                        try:
+                            import signal as _sig
+                            os.killpg(os.getpgid(_lrp.pid), _sig.SIGTERM)
+                        except (OSError, ProcessLookupError):
+                            _lrp.terminate()
+                    except (OSError, ProcessLookupError):
+                        pass
+                    try:
+                        _lrp.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        try:
+                            _lrp.kill()
+                        except (OSError, ProcessLookupError):
+                            pass
+                with _local_run_lock:
+                    _local_run_proc = None
+                _st = _load_local_run_state()
+                _st["status"] = "stopped"
+                _st["pid"] = None
+                _st["heartbeat"] = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+                _save_local_run_state(_st)
+                self._json_response(200, {"status": "stopped"})
+                return
+
+            if action == "detect" or self.command == "GET":
+                cfg = _detect_local_run(REPO_ROOT)
+                _st = _load_local_run_state()
+                # Merge detection result into state for the client
+                resp = dict(_st)
+                resp.update({
+                    "detect": cfg,
+                    "repo_root": REPO_ROOT,
+                })
+                self._json_response(200, resp)
+                return
+
+            if action == "start":
+                # Prevent double-start
+                with _local_run_lock:
+                    if _local_run_proc is not None:
+                        try:
+                            if _local_run_proc.poll() is None:
+                                self._json_response(409, {"error": "already running"})
+                                return
+                        except (OSError, AttributeError):
+                            pass
+                    _local_run_stop.clear()
+
+                cfg = _detect_local_run(REPO_ROOT)
+                if not cfg["available"]:
+                    self._json_response(400, {
+                        "error": "No runnable code found in this project. Run Build All first."
+                    })
+                    return
+
+                if cfg["method"] == "manual":
+                    # Manual mode: don't auto-run — just return commands so UI can show them
+                    self._json_response(200, {
+                        "status": "manual",
+                        "manual_cmds": cfg.get("manual_cmds", []),
+                        "message": "Manual mode — run commands in your terminal",
+                    })
+                    return
+
+                if not cfg["docker_available"]:
+                    self._json_response(400, {
+                        "error": "Docker is not installed or not running. Install Docker Desktop to use local preview."
+                    })
+                    return
+
+                # ── Start docker compose ────────────────────────────────────
+                compose_abs = os.path.join(REPO_ROOT, cfg["compose_file"])
+                compose_dir = os.path.dirname(compose_abs)
+
+                initial_state = {
+                    "status": "starting",
+                    "method": "docker-compose",
+                    "compose_file": cfg["compose_file"],
+                    "services": cfg["services"],
+                    "health": {s["name"]: "starting" for s in cfg["services"]},
+                    "log": [f"Starting docker compose — {cfg['compose_file']}"],
+                    "pid": None,
+                    "started_at": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+                    "heartbeat": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+                    "error": None,
+                    "env_warnings": cfg.get("env_warnings", []),
+                }
+                _save_local_run_state(initial_state)
+
+                def _run_local():
+                    global _local_run_proc
+                    import signal as _sig2
+                    _state = dict(initial_state)
+
+                    def _append_log(line):
+                        _state["log"].append(line)
+                        if len(_state["log"]) > LOCAL_RUN_MAX_LOG:
+                            _state["log"] = _state["log"][-LOCAL_RUN_MAX_LOG:]
+                        _state["heartbeat"] = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+                        _save_local_run_state(_state)
+
+                    try:
+                        proc = subprocess.Popen(
+                            ["docker", "compose", "-f", compose_abs, "up", "--build"],
+                            cwd=compose_dir,
+                            stdout=subprocess.PIPE,
+                            stderr=subprocess.STDOUT,
+                            text=True,
+                            start_new_session=True,
+                        )
+                        with _local_run_lock:
+                            _local_run_proc = proc
+                        _state["pid"] = proc.pid
+                        _state["status"] = "running"
+                        _save_local_run_state(_state)
+
+                        # ── Health checker ──────────────────────────────────
+                        def _check_health():
+                            deadline = time.time() + LOCAL_RUN_HEALTH_TIMEOUT
+                            while not _local_run_stop.is_set() and time.time() < deadline:
+                                _changed = False
+                                for svc in _state["services"]:
+                                    port = svc.get("host_port")
+                                    name = svc.get("name", "")
+                                    if not port:
+                                        continue
+                                    if _state["health"].get(name) == "healthy":
+                                        continue
+                                    try:
+                                        s = _socket.create_connection(
+                                            ("127.0.0.1", port), timeout=1
+                                        )
+                                        s.close()
+                                        _state["health"][name] = "healthy"
+                                        _changed = True
+                                        logger.info("local-run: %s is healthy on port %s", name, port)
+                                    except (OSError, ConnectionRefusedError):
+                                        _state["health"][name] = "starting"
+                                if _changed:
+                                    _save_local_run_state(_state)
+                                _local_run_stop.wait(LOCAL_RUN_HEALTH_POLL)
+
+                        _hc_thread = threading.Thread(
+                            target=_check_health, daemon=True, name="local-run-health"
+                        )
+                        _hc_thread.start()
+
+                        # ── Stream process output ───────────────────────────
+                        for line in proc.stdout:
+                            if _local_run_stop.is_set():
+                                break
+                            _append_log(line.rstrip())
+
+                        proc.wait()
+                        _exit = proc.returncode
+                        if _exit == 0 or _local_run_stop.is_set():
+                            _state["status"] = "stopped"
+                        else:
+                            _state["status"] = "error"
+                            _state["error"] = f"Process exited with code {_exit}"
+                        _state["pid"] = None
+                        _append_log(f"Process exited (code {_exit})")
+
+                    except Exception as exc:
+                        logger.warning("local-run thread: %s", exc)
+                        _state["status"] = "error"
+                        _state["error"] = str(exc)
+                        _state["pid"] = None
+                        _save_local_run_state(_state)
+                    finally:
+                        with _local_run_lock:
+                            _local_run_proc = None
+
+                _lr_thread = threading.Thread(
+                    target=_run_local, daemon=True, name="local-run"
+                )
+                _lr_thread.start()
+                self._json_response(200, {"status": "starting", "message": "Docker Compose starting…"})
+                return
+
+            self._json_response(400, {"error": "unknown action"})
             return
 
         # ── Phase management ─────────────────────────────────────────────────
@@ -3017,7 +3642,7 @@ class ForgeHandler(BaseHTTPRequestHandler):
                 idx = phases.index(phase)
                 if idx > 0:
                     prev = phases[idx - 1]
-                    if prev["status"] not in ("built", "deployed"):
+                    if prev["status"] not in ("built", "merged", "deployed"):
                         self._json_response(400, {
                             "error": f"Complete '{prev['name']}' before activating this phase."
                         }); return
@@ -3066,11 +3691,18 @@ class ForgeHandler(BaseHTTPRequestHandler):
                 phase = next((p for p in phases if p["id"] == phase_id), None)
                 if not phase:
                     self._json_response(404, {"error": "Phase not found"}); return
-                if phase.get("status") not in (PHASE_STATUS_BUILT, PHASE_STATUS_DEPLOYED):
-                    self._json_response(400, {"error": "Phase must be built before it can be deployed"}); return
+                eligible = (PHASE_STATUS_BUILT, PHASE_STATUS_MERGED, PHASE_STATUS_DEPLOYED)
+                if phase.get("status") not in eligible:
+                    self._json_response(400, {"error": "Phase must be built or merged before recording a deployment"}); return
+                deploy_url = (data.get("deploy_url") or "").strip()
+                deploy_env = (data.get("deploy_env") or "production").strip()
+                if not deploy_url:
+                    self._json_response(400, {"error": "deploy_url is required — paste the live URL to confirm deployment"}); return
                 phase["status"] = PHASE_STATUS_DEPLOYED
                 phase["deployed_at"] = datetime.now().isoformat()
                 phase["deployed_by"] = data.get("deployed_by", "")
+                phase["deploy_url"]  = deploy_url
+                phase["deploy_env"]  = deploy_env
                 save_project_state(proj)
                 self._json_response(200, {"status": "ok", "phases": phases})
                 return
