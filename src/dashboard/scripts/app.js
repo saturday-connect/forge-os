@@ -2344,6 +2344,10 @@ function renderLocalRun() {
   // ── Manual mode — show copy-pasteable commands ──────────────────────────
   if (method === 'manual') {
     const cmds = detect.manual_cmds || [];
+    const scanRoot = detect.scan_root || '';
+    // Display a shortened path (last 3 segments) for the context hint
+    const scanParts = scanRoot.replace(/\\/g, '/').split('/').filter(Boolean);
+    const scanDisplay = scanParts.length > 3 ? '…/' + scanParts.slice(-3).join('/') : scanRoot;
     el.innerHTML = `
       <div class="local-preview-card">
         <div class="local-preview-header">
@@ -2358,8 +2362,20 @@ function renderLocalRun() {
           </div>
           <span class="badge" style="background:var(--bg-2);color:var(--text-3);border:1px solid var(--border);">Manual</span>
         </div>
+        ${scanRoot ? `
+        <div style="display:flex;align-items:center;gap:6px;padding:6px 12px 2px;font-size:11px;color:var(--text-3);">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+          <span title="${escapeHtml(scanRoot)}">${escapeHtml(scanDisplay)}</span>
+          <button class="btn btn-ghost btn-xs local-preview-copy-btn" style="margin-left:2px;"
+            onclick="navigator.clipboard.writeText(${JSON.stringify(scanRoot)})"
+            title="Copy full path">${icon('clipboard', 10)}</button>
+        </div>` : ''}
         <div class="local-preview-services-grid">
-          ${cmds.map(c => `
+          ${cmds.map(c => {
+            const fullCmd = scanRoot
+              ? 'cd ' + scanRoot + '/' + c.dir + ' && ' + c.command
+              : 'cd ' + c.dir + ' && ' + c.command;
+            return `
             <div class="local-preview-manual-cmd">
               <div class="local-preview-svc-name">
                 <span class="local-run-dot local-run-dot--idle"></span>
@@ -2367,14 +2383,15 @@ function renderLocalRun() {
                 ${c.port ? `<span style="font-size:10px;color:var(--text-3);margin-left:4px;">:${c.port}</span>` : ''}
               </div>
               <div class="local-preview-cmd-block">
-                <code>${escapeHtml('cd ' + c.dir + ' && ' + c.command)}</code>
+                <code>${escapeHtml(fullCmd)}</code>
                 <button class="btn btn-ghost btn-xs local-preview-copy-btn"
-                  onclick="navigator.clipboard.writeText(${JSON.stringify('cd ' + c.dir + ' && ' + c.command)})"
+                  onclick="navigator.clipboard.writeText(${JSON.stringify(fullCmd)})"
                   title="Copy command">
                   ${icon('clipboard', 11)}
                 </button>
               </div>
-            </div>`).join('')}
+            </div>`;
+          }).join('')}
         </div>
       </div>`;
     return;

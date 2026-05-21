@@ -1373,8 +1373,12 @@ def _save_local_run_state(data):
         logger.debug("_save_local_run_state: %s", exc)
 
 
-def _detect_local_run(repo_root):
+def _detect_local_run(repo_root, forge_dir=None):
     """Scan repo_root for runnable service configuration.
+
+    When repo_root has no runnable code (e.g. Electron projects where the
+    actual build output lives under FORGE_DIR/15-build/<phase>/), falls
+    through to scan the active build-phase directory from build-system.json.
 
     Returns a dict:
       method          "docker-compose" | "manual" | "none"
@@ -1383,6 +1387,7 @@ def _detect_local_run(repo_root):
       manual_cmds     [{name, dir, command, port}]  (for manual method)
       env_warnings    list of human-readable .env problems
       docker_available  bool
+      scan_root       the directory that was actually scanned
       available       bool  — True when there's something runnable
     """
     import re as _re
@@ -1396,6 +1401,7 @@ def _detect_local_run(repo_root):
         "env_warnings": [],
         "docker_available": False,
         "available": False,
+        "scan_root": repo_root,
     }
 
     # ── Check docker availability ────────────────────────────────────────────
@@ -1545,6 +1551,52 @@ def _detect_local_run(repo_root):
                 "host_port": mc.get("port"),
                 "url": f"http://localhost:{mc['port']}" if mc.get("port") else None,
             })
+
+    # ── Fallback: scan FORGE_DIR/15-build/<active-phase>/ ───────────────────
+    # Used when repo_root is a bare forge-project dir with no actual code
+    # (e.g. Electron-managed projects where build output lives in 15-build/).
+    if not result["available"] and forge_dir and os.path.isdir(forge_dir):
+        build_root = os.path.join(forge_dir, "15-build")
+        if os.path.isdir(build_root):
+            # Find the active phase from build-system.json.
+            # "active_phase_id" doubles as the 15-build/<phase>/ subdir name.
+            bsys_file = os.path.join(forge_dir, "runs", "build-system.json")
+            active_phase_dir = None
+            try:
+                with open(bsys_file) as _f:
+                    bsys = json.load(_f)
+                phase_slug = (
+                    bsys.get("active_phase_id")
+                    or bsys.get("phase_slug")
+                    or bsys.get("active_phase")
+                    or ""
+                )
+                if phase_slug:
+                    candidate = os.path.join(build_root, phase_slug)
+                    if os.path.isdir(candidate):
+                        active_phase_dir = candidate
+            except (OSError, json.JSONDecodeError, KeyError):
+                pass
+
+            # If no phase_slug, pick the most recently modified subdirectory
+            if not active_phase_dir:
+                try:
+                    subdirs = [
+                        os.path.join(build_root, d)
+                        for d in os.listdir(build_root)
+                        if os.path.isdir(os.path.join(build_root, d))
+                    ]
+                    if subdirs:
+                        active_phase_dir = max(subdirs, key=os.path.getmtime)
+                except OSError:
+                    pass
+
+            if active_phase_dir and os.path.isdir(active_phase_dir):
+                fallback = _detect_local_run(active_phase_dir)
+                if fallback["available"]:
+                    fallback["scan_root"] = active_phase_dir
+                    fallback["docker_available"] = result["docker_available"]
+                    return fallback
 
     return result
 
@@ -2124,7 +2176,7 @@ class ForgeHandler(BaseHTTPRequestHandler):
             return
 
         if path == "/api/local-run":
-            cfg = _detect_local_run(REPO_ROOT)
+            cfg = _detect_local_run(REPO_ROOT, FORGE_DIR)
             st = _load_local_run_state()
             resp = dict(st)
             resp["detect"] = cfg
@@ -3440,7 +3492,7 @@ class ForgeHandler(BaseHTTPRequestHandler):
                 return
 
             if action == "detect" or self.command == "GET":
-                cfg = _detect_local_run(REPO_ROOT)
+                cfg = _detect_local_run(REPO_ROOT, FORGE_DIR)
                 _st = _load_local_run_state()
                 # Merge detection result into state for the client
                 resp = dict(_st)
@@ -3463,7 +3515,7 @@ class ForgeHandler(BaseHTTPRequestHandler):
                             pass
                     _local_run_stop.clear()
 
-                cfg = _detect_local_run(REPO_ROOT)
+                cfg = _detect_local_run(REPO_ROOT, FORGE_DIR)
                 if not cfg["available"]:
                     self._json_response(400, {
                         "error": "No runnable code found in this project. Run Build All first."
