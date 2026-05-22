@@ -4372,7 +4372,7 @@ function renderPhases() {
   el.innerHTML = phases.map((p, i) => {
     const isActive = p.id === activeId;
     const statusCls = _phaseStatusCls(p.status);
-    const statusLabel = _phaseStatusLabel(p.status);
+    const statusLabel = _phaseStatusLabel(p.status, p);
 
     const prevPhase = i > 0 ? phases[i - 1] : null;
     const prevDone = !prevPhase || ['built','merged','deployed'].includes(prevPhase.status);
@@ -4446,7 +4446,7 @@ function showPhaseDrawer(phaseId) {
   const badgeEl = document.getElementById('phase-drawer-badge');
   if (orderEl) orderEl.textContent = orderLabel;
   if (nameEl)  nameEl.textContent  = p.name;
-  if (badgeEl) { badgeEl.textContent = _phaseStatusLabel(p.status); badgeEl.className = `phase-badge ${_phaseStatusCls(p.status)}`; }
+  if (badgeEl) { badgeEl.textContent = _phaseStatusLabel(p.status, p); badgeEl.className = `phase-badge ${_phaseStatusCls(p.status)}`; }
 
   const bodyEl = document.getElementById('phase-drawer-body');
   if (bodyEl) bodyEl.innerHTML = _renderPhaseDrawerBody(p);
@@ -4490,13 +4490,19 @@ function _renderPhaseDrawerBody(p) {
       </button>
     </div>`;
   } else if (p.status === 'merged') {
+    const _hasPr = !!p.pr_url;
+    const _mergeLabel = _hasPr ? 'Merged to mainline' : 'Marked as deployed';
+    const _mergeIcon  = _hasPr ? icon('gitBranch', 13) : icon('cloudUp', 13);
+    const _mergeHint  = _hasPr
+      ? 'Code is in the main branch but not yet running anywhere. Record a deployment URL once it\'s live.'
+      : 'Manually marked as deployed. Configure git in Settings to push code and open PRs.';
     html += `<div class="phase-deploy-card phase-deploy-card--merged">
       <div class="phase-deploy-card-row">
-        ${icon('gitBranch', 13)}
-        <span style="font-size:12px;font-weight:600;color:var(--purple);">Merged to mainline</span>
+        ${_mergeIcon}
+        <span style="font-size:12px;font-weight:600;color:var(--purple);">${_mergeLabel}</span>
         ${p.merged_at ? `<span class="phase-deploy-meta">${new Date(p.merged_at).toLocaleString()}</span>` : ''}
       </div>
-      <p class="phase-deploy-card-hint">Code is in the main branch but not yet running anywhere. Record a deployment URL once it's live.</p>
+      <p class="phase-deploy-card-hint">${_mergeHint}</p>
       <button class="btn btn-primary btn-xs" style="align-self:flex-start;" onclick="closePhaseDrawer();openDeployDialog('${p.id}')">
         ${icon('cloudUp', 10)} Record Deployment
       </button>
@@ -4608,9 +4614,12 @@ function _phaseStatusCls(status) {
     : 'phase-pending';
 }
 
-function _phaseStatusLabel(status) {
+function _phaseStatusLabel(status, phase) {
+  if (status === 'merged') {
+    // If the phase was merged via an actual PR, say "Merged"; otherwise "Deployed"
+    return (phase && phase.pr_url) ? 'Merged' : 'Deployed';
+  }
   return status === 'built'       ? 'Built'
-    : status === 'merged'         ? 'Merged'
     : status === 'deployed'       ? 'Live'
     : status === 'in-progress'    ? 'In Progress'
     : 'Pending';
