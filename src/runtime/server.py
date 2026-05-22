@@ -4538,8 +4538,81 @@ def _run_consistency_check(fixed_rel, proj):
         return None
 
 
+def _recover_stale_status():
+    """Crash-recovery: reset status.json to idle if a previous server died
+    mid-run without cleaning up.
+
+    Conditions that indicate a stale 'running' status:
+      1. status.json exists and says STATUS_RUNNING
+      2. build-in-progress.json does not exist OR its heartbeat is older than
+         BUILD_STUCK_KILL_SECS * 3 (well beyond the stuck threshold)
+
+    For the generate pipeline, a build-system.json where all steps are
+    complete/error is also a reliable indicator that the run finished and the
+    status write was the only thing that was lost.
+    """
+    if not os.path.isdir(FORGE_DIR):
+        return
+    status_file = os.path.join(FORGE_DIR, FILE_STATUS)
+    progress_file = os.path.join(FORGE_DIR, FILE_BUILD_IN_PROGRESS)
+    bsys_file = os.path.join(FORGE_DIR, "runs", "build-system.json")
+
+    try:
+        with open(status_file) as f:
+            st = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return  # No status file or unreadable — nothing to recover
+
+    if st.get("status") != STATUS_RUNNING:
+        return  # Not stuck — nothing to do
+
+    stale = False
+
+    # Check 1: No heartbeat file → server was killed before it could write one
+    if not os.path.exists(progress_file):
+        stale = True
+    else:
+        # Check 2: Heartbeat file exists but is stale (beyond 3× kill threshold)
+        try:
+            with open(progress_file) as f:
+                prog = json.load(f)
+            hb = prog.get("heartbeat", "")
+            if hb:
+                age = (datetime.utcnow() - datetime.strptime(hb, "%Y-%m-%dT%H:%M:%SZ")).total_seconds()
+                if age > BUILD_STUCK_KILL_SECS * 3:
+                    stale = True
+        except (OSError, json.JSONDecodeError, ValueError):
+            stale = True  # Unreadable heartbeat — treat as stale
+
+    # Check 3: build-system.json shows all steps finished — run completed, status not written
+    if not stale and os.path.exists(bsys_file):
+        try:
+            with open(bsys_file) as f:
+                bsys = json.load(f)
+            step_statuses = [
+                v.get("status", "") for v in bsys.values()
+                if isinstance(v, dict) and "status" in v
+            ]
+            if step_statuses and all(s in ("complete", "error", "skipped") for s in step_statuses):
+                stale = True
+        except (OSError, json.JSONDecodeError):
+            pass
+
+    if stale:
+        try:
+            with open(status_file, "w") as f:
+                json.dump({"status": STATUS_IDLE, "stage": "", "recovered_at": datetime.utcnow().isoformat()}, f)
+            # Clean up orphaned progress file if present
+            if os.path.exists(progress_file):
+                os.remove(progress_file)
+            logger.info("startup: recovered stale 'running' status → idle (stage was: %s)", st.get("stage", ""))
+        except OSError as exc:
+            logger.warning("startup: failed to reset stale status: %s", exc)
+
+
 def run_server(port=DEFAULT_PORT):
     # C1: Bind to loopback only — never expose to 0.0.0.0 in production
+    _recover_stale_status()
     server_address = ("127.0.0.1", port)
     httpd = HTTPServer(server_address, ForgeHandler)
     print(f"Forge Dashboard running at http://127.0.0.1:{port}")
