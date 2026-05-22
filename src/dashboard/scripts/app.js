@@ -2294,6 +2294,7 @@ const BUILD_STEP_ICONS = {
 // ============================================================
 let _localRunData = null;
 let _localRunPollTimer = null;
+let _localRunLogOpen = false;   // persists open/closed state of the output log <details>
 
 async function fetchLocalRun() {
   try {
@@ -2447,7 +2448,7 @@ function renderLocalRun() {
 
   const logs = (d.log || []);
   const logsHtml = logs.length ? `
-    <details class="local-preview-log-details">
+    <details id="local-preview-log-details" class="local-preview-log-details"${_localRunLogOpen ? ' open' : ''}>
       <summary>Output log (${logs.length} lines)</summary>
       <pre class="local-preview-log">${escapeHtml(logs.slice(-80).join('\n'))}</pre>
     </details>` : '';
@@ -2482,6 +2483,14 @@ function renderLocalRun() {
       </div>
       ${logsHtml}
     </div>`;
+
+  // Persist log open/closed state across re-renders
+  const logDetails = document.getElementById('local-preview-log-details');
+  if (logDetails) {
+    logDetails.addEventListener('toggle', () => {
+      _localRunLogOpen = logDetails.open;
+    });
+  }
 }
 
 async function startLocalRun() {
