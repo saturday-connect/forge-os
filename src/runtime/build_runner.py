@@ -297,8 +297,11 @@ def build_frontend_prompt(persona, docs, api_contract):
             "   - module: 'esnext' for Next.js App Router\n"
             "   - Do NOT include 'noImplicitReturns', 'noUnusedLocals', or other options not supported\n"
             "     by your Next.js version — they cause build failures.\n\n"
-            "8. Dockerfile: use `npm install --no-audit --no-fund` NOT `npm ci`.\n"
-            "   Copy only `package.json` (not `package*.json`) — there is no lockfile.\n\n"
+            "8. Dockerfile and next.config.js MUST be consistent:\n"
+            "   - Always set `output: 'standalone'` in next.config.js for Docker builds.\n"
+            "   - The Dockerfile runner stage MUST copy from `.next/standalone` — this only works\n"
+            "     when `output: 'standalone'` is set. If you omit it, the runner has nothing to copy.\n"
+            "   - Use `npm install --no-audit --no-fund` NOT `npm ci`. Copy only `package.json`.\n\n"
             "9. ROUTING PARADIGM — PICK ONE, NEVER MIX:\n"
             "   - Next.js App Router: use ONLY `src/app/`. NEVER generate `src/pages/`.\n"
             "   - Next.js Pages Router: use ONLY `src/pages/`. NEVER generate `src/app/`.\n"
@@ -535,18 +538,84 @@ def build_prompt_for_step(step, persona, docs, api_contract):
 # Post-generation fixups
 # -----------------------------------------------------------------------
 
-def _post_generate_fixups(out_dir):
-    """Run automatic fixups on generated code after files are written.
+def _normalize_component_dirs(out_dir):
+    """Rename PascalCase component subdirectories to lowercase and rewrite imports.
 
-    Lockfile note: we intentionally do NOT generate package-lock.json here.
-    A lockfile produced on macOS (host) contains platform-specific optional
-    deps (e.g. @next/swc-darwin-arm64) that are incompatible with Linux
-    Docker builds using npm ci. Dockerfiles must use `npm install` from
-    package.json alone so npm resolves the correct platform variants inside
-    the container. If developers want a lockfile for local use they can run
-    `npm install` in each service directory.
+    AI models consistently generate PascalCase component directories (Layout/,
+    Editor/, Canvas/) but write lowercase import paths (@/components/layout/).
+    Docker Linux builds are case-sensitive unlike macOS — this causes a build
+    failure that is invisible locally and only surfaces in the container.
+
+    This fixup is deterministic: it renames every PascalCase dir under any
+    `components/` folder to lowercase, then rewrites every .ts/.tsx file in
+    the output that references the old casing.
     """
-    pass  # reserved for future platform-safe fixups
+    import re as _re
+
+    # Collect all components/ directories recursively
+    for root, dirs, files in os.walk(out_dir):
+        if os.path.basename(root) == "components":
+            # Lowercase subdirectory names (Layout/ → layout/, etc.)
+            for d in list(dirs):
+                lower = d.lower()
+                if d != lower:
+                    old_path = os.path.join(root, d)
+                    tmp_path = old_path + "__tmp__"
+                    new_path = os.path.join(root, lower)
+                    # Two-step rename required on case-insensitive macOS HFS+
+                    os.rename(old_path, tmp_path)
+                    os.rename(tmp_path, new_path)
+            # Don't recurse into node_modules
+            dirs[:] = [d for d in dirs if d != "node_modules"]
+
+        # Also lowercase filenames inside ui/ — these are shared primitives with
+        # no PascalCase convention (Button.tsx → button.tsx, Input.tsx → input.tsx)
+        if os.path.basename(root) in ("ui",) and "components" in root:
+            for fname in list(files):
+                lower = fname.lower()
+                if fname != lower:
+                    old_path = os.path.join(root, fname)
+                    tmp_path = old_path + "__tmp__"
+                    new_path = os.path.join(root, lower)
+                    os.rename(old_path, tmp_path)
+                    os.rename(tmp_path, new_path)
+                    # Fix any internal self-referencing imports in the renamed file
+                    try:
+                        text = open(new_path, encoding="utf-8").read()
+                        fixed = text.replace(fname, lower)
+                        if fixed != text:
+                            open(new_path, "w", encoding="utf-8").write(fixed)
+                    except OSError:
+                        pass
+
+    # Now rewrite import paths in all .ts/.tsx source files
+    # Match: from '@/components/AnyCase/...' or from "@/components/AnyCase/..."
+    _import_re = _re.compile(
+        r"(from\s+['\"])(@/components/)([^/'\"]+)(.*?['\"])",
+        _re.MULTILINE,
+    )
+
+    for root, dirs, files in os.walk(out_dir):
+        dirs[:] = [d for d in dirs if d != "node_modules"]
+        for fname in files:
+            if not fname.endswith((".ts", ".tsx", ".js", ".jsx")):
+                continue
+            fpath = os.path.join(root, fname)
+            try:
+                text = open(fpath, encoding="utf-8").read()
+                new_text = _import_re.sub(
+                    lambda m: m.group(1) + m.group(2) + m.group(3).lower() + m.group(4),
+                    text,
+                )
+                if new_text != text:
+                    open(fpath, "w", encoding="utf-8").write(new_text)
+            except OSError:
+                pass
+
+
+def _post_generate_fixups(out_dir):
+    """Run automatic fixups on generated code after files are written."""
+    _normalize_component_dirs(out_dir)
 
 
 # -----------------------------------------------------------------------
