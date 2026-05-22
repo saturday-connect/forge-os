@@ -681,9 +681,186 @@ def _delete_vite_artifacts(out_dir):
                 _shutil.rmtree(src_pages)
 
 
+def _fix_react_router_in_nextjs(out_dir):
+    """Replace react-router-dom navigation APIs with next/navigation equivalents.
+
+    AI models frequently generate react-router-dom inside Next.js components:
+      import { NavLink }    from 'react-router-dom'  → next/link  + usePathname
+      import { useNavigate } from 'react-router-dom'  → useRouter from next/navigation
+      import { useLocation } from 'react-router-dom'  → usePathname from next/navigation
+      import { Link }       from 'react-router-dom'   → next/link
+
+    Transforms applied per-file:
+      1. Rewrite the import statement
+      2. Replace JSX / call-site usage with the Next.js equivalent
+
+    Only runs on Next.js projects (package.json has 'next' dependency).
+    """
+    import json as _json, re as _re
+
+    for root, dirs, files in os.walk(out_dir):
+        dirs[:] = [d for d in dirs if d != "node_modules"]
+        pkg = os.path.join(root, "package.json")
+        if not os.path.isfile(pkg):
+            continue
+        try:
+            meta = _json.loads(open(pkg, encoding="utf-8").read())
+        except Exception:
+            continue
+        deps = {**meta.get("dependencies", {}), **meta.get("devDependencies", {})}
+        if "next" not in deps:
+            continue
+
+        # Walk all .ts/.tsx files under this package root
+        for froot, fdirs, ffiles in os.walk(root):
+            fdirs[:] = [d for d in fdirs if d != "node_modules"]
+            for fname in ffiles:
+                if not fname.endswith((".ts", ".tsx")):
+                    continue
+                fpath = os.path.join(froot, fname)
+                try:
+                    text = open(fpath, encoding="utf-8").read()
+                except OSError:
+                    continue
+
+                if "react-router-dom" not in text:
+                    continue
+
+                # Determine which symbols are imported
+                rrd_import = _re.search(
+                    r"import\s+\{([^}]+)\}\s+from\s+['\"]react-router-dom['\"]", text
+                )
+                if not rrd_import:
+                    continue
+
+                symbols = [s.strip() for s in rrd_import.group(1).split(",")]
+                needs_link     = any(s in ("NavLink", "Link") for s in symbols)
+                needs_router   = any(s in ("useNavigate",) for s in symbols)
+                needs_pathname = any(s in ("NavLink", "useLocation") for s in symbols)
+
+                new_imports = []
+                if needs_link:
+                    new_imports.append("import Link from 'next/link';")
+                nav_hooks = []
+                if needs_router:
+                    nav_hooks.append("useRouter")
+                if needs_pathname:
+                    nav_hooks.append("usePathname")
+                if nav_hooks:
+                    new_imports.append(
+                        f"import {{ {', '.join(nav_hooks)} }} from 'next/navigation';"
+                    )
+
+                # Replace the original import
+                text = _re.sub(
+                    r"import\s+\{[^}]+\}\s+from\s+['\"]react-router-dom['\"];?\n?",
+                    "\n".join(new_imports) + "\n",
+                    text,
+                    count=1,
+                )
+
+                # Replace call-site usage
+                text = text.replace("useNavigate()", "useRouter()")
+                text = text.replace("const navigate = useRouter()", "const router = useRouter()")
+                text = text.replace("navigate(", "router.push(")
+                text = text.replace("useLocation()", "usePathname()")
+                text = text.replace("const location = usePathname()", "const pathname = usePathname()")
+                # NavLink to= → Link href=
+                text = _re.sub(r"<NavLink\s+to=", "<Link href=", text)
+                text = text.replace("</NavLink>", "</Link>")
+
+                try:
+                    open(fpath, "w", encoding="utf-8").write(text)
+                except OSError:
+                    pass
+
+
+# Curated version map for packages frequently generated but omitted from package.json.
+# Versions are conservative lower bounds — npm resolves the latest compatible.
+_KNOWN_MISSING_DEPS: dict = {
+    "@supabase/supabase-js": "^2.39.0",
+    "elkjs": "^0.9.3",
+    "web-worker": "^1.2.0",
+    "d3": "^7.9.0",
+    "framer-motion": "^11.0.0",
+    "date-fns": "^3.6.0",
+    "zod": "^3.23.0",
+    "react-hook-form": "^7.51.0",
+    "swr": "^2.2.5",
+    "@tanstack/react-query": "^5.40.0",
+    "clsx": "^2.1.0",
+    "tailwind-merge": "^2.3.0",
+    "class-variance-authority": "^0.7.0",
+}
+
+
+def _ensure_package_dependencies(out_dir):
+    """Add commonly-omitted npm packages to package.json.
+
+    Scans every .ts/.tsx file for bare package imports, compares against
+    declared dependencies, and adds any recognised missing package to
+    package.json using the version floor from _KNOWN_MISSING_DEPS.
+
+    react-router-dom is explicitly excluded — it should never be a dependency
+    of a Next.js project. Any file still using it after _fix_react_router_in_nextjs
+    has already been rewritten.
+    """
+    import json as _json, re as _re
+
+    _import_re = _re.compile(r"""from\s+['"](@?[a-zA-Z0-9][\w\-./]*)['"]""")
+    _never_add = {"react-router-dom", "react", "react-dom", "next"}
+
+    for root, dirs, files in os.walk(out_dir):
+        dirs[:] = [d for d in dirs if d != "node_modules"]
+        pkg_path = os.path.join(root, "package.json")
+        if not os.path.isfile(pkg_path):
+            continue
+
+        try:
+            meta = _json.loads(open(pkg_path, encoding="utf-8").read())
+        except Exception:
+            continue
+
+        declared = set(
+            {**meta.get("dependencies", {}), **meta.get("devDependencies", {})}.keys()
+        )
+        to_add: dict = {}
+
+        for froot, fdirs, ffiles in os.walk(root):
+            fdirs[:] = [d for d in fdirs if d != "node_modules"]
+            for fname in ffiles:
+                if not fname.endswith((".ts", ".tsx", ".js", ".jsx")):
+                    continue
+                try:
+                    text = open(os.path.join(froot, fname), encoding="utf-8").read()
+                except OSError:
+                    continue
+                for m in _import_re.finditer(text):
+                    raw = m.group(1)
+                    if raw.startswith(("./", "../", "@/")):
+                        continue
+                    parts = raw.split("/")
+                    name = "/".join(parts[:2]) if raw.startswith("@") else parts[0]
+                    if name in declared or name in _never_add or name in to_add:
+                        continue
+                    if name in _KNOWN_MISSING_DEPS:
+                        to_add[name] = _KNOWN_MISSING_DEPS[name]
+
+        if to_add:
+            meta.setdefault("dependencies", {}).update(to_add)
+            try:
+                open(pkg_path, "w", encoding="utf-8").write(
+                    _json.dumps(meta, indent=2) + "\n"
+                )
+            except OSError:
+                pass
+
+
 def _post_generate_fixups(out_dir):
     """Run automatic fixups on generated code after files are written."""
     _delete_vite_artifacts(out_dir)
+    _fix_react_router_in_nextjs(out_dir)
+    _ensure_package_dependencies(out_dir)
     _normalize_component_dirs(out_dir)
 
 
