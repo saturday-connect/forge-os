@@ -290,7 +290,15 @@ def build_frontend_prompt(persona, docs, api_contract):
             "   Generate .env.example with all required variables.\n\n"
             "5. EVERY SCREEN FROM THE DESIGN SPEC must be implemented — no missing pages.\n\n"
             "6. PRODUCTION QUALITY: TypeScript strict mode, proper error boundaries, "
-            "loading skeletons, form validation, accessible markup (ARIA where needed)."
+            "loading skeletons, form validation, accessible markup (ARIA where needed).\n\n"
+            "7. tsconfig.json EXACT VALUES — use only these strings, no variations:\n"
+            "   - moduleResolution: must be one of: 'node10', 'node16', 'nodenext', 'bundler'\n"
+            "     For Next.js 14+: use 'bundler'. NOT 'bundle', NOT 'node', NOT 'NodeNext' (case matters).\n"
+            "   - module: 'esnext' for Next.js App Router\n"
+            "   - Do NOT include 'noImplicitReturns', 'noUnusedLocals', or other options not supported\n"
+            "     by your Next.js version — they cause build failures.\n\n"
+            "8. Dockerfile: use `npm install --no-audit --no-fund` NOT `npm ci`.\n"
+            "   Copy only `package.json` (not `package*.json`) — there is no lockfile."
         ),
         COMMON_FORMAT_RULE,
         contract_block,
