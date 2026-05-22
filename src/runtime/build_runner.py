@@ -219,36 +219,241 @@ def build_backend_prompt(persona, docs):
     if _phase_context_block():
         parts.append(_phase_context_block())
     parts += [
-        _section("SPEC COMPLIANCE RULES — NON-NEGOTIABLE"),
+        _section("PRIMARY DIRECTIVE — READ THIS FIRST"),
         (
-            "1. TECH STACK: Read the architecture documents below. Identify every technology, "
-            "framework, database, and service named. Use EXACTLY those — no substitutions.\n"
-            "   - If the spec says Supabase: use the supabase-py client, NOT SQLAlchemy ORM.\n"
-            "   - If the spec says PostgreSQL via Supabase: use Supabase's database client.\n"
-            "   - If the spec says FastAPI: use FastAPI with async handlers.\n"
-            "   - If the spec says JWT auth: implement it exactly as described.\n"
-            "   Never default to SQLite, in-memory stores, or generic ORMs when the spec names something specific.\n\n"
-            "2. COMPLETENESS: Every endpoint listed in the engineering spec must be implemented in full. "
-            "No stubs. No placeholder return values. Real business logic, real DB calls, real error handling.\n\n"
-            "3. FIRST FILE IS api-contract.md — REQUIRED:\n"
-            "   Your very first output block must be:\n"
-            "   === api-contract.md ===\n"
-            "   This file documents every endpoint so the frontend agent can connect to it. Include:\n"
-            "   - Base URL (e.g. http://localhost:8000/api/v1)\n"
-            "   - Auth mechanism (Supabase JWT Bearer, session cookie, etc.)\n"
-            "   - Every endpoint: METHOD, path, auth required (yes/no), request body schema, response schema\n"
-            "   - Supabase table names and Row Level Security policies if applicable\n"
-            "   - All environment variables (name, description, example value)\n\n"
-            "4. ENVIRONMENT VARIABLES: All credentials and config must come from env vars. "
-            "Generate .env.example with every variable the app needs.\n\n"
-            "5. SUPABASE SPECIFICS (if spec uses Supabase):\n"
-            "   - Use supabase-py for all DB operations\n"
-            "   - Implement Row Level Security policies in a migration file\n"
-            "   - Use Supabase Auth for authentication (verify JWTs using Supabase's JWKS)\n"
-            "   - Generate supabase/migrations/ SQL files for schema\n\n"
-            "6. PRODUCTION QUALITY: Include proper error handling, input validation (Pydantic models), "
-            "logging, CORS config, health check endpoint, and graceful startup/shutdown."
+            "You are generating a production-grade backend codebase that must pass `docker compose up --build` "
+            "on the FIRST attempt with ZERO post-generation fixes.\n\n"
+            "The definition of success is: every container starts, every endpoint responds correctly, "
+            "and `pytest` exits 0.\n\n"
+            "Every rule below exists because ignoring it causes a Docker build failure or a runtime crash. "
+            "Treat every rule as a hard constraint, not a suggestion."
         ),
+
+        _section("FIRST OUTPUT BLOCK — MANDATORY"),
+        (
+            "Your VERY FIRST output block must ALWAYS be:\n\n"
+            "=== api-contract.md ===\n\n"
+            "This file is read by the frontend and integration agents. It must contain:\n"
+            "  - Base URL (e.g. http://localhost:8000/api/v1)\n"
+            "  - Auth mechanism (Supabase JWT Bearer token in Authorization header, session cookie, etc.)\n"
+            "  - Every endpoint: METHOD, full path, auth required (yes/no), request body JSON schema, response JSON schema\n"
+            "  - Every error response: status code, body shape, when it occurs\n"
+            "  - Supabase table names and RLS policies if applicable\n"
+            "  - All environment variables: name, description, example value\n\n"
+            "Do NOT skip this file. Do NOT generate it last. It goes FIRST."
+        ),
+
+        _section("MANDATORY REQUIRED FILES — GENERATE ALL OF THESE"),
+        (
+            "A missing file is a build failure. Generate ALL of:\n\n"
+            "  api-contract.md             — FIRST block (see above)\n"
+            "  app/main.py                 — FastAPI app entry, CORS, routers, lifespan\n"
+            "  app/routers/               — one file per domain (auth.py, items.py, etc.)\n"
+            "  app/models/                — Pydantic request/response models\n"
+            "  app/dependencies.py        — shared FastAPI dependencies (get_current_user, get_db, etc.)\n"
+            "  app/database.py            — DB client initialisation (supabase-py or SQLAlchemy)\n"
+            "  supabase/migrations/       — SQL migration files for all tables\n"
+            "  requirements.txt           — ALL Python packages (see package rules below)\n"
+            "  Dockerfile                 — multi-stage Python build (see Dockerfile rules below)\n"
+            "  .env.example               — every environment variable the app reads"
+        ),
+
+        _section("RULE 1 — TECH STACK: USE EXACTLY WHAT THE SPEC SAYS"),
+        (
+            "Read the architecture documents. Use EXACTLY the framework, DB, and auth system named.\n\n"
+            "NEVER substitute:\n"
+            "  Spec says Supabase   → use supabase-py, NOT SQLAlchemy + psycopg2\n"
+            "  Spec says FastAPI    → use FastAPI with async def handlers, NOT Flask or Django\n"
+            "  Spec says PostgreSQL via Supabase → use supabase-py client, NOT raw asyncpg\n"
+            "  Spec says JWT auth   → implement it exactly (Supabase JWT verification via JWKS)\n"
+            "  Spec says Redis      → use redis-py or aioredis, NOT in-memory dict\n\n"
+            "Never default to SQLite, in-memory stores, or mock data when the spec names a real DB.\n"
+            "Never add ORMs the spec doesn't mention."
+        ),
+
+        _section("RULE 2 — SUPABASE-PY API: USE THE CORRECT VERSION"),
+        (
+            "supabase-py v2.x has a DIFFERENT API from v1.x. Use v2.x. The key differences:\n\n"
+            "CORRECT (v2.x):\n"
+            "  from supabase import create_client, Client\n"
+            "  supabase: Client = create_client(url, key)\n"
+            "  result = supabase.table('items').select('*').execute()\n"
+            "  data = result.data   ← NOT result['data']\n"
+            "  supabase.auth.sign_in_with_password({'email': e, 'password': p})\n\n"
+            "WRONG (v1.x — DO NOT USE):\n"
+            "  supabase.from_('items').select('*').execute()  ← removed in v2\n"
+            "  result['data']  ← wrong; use result.data\n\n"
+            "For JWT verification (Supabase Auth):\n"
+            "  Use PyJWT + the Supabase JWT secret from env, OR use supabase.auth.get_user(token).\n"
+            "  The JWKS endpoint is: https://<project>.supabase.co/auth/v1/.well-known/jwks.json\n\n"
+            "In FastAPI, create the Supabase client once at startup (lifespan context), "
+            "store it in app.state, and inject it via a dependency. "
+            "NEVER create a new client per request."
+        ),
+
+        _section("RULE 3 — PYDANTIC V2: USE CORRECT FIELD SYNTAX"),
+        (
+            "FastAPI 0.100+ uses Pydantic v2 by default. The API changed significantly.\n\n"
+            "CORRECT (Pydantic v2):\n"
+            "  from pydantic import BaseModel, field_validator, model_validator\n"
+            "  class Item(BaseModel):\n"
+            "    name: str\n"
+            "    price: float\n"
+            "    @field_validator('name')  ← NOT @validator\n"
+            "    @classmethod\n"
+            "    def validate_name(cls, v): ...\n\n"
+            "WRONG (Pydantic v1 — DO NOT USE with FastAPI 0.100+):\n"
+            "  from pydantic import validator  ← removed\n"
+            "  class Config: orm_mode = True  ← replaced by model_config = ConfigDict(from_attributes=True)\n"
+            "  .dict()  ← use .model_dump() instead\n"
+            "  .json()  ← use .model_dump_json() instead\n\n"
+            "Check requirements.txt: if fastapi>=0.100, pydantic must be >=2.0."
+        ),
+
+        _section("RULE 4 — FASTAPI ASYNC CORRECTNESS"),
+        (
+            "All route handlers that touch I/O (DB, HTTP, filesystem) MUST be async:\n"
+            "  async def get_items(db: Client = Depends(get_db)) → list[Item]:  ← CORRECT\n"
+            "  def get_items(...)  ← WRONG for async DB calls (blocks the event loop)\n\n"
+            "Background tasks:\n"
+            "  Use FastAPI's BackgroundTasks for fire-and-forget operations.\n"
+            "  Use asyncio.create_task() ONLY inside an async function.\n\n"
+            "Startup/shutdown:\n"
+            "  Use the lifespan context manager (FastAPI 0.93+), NOT @app.on_event:\n"
+            "  CORRECT:\n"
+            "    from contextlib import asynccontextmanager\n"
+            "    @asynccontextmanager\n"
+            "    async def lifespan(app: FastAPI):\n"
+            "      app.state.db = create_client(url, key)\n"
+            "      yield\n"
+            "      # cleanup here\n"
+            "    app = FastAPI(lifespan=lifespan)\n"
+            "  WRONG:\n"
+            "    @app.on_event('startup')  ← deprecated\n\n"
+            "CORS — ALWAYS configure explicitly:\n"
+            "  from fastapi.middleware.cors import CORSMiddleware\n"
+            "  app.add_middleware(CORSMiddleware,\n"
+            "    allow_origins=[os.getenv('FRONTEND_URL', 'http://localhost:3000')],\n"
+            "    allow_credentials=True, allow_methods=['*'], allow_headers=['*'])"
+        ),
+
+        _section("RULE 5 — REQUIREMENTS.TXT: EVERY IMPORT MUST BE DECLARED"),
+        (
+            "Every package imported in any .py file MUST appear in requirements.txt with a pinned version.\n"
+            "The Docker build runs `pip install -r requirements.txt` — a missing package = build failure.\n\n"
+            "MANDATORY packages — include these if your code uses them:\n"
+            "  fastapi>=0.110.0\n"
+            "  uvicorn[standard]>=0.27.0\n"
+            "  pydantic>=2.6.0\n"
+            "  python-dotenv>=1.0.0\n"
+            "  supabase>=2.3.0           — if using Supabase\n"
+            "  PyJWT>=2.8.0              — if verifying JWTs manually\n"
+            "  httpx>=0.27.0             — if making HTTP calls (also needed for tests)\n"
+            "  python-multipart>=0.0.9   — REQUIRED for FastAPI file upload / form data\n"
+            "  aiofiles>=23.0.0          — if serving static files or async file I/O\n"
+            "  redis>=5.0.0              — if using Redis\n"
+            "  celery>=5.3.0             — if using Celery tasks\n"
+            "  stripe>=8.0.0             — if using Stripe\n"
+            "  slack-sdk>=3.27.0         — if using Slack\n"
+            "  pytest>=8.0.0             — in requirements-dev.txt for tests\n"
+            "  pytest-asyncio>=0.23.0    — for async test functions\n\n"
+            "RULE: for every `import X` or `from X import Y` at the top level of any .py file, "
+            "verify X is either the Python stdlib or is listed in requirements.txt."
+        ),
+
+        _section("RULE 6 — DOCKERFILE: PYTHON MULTI-STAGE EXACT PATTERN"),
+        (
+            "Use ONLY this Dockerfile pattern for Python/FastAPI. Deviations cause runtime failures.\n\n"
+            "```dockerfile\n"
+            "FROM python:3.12-slim AS base\n"
+            "WORKDIR /app\n"
+            "ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1\n\n"
+            "FROM base AS builder\n"
+            "COPY requirements.txt ./\n"
+            "RUN pip install --no-cache-dir --upgrade pip && \\\n"
+            "    pip install --no-cache-dir -r requirements.txt\n\n"
+            "FROM base AS runner\n"
+            "COPY --from=builder /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages\n"
+            "COPY --from=builder /usr/local/bin /usr/local/bin\n"
+            "COPY . .\n"
+            "RUN useradd --create-home appuser && chown -R appuser /app\n"
+            "USER appuser\n"
+            "EXPOSE 8000\n"
+            "CMD ['uvicorn', 'app.main:app', '--host', '0.0.0.0', '--port', '8000']\n"
+            "```\n\n"
+            "CRITICAL — DO NOT:\n"
+            "  - Use pip install without --no-cache-dir (inflates image size)\n"
+            "  - Run as root in production (security violation)\n"
+            "  - Use `CMD python app.main` — use uvicorn with --host 0.0.0.0\n"
+            "  - COPY requirements.txt after COPY . . (breaks Docker layer caching)\n"
+            "  - Use `python:latest` (use explicit version: python:3.12-slim)"
+        ),
+
+        _section("RULE 7 — PYTHON PACKAGE STRUCTURE: __init__.py FILES"),
+        (
+            "Python treats directories as packages ONLY if they contain __init__.py.\n"
+            "Missing __init__.py = ImportError at startup.\n\n"
+            "EVERY directory under app/ MUST have __init__.py:\n"
+            "  app/__init__.py\n"
+            "  app/routers/__init__.py\n"
+            "  app/models/__init__.py\n"
+            "  app/services/__init__.py  (if you create this dir)\n"
+            "  app/utils/__init__.py     (if you create this dir)\n\n"
+            "Generate each __init__.py as an empty file or with __all__ exports.\n"
+            "This rule applies to EVERY package directory you create — not just app/."
+        ),
+
+        _section("RULE 8 — IMPORT CORRECTNESS: EVERY IMPORT MUST RESOLVE"),
+        (
+            "Before finalising output, mentally walk every import in every .py file:\n\n"
+            "Step 1 — Relative imports: `from .models import Item`\n"
+            "   Is models.py in the same package directory? Does it export Item?\n\n"
+            "Step 2 — Absolute imports: `from app.dependencies import get_current_user`\n"
+            "   Does app/dependencies.py exist in your output? Does it define get_current_user?\n\n"
+            "Step 3 — Third-party imports: `from stripe import StripeError`\n"
+            "   Is stripe in requirements.txt? Is StripeError actually exported by stripe?\n\n"
+            "Step 4 — Circular imports: if A imports from B and B imports from A, the app crashes.\n"
+            "   Break cycles by moving shared types to a separate models.py / types.py.\n\n"
+            "Step 5 — MODULE vs FUNCTION: `from app.database import supabase` — is `supabase`\n"
+            "   a module-level variable in database.py, or a class? Import accordingly."
+        ),
+
+        _section("RULE 9 — HEALTH CHECK ENDPOINT"),
+        (
+            "ALWAYS generate a health check endpoint. It is required by docker-compose healthcheck "
+            "and by the infra agent's CI/CD smoke tests.\n\n"
+            "MINIMUM:\n"
+            "  @app.get('/health')\n"
+            "  async def health() -> dict:\n"
+            "      return {'status': 'ok', 'version': '1.0.0'}\n\n"
+            "BETTER — also check DB connectivity:\n"
+            "  @app.get('/health')\n"
+            "  async def health(db: Client = Depends(get_db)) -> dict:\n"
+            "      try:\n"
+            "          db.table('health_check').select('1').limit(1).execute()\n"
+            "          return {'status': 'ok', 'db': 'connected'}\n"
+            "      except Exception as e:\n"
+            "          return JSONResponse({'status': 'degraded', 'db': str(e)}, status_code=503)"
+        ),
+
+        _section("RULE 10 — COMPLETE IMPLEMENTATION: NO STUBS OR TODOS"),
+        (
+            "Every endpoint listed in the engineering spec MUST be fully implemented:\n"
+            "  - Real business logic (not `return {}` or `pass`)\n"
+            "  - Real DB queries via supabase-py (or the specified ORM)\n"
+            "  - Real error handling with HTTPException and specific status codes\n"
+            "  - Real input validation via Pydantic models\n"
+            "  - Real auth checks (verify JWT, check RLS, return 401/403 when unauthorized)\n\n"
+            "NEVER generate:\n"
+            "  return {}        ← empty response\n"
+            "  # TODO: implement  ← unimplemented stub\n"
+            "  raise NotImplementedError  ← crashes immediately\n"
+            "  pass             ← silent no-op\n\n"
+            "If an endpoint requires a third-party service (email, payments, etc.) that isn't "
+            "available yet, implement it with proper error handling and a feature flag, "
+            "not a stub."
+        ),
+
         COMMON_FORMAT_RULE,
         _section("SPECIFICATION DOCUMENTS (your source of truth — follow these exactly)"),
         docs,
@@ -622,19 +827,147 @@ def build_integration_prompt(persona, docs, api_contract):
     if _phase_context_block():
         parts.append(_phase_context_block())
     parts += [
-        _section("SPEC COMPLIANCE RULES — NON-NEGOTIABLE"),
+        _section("PRIMARY DIRECTIVE — READ THIS FIRST"),
         (
-            "1. TECH STACK: Use ONLY the third-party services and SDKs named in the integration spec.\n\n"
-            "2. FULL IMPLEMENTATION: Every integration (Stripe, Slack, email, webhooks, etc.) must be "
-            "completely implemented using real SDK calls — no stubs, no TODO comments.\n\n"
-            "3. ERROR HANDLING: Every external call must have retry logic, timeout handling, "
-            "and structured error logging.\n\n"
-            "4. CREDENTIALS: All API keys and secrets must come from environment variables. "
-            "Generate .env.example entries for every third-party credential.\n\n"
-            "5. WEBHOOK SECURITY: Implement signature verification for all inbound webhooks.\n\n"
-            "6. PRODUCTION QUALITY: Idempotency keys for payment operations, "
-            "dead-letter handling for async jobs, rate limit awareness."
+            "You are generating production-grade integration code that must work correctly "
+            "on the FIRST attempt inside a Docker Linux container with ZERO post-generation fixes.\n\n"
+            "The definition of success: every third-party integration connects, webhooks are secured, "
+            "and `docker compose up --build` exits 0.\n\n"
+            "Every rule below exists because ignoring it causes a runtime failure or a security breach."
         ),
+
+        _section("MANDATORY REQUIRED FILES — GENERATE ALL OF THESE"),
+        (
+            "A missing file is a build failure. Generate ALL that apply to the spec:\n\n"
+            "  app/integrations/__init__.py      — package init\n"
+            "  app/integrations/<service>.py     — one file per third-party service\n"
+            "  app/routers/webhooks.py           — inbound webhook router (signature-verified)\n"
+            "  requirements.txt additions        — every new SDK package, pinned\n"
+            "  .env.example additions            — every new credential needed\n"
+            "  tests/test_integrations.py        — at minimum a smoke test per integration"
+        ),
+
+        _section("RULE 1 — USE ONLY NAMED SDKS FROM THE SPEC"),
+        (
+            "Read every integration spec document. For each third-party service, use its OFFICIAL SDK:\n\n"
+            "  Stripe  → stripe>=8.0 (NOT requests to api.stripe.com directly)\n"
+            "  Slack   → slack_sdk>=3.27 (NOT webhooks-only unless spec says so)\n"
+            "  SendGrid → sendgrid>=6.11 (NOT smtplib unless spec says SMTP)\n"
+            "  Twilio  → twilio>=9.0\n"
+            "  AWS     → boto3>=1.34\n"
+            "  GCS     → google-cloud-storage>=2.15\n\n"
+            "NEVER use requests/httpx directly to call a service that has an official SDK.\n"
+            "Add every SDK to requirements.txt with a pinned minimum version."
+        ),
+
+        _section("RULE 2 — WEBHOOK SIGNATURE VERIFICATION IS MANDATORY"),
+        (
+            "Every inbound webhook endpoint MUST verify the request signature before processing.\n"
+            "An unverified webhook = critical security vulnerability.\n\n"
+            "STRIPE webhooks:\n"
+            "  import stripe\n"
+            "  event = stripe.Webhook.construct_event(\n"
+            "      payload=await request.body(),\n"
+            "      sig_header=request.headers.get('stripe-signature'),\n"
+            "      secret=os.getenv('STRIPE_WEBHOOK_SECRET'),\n"
+            "  )\n"
+            "  # raises stripe.error.SignatureVerificationError on failure\n\n"
+            "SLACK webhooks:\n"
+            "  from slack_sdk.signature import SignatureVerifier\n"
+            "  verifier = SignatureVerifier(signing_secret=os.getenv('SLACK_SIGNING_SECRET'))\n"
+            "  if not verifier.is_valid_request(body=body_bytes, headers=dict(request.headers)):\n"
+            "      raise HTTPException(status_code=401, detail='Invalid signature')\n\n"
+            "GENERIC HMAC pattern (for services without an SDK):\n"
+            "  import hmac, hashlib\n"
+            "  expected = hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()\n"
+            "  if not hmac.compare_digest(expected, received_sig):\n"
+            "      raise HTTPException(status_code=401)\n\n"
+            "NEVER skip signature verification with a TODO comment."
+        ),
+
+        _section("RULE 3 — ALL CREDENTIALS FROM ENVIRONMENT VARIABLES"),
+        (
+            "NEVER hardcode API keys, secrets, or credentials in source code.\n\n"
+            "CORRECT:\n"
+            "  stripe.api_key = os.getenv('STRIPE_SECRET_KEY')\n"
+            "  SLACK_BOT_TOKEN = os.getenv('SLACK_BOT_TOKEN')\n\n"
+            "WRONG:\n"
+            "  stripe.api_key = 'sk_live_abc123'  ← NEVER\n"
+            "  SLACK_BOT_TOKEN = 'xoxb-abc'        ← NEVER\n\n"
+            "Startup validation — fail fast if required env vars are missing:\n"
+            "  def validate_env():\n"
+            "      required = ['STRIPE_SECRET_KEY', 'STRIPE_WEBHOOK_SECRET', 'SLACK_BOT_TOKEN']\n"
+            "      missing = [k for k in required if not os.getenv(k)]\n"
+            "      if missing:\n"
+            "          raise RuntimeError(f'Missing required env vars: {missing}')\n\n"
+            "Add EVERY credential to .env.example with a comment explaining where to get it."
+        ),
+
+        _section("RULE 4 — RETRY, TIMEOUT, AND ERROR HANDLING FOR EVERY EXTERNAL CALL"),
+        (
+            "External service calls WILL fail intermittently. Handle this at the call site:\n\n"
+            "MINIMUM per external call:\n"
+            "  - timeout: set an explicit timeout (never let a call hang indefinitely)\n"
+            "  - retry: 3 attempts with exponential backoff for transient errors (429, 503, network)\n"
+            "  - circuit break: do not retry on permanent errors (401, 403, 404)\n"
+            "  - log: structured log on every failure with the service name and error\n\n"
+            "CORRECT pattern:\n"
+            "  import tenacity\n"
+            "  @tenacity.retry(\n"
+            "      stop=tenacity.stop_after_attempt(3),\n"
+            "      wait=tenacity.wait_exponential(multiplier=1, min=1, max=10),\n"
+            "      retry=tenacity.retry_if_exception_type((stripe.error.RateLimitError, ConnectionError)),\n"
+            "  )\n"
+            "  async def charge_customer(amount: int, customer_id: str) -> stripe.PaymentIntent:\n"
+            "      return stripe.PaymentIntent.create(amount=amount, customer=customer_id)\n\n"
+            "Add tenacity>=8.2.0 to requirements.txt."
+        ),
+
+        _section("RULE 5 — IDEMPOTENCY KEYS FOR PAYMENT OPERATIONS"),
+        (
+            "Payment operations (Stripe charges, refunds, payouts) MUST use idempotency keys.\n"
+            "Without them, a network retry creates a duplicate charge — irreversible data loss.\n\n"
+            "CORRECT:\n"
+            "  import uuid\n"
+            "  stripe.PaymentIntent.create(\n"
+            "      amount=amount,\n"
+            "      currency='usd',\n"
+            "      customer=customer_id,\n"
+            "      idempotency_key=f'pi-{order_id}-{uuid.uuid4()}',\n"
+            "  )\n\n"
+            "WRONG:\n"
+            "  stripe.PaymentIntent.create(amount=amount, currency='usd')  ← no idempotency key\n\n"
+            "Store the idempotency key in your DB before calling Stripe, "
+            "so a retry uses the same key rather than generating a new one."
+        ),
+
+        _section("RULE 6 — REQUIREMENTS.TXT: EVERY SDK MUST BE DECLARED"),
+        (
+            "Every SDK imported in any integration file MUST be in requirements.txt.\n"
+            "Common packages to add when they appear in imports:\n"
+            "  stripe>=8.0.0\n"
+            "  slack_sdk>=3.27.0\n"
+            "  sendgrid>=6.11.0\n"
+            "  twilio>=9.0.0\n"
+            "  boto3>=1.34.0\n"
+            "  google-cloud-storage>=2.15.0\n"
+            "  tenacity>=8.2.0        — for retry logic\n"
+            "  httpx>=0.27.0          — for any direct HTTP calls\n\n"
+            "RULE: walk every `import X` and `from X import Y` in every integration file. "
+            "If X is not stdlib, it MUST be in requirements.txt."
+        ),
+
+        _section("RULE 7 — EVERY IMPORT MUST RESOLVE"),
+        (
+            "Before finalising output, for every file you generate:\n\n"
+            "1. Every `from app.X import Y` — does app/X.py exist? Does it export Y?\n"
+            "2. Every `from .X import Y` (relative) — is X in the same package? Does it export Y?\n"
+            "3. Every third-party import — is the package in requirements.txt?\n"
+            "4. All integration functions used in routers — are they imported at the top of the router file?\n\n"
+            "An unresolved import crashes the FastAPI app on startup with ImportError. "
+            "There is no graceful degradation — the entire server fails to start."
+        ),
+
         COMMON_FORMAT_RULE,
         contract_block,
         _section("SPECIFICATION DOCUMENTS"),
@@ -648,24 +981,166 @@ def build_tests_prompt(persona, docs, api_contract):
     if _phase_context_block():
         parts.append(_phase_context_block())
     parts += [
-        _section("SPEC COMPLIANCE RULES — NON-NEGOTIABLE"),
+        _section("PRIMARY DIRECTIVE — READ THIS FIRST"),
         (
-            "1. TEST FRAMEWORK: Use ONLY the frameworks named in the quality spec "
-            "(e.g. pytest for backend, Playwright or Vitest for frontend).\n\n"
-            "2. REAL ENDPOINT TESTING: Backend tests must call the actual API endpoints from the "
-            "contract above — no mocking the HTTP layer. Use httpx.AsyncClient or similar.\n\n"
-            "3. COVERAGE: Every endpoint in the API contract needs:\n"
-            "   - Happy path test (valid input, expect 200/201)\n"
-            "   - Auth failure test (missing/invalid token, expect 401)\n"
-            "   - Validation failure test (bad input, expect 422)\n"
-            "   - At least one edge case (empty list, duplicate, not found)\n\n"
-            "4. FIXTURES: Generate reusable pytest fixtures or test factories for "
-            "creating test users, workspaces, and data.\n\n"
-            "5. E2E TESTS: If Playwright is specified, implement full user journey tests "
-            "that exercise the real frontend against a real backend.\n\n"
-            "6. CI READY: Tests must pass with `pytest` or `npm test` from the repo root. "
-            "Include a conftest.py with DB setup/teardown."
+            "You are generating a production-grade test suite that must run `pytest` to exit 0 "
+            "and `npm test` to pass on the FIRST attempt inside a Docker Linux container, "
+            "with ZERO post-generation fixes.\n\n"
+            "The definition of success: `make test` in CI exits 0 with coverage reported.\n\n"
+            "Every rule below exists because ignoring it causes test collection failure or "
+            "silent test skips that hide real bugs."
         ),
+
+        _section("MANDATORY REQUIRED FILES — GENERATE ALL OF THESE"),
+        (
+            "A missing file causes test collection failure. Generate ALL of:\n\n"
+            "  tests/__init__.py              — makes tests a package (required for imports)\n"
+            "  tests/conftest.py              — ALL shared fixtures (app client, auth token, DB seed)\n"
+            "  tests/test_<domain>.py         — one file per API domain from the contract\n"
+            "  pytest.ini (or pyproject.toml) — test config including asyncio_mode\n"
+            "  requirements-dev.txt           — test-only packages (pytest, httpx, faker, etc.)\n"
+            "  playwright.config.ts           — if E2E tests are specified in the quality spec"
+        ),
+
+        _section("RULE 1 — USE ONLY THE TEST FRAMEWORKS NAMED IN THE QUALITY SPEC"),
+        (
+            "Read the quality spec documents. Use EXACTLY the frameworks named:\n\n"
+            "  Spec says pytest     → use pytest with pytest-asyncio, NEVER unittest\n"
+            "  Spec says Playwright → use Playwright for E2E, NOT Cypress or Selenium\n"
+            "  Spec says Vitest     → use Vitest for frontend unit tests, NOT Jest\n"
+            "  Spec says Jest       → use Jest, NOT Vitest\n\n"
+            "NEVER mix test frameworks (e.g. pytest + unittest in the same suite). "
+            "Pick the one the spec names and use it exclusively for that layer."
+        ),
+
+        _section("RULE 2 — PYTEST ASYNC: ASYNCIO_MODE MUST BE SET"),
+        (
+            "FastAPI test clients and async fixtures require explicit asyncio configuration.\n"
+            "Missing this setting causes: `PytestUnraisableExceptionWarning` or all async tests skip.\n\n"
+            "CORRECT — include in pytest.ini:\n"
+            "  [pytest]\n"
+            "  asyncio_mode = auto\n"
+            "  testpaths = tests\n\n"
+            "OR in pyproject.toml:\n"
+            "  [tool.pytest.ini_options]\n"
+            "  asyncio_mode = 'auto'\n"
+            "  testpaths = ['tests']\n\n"
+            "Add to requirements-dev.txt:\n"
+            "  pytest>=8.0.0\n"
+            "  pytest-asyncio>=0.23.0\n"
+            "  httpx>=0.27.0         ← for AsyncClient\n"
+            "  anyio>=4.3.0          ← dependency of pytest-asyncio\n\n"
+            "NEVER use `@pytest.mark.asyncio` on individual test functions when asyncio_mode=auto is set — "
+            "it's redundant and causes a deprecation warning."
+        ),
+
+        _section("RULE 3 — CONFTEST.PY: ALL SHARED FIXTURES GO HERE"),
+        (
+            "conftest.py is NOT optional. Missing fixtures cause every test to fail with FixtureError.\n\n"
+            "REQUIRED fixtures:\n\n"
+            "  @pytest.fixture(scope='session')\n"
+            "  async def async_client():\n"
+            "      from app.main import app\n"
+            "      async with AsyncClient(app=app, base_url='http://test') as client:\n"
+            "          yield client\n\n"
+            "  @pytest.fixture(scope='session')\n"
+            "  async def auth_token(async_client):\n"
+            "      response = await async_client.post('/api/v1/auth/login',\n"
+            "          json={'email': 'test@example.com', 'password': 'testpass123'})\n"
+            "      return response.json()['access_token']\n\n"
+            "  @pytest.fixture\n"
+            "  def auth_headers(auth_token):\n"
+            "      return {'Authorization': f'Bearer {auth_token}'}\n\n"
+            "For DB-dependent tests, add a fixture that seeds and tears down test data. "
+            "Use a separate test DB (set via TEST_DATABASE_URL env var)."
+        ),
+
+        _section("RULE 4 — COVERAGE: EVERY ENDPOINT NEEDS 4 TEST CASES"),
+        (
+            "For EVERY endpoint in the API contract, generate these 4 test cases minimum:\n\n"
+            "  async def test_<action>_success(async_client, auth_headers):\n"
+            "      r = await async_client.post('/api/v1/items', json={...}, headers=auth_headers)\n"
+            "      assert r.status_code == 201\n"
+            "      assert r.json()['id'] is not None\n\n"
+            "  async def test_<action>_unauthenticated(async_client):\n"
+            "      r = await async_client.post('/api/v1/items', json={...})  # no auth\n"
+            "      assert r.status_code == 401\n\n"
+            "  async def test_<action>_invalid_input(async_client, auth_headers):\n"
+            "      r = await async_client.post('/api/v1/items', json={'bad': 'data'}, headers=auth_headers)\n"
+            "      assert r.status_code == 422\n\n"
+            "  async def test_<action>_not_found(async_client, auth_headers):\n"
+            "      r = await async_client.get('/api/v1/items/nonexistent-id', headers=auth_headers)\n"
+            "      assert r.status_code == 404\n\n"
+            "NEVER write a test that only checks `status_code == 200` without asserting the response body. "
+            "An endpoint that returns `{}` would pass — that test is worthless."
+        ),
+
+        _section("RULE 5 — TEST IMPORTS MUST MATCH THE ACTUAL CODE STRUCTURE"),
+        (
+            "Every `from app.X import Y` in a test file MUST match the actual backend code structure.\n\n"
+            "Before writing a test import:\n"
+            "  1. Does app/X.py exist in the backend output? Does it export Y?\n"
+            "  2. Does the app.main module create the FastAPI `app` object?\n"
+            "  3. Is the test file inside the `tests/` directory?\n\n"
+            "WRONG:\n"
+            "  from backend.app.main import app  ← wrong if running pytest from repo root\n"
+            "  from src.app.main import app       ← wrong if there's no src/ prefix\n\n"
+            "CORRECT:\n"
+            "  from app.main import app  ← when pytest runs from the backend/ directory\n\n"
+            "In pytest.ini or Makefile, set the working directory to the backend service dir:\n"
+            "  cd backend && pytest  ← ensures `from app.X` resolves correctly"
+        ),
+
+        _section("RULE 6 — REQUIREMENTS-DEV.TXT: ALL TEST DEPS MUST BE DECLARED"),
+        (
+            "Generate a separate requirements-dev.txt for test-only packages.\n"
+            "The CI pipeline runs `pip install -r requirements-dev.txt` before running tests.\n\n"
+            "MANDATORY entries:\n"
+            "  pytest>=8.0.0\n"
+            "  pytest-asyncio>=0.23.0\n"
+            "  httpx>=0.27.0           — for AsyncClient (NOT requests)\n"
+            "  anyio>=4.3.0\n"
+            "  faker>=24.0.0           — if generating test data\n"
+            "  pytest-cov>=5.0.0       — for coverage reporting\n"
+            "  factory-boy>=3.3.0      — if using model factories\n\n"
+            "requirements-dev.txt should also include `-r requirements.txt` at the top "
+            "so the test environment has all production packages too."
+        ),
+
+        _section("RULE 7 — PLAYWRIGHT E2E: COMPLETE SETUP IF SPECIFIED"),
+        (
+            "If the quality spec mentions Playwright or E2E tests, generate the full setup.\n"
+            "Partial Playwright setup is worse than none — it causes CI to hang.\n\n"
+            "REQUIRED files:\n"
+            "  playwright.config.ts      — base URL, browser targets, test dir\n"
+            "  tests/e2e/               — all E2E test files\n"
+            "  tests/e2e/<flow>.spec.ts — one file per user journey\n\n"
+            "playwright.config.ts MINIMUM:\n"
+            "  export default defineConfig({\n"
+            "    testDir: './tests/e2e',\n"
+            "    use: { baseURL: process.env.BASE_URL || 'http://localhost:3000' },\n"
+            "    webServer: {\n"
+            "      command: 'docker compose up -d',\n"
+            "      url: 'http://localhost:3000',\n"
+            "      reuseExistingServer: !process.env.CI,\n"
+            "    },\n"
+            "  });\n\n"
+            "Add to package.json devDependencies:\n"
+            "  '@playwright/test': '^1.44.0'"
+        ),
+
+        _section("RULE 8 — EVERY IMPORT MUST RESOLVE IN TEST FILES"),
+        (
+            "Test files have the same import correctness requirement as production code.\n\n"
+            "Before finalising each test file:\n"
+            "  1. Every `from app.X import Y` — does the backend generate app/X.py with Y exported?\n"
+            "  2. Every pytest fixture used — is it defined in conftest.py or imported?\n"
+            "  3. Every factory class — is it defined in the same or an imported file?\n"
+            "  4. Every package imported — is it in requirements-dev.txt?\n\n"
+            "A missing import causes `ERROR collecting tests/test_X.py` — "
+            "no tests run at all, CI fails silently."
+        ),
+
         COMMON_FORMAT_RULE,
         contract_block,
         _section("SPECIFICATION DOCUMENTS"),
@@ -787,21 +1262,191 @@ def build_infra_prompt(persona, docs, api_contract):
             "   - `make setup` to get running locally in < 5 minutes\n"
             "   - Link to secrets-required.md for GitHub configuration"
         ),
-        _section("SPEC COMPLIANCE RULES"),
+        _section("PRIMARY DIRECTIVE — READ THIS FIRST"),
         (
-            "1. DEPLOYMENT PLATFORM: Use EXACTLY what the operations/architecture docs specify. "
-            "If docs say Fly.io, generate fly.toml. If Vercel, generate vercel.json. "
-            "If Railway, generate railway.toml. Never substitute.\n\n"
-            "2. THIRD-PARTY SERVICES: Every service mentioned in ANY doc must appear in the CI/CD. "
-            "If Stripe is in the integration spec, the deploy workflow must register the Stripe webhook. "
-            "If Slack is mentioned, the workflow must configure the Slack app endpoint. "
-            "If Supabase Storage is mentioned, the workflow must create the required buckets.\n\n"
-            "3. SUPABASE MIGRATIONS: Use Supabase CLI (`supabase db push`) — NOT Alembic — for schema changes. "
-            "The migration SQL files already exist in `supabase/migrations/`. Run them in CI.\n\n"
-            "4. ENVIRONMENT VARIABLES: Every variable from the API contract and docs must appear "
-            "in secrets-required.md AND in the workflow env: blocks. No variable may be missing.\n\n"
-            "5. NO PLACEHOLDERS: Every workflow step must be complete and runnable. "
-            "No `# TODO`, no `YOUR_VALUE_HERE`, no incomplete steps."
+            "You are generating production-grade infrastructure that must pass `docker compose up --build` "
+            "and `docker compose config --quiet` on the FIRST attempt with ZERO post-generation fixes.\n\n"
+            "The definition of success: every container starts, healthchecks pass, CI/CD YAML is valid.\n\n"
+            "Every rule below exists because ignoring it causes a build failure, a CI pipeline failure, "
+            "or a security vulnerability."
+        ),
+
+        _section("RULE 1 — DEPLOYMENT PLATFORM: USE EXACTLY WHAT THE SPEC SAYS"),
+        (
+            "Read the operations and architecture docs. Use EXACTLY the platform named:\n\n"
+            "  Spec says Fly.io    → generate fly.toml for each service, flyctl commands in CI\n"
+            "  Spec says Vercel    → generate vercel.json for frontend, Vercel CLI in CI\n"
+            "  Spec says Railway   → generate railway.toml, Railway CLI in CI\n"
+            "  Spec says AWS ECS   → generate task definitions, ECR push, ECS deploy steps\n"
+            "  Spec says GCP Cloud Run → generate service.yaml, gcloud run deploy steps\n\n"
+            "NEVER substitute a different platform. NEVER use Docker Swarm when the spec says Kubernetes."
+        ),
+
+        _section("RULE 2 — DOCKER COMPOSE: EXACT BUILD CONTEXT AND DOCKERFILE PATHS"),
+        (
+            "docker-compose.yml lives in infra/. Service dirs are siblings at the same level.\n\n"
+            "CORRECT — context uses parent-relative paths:\n"
+            "  services:\n"
+            "    backend:\n"
+            "      build:\n"
+            "        context: ../backend\n"
+            "        dockerfile: Dockerfile\n"
+            "    frontend:\n"
+            "      build:\n"
+            "        context: ../frontend\n"
+            "        dockerfile: Dockerfile\n\n"
+            "WRONG — these paths are relative to the wrong directory:\n"
+            "  context: ./backend   ← looks for infra/backend/ — does not exist\n"
+            "  context: backend     ← same error\n"
+            "  context: .           ← builds from infra/ — wrong\n\n"
+            "EVERY service needs a healthcheck:\n"
+            "  healthcheck:\n"
+            "    test: ['CMD', 'curl', '-f', 'http://localhost:8000/health']\n"
+            "    interval: 30s\n"
+            "    timeout: 10s\n"
+            "    retries: 3\n"
+            "    start_period: 40s\n\n"
+            "depends_on must use condition: service_healthy (not just service_started):\n"
+            "  depends_on:\n"
+            "    backend:\n"
+            "      condition: service_healthy"
+        ),
+
+        _section("RULE 3 — DOCKERFILE npm COMMANDS: NEVER USE npm ci"),
+        (
+            "AI-generated projects do NOT include package-lock.json.\n"
+            "`npm ci` REQUIRES package-lock.json — it will crash with:\n"
+            "  npm error `npm ci` can only install packages when your package.json\n"
+            "  and package-lock.json are in sync\n\n"
+            "CORRECT — every Node.js Dockerfile MUST use:\n"
+            "  COPY package.json ./\n"
+            "  RUN npm install --no-audit --no-fund\n\n"
+            "WRONG:\n"
+            "  COPY package*.json ./  ← may copy a stale lockfile\n"
+            "  RUN npm ci             ← CRASHES without lockfile\n\n"
+            "This applies to EVERY Dockerfile you generate — backend/Dockerfile, frontend/Dockerfile, "
+            "any service Dockerfile. Check every npm command before finalising."
+        ),
+
+        _section("RULE 4 — GITHUB ACTIONS YAML: EXACT SYNTAX RULES"),
+        (
+            "GitHub Actions YAML is strict. Any syntax error = entire workflow fails silently.\n\n"
+            "MANDATORY structure for every workflow:\n"
+            "  name: <descriptive name>\n"
+            "  on:\n"
+            "    push:\n"
+            "      branches: [main]\n"
+            "  permissions:\n"
+            "    contents: read\n"
+            "  jobs:\n"
+            "    <job-id>:\n"
+            "      runs-on: ubuntu-latest\n"
+            "      steps:\n"
+            "        - uses: actions/checkout@v4\n\n"
+            "CRITICAL RULES:\n"
+            "  1. `uses:` and `run:` are mutually exclusive in a step — never combine them\n"
+            "  2. Secrets: `${{ secrets.MY_SECRET }}` — never `${{secrets.MY_SECRET}}` (spaces required)\n"
+            "  3. Environment files: use `>> $GITHUB_ENV` — NOT `export VAR=value` (lost after the step)\n"
+            "  4. Python setup: use `actions/setup-python@v5` — NOT v3\n"
+            "  5. Node setup: use `actions/setup-node@v4` — NOT v2\n"
+            "  6. Cache: use `actions/cache@v4` — NOT v2\n"
+            "  7. Multi-line run blocks: use `|` YAML block scalar — never string concatenation\n"
+            "  8. Docker login: use `docker/login-action@v3` before any docker push\n\n"
+            "NEVER generate a step like:\n"
+            "  - run: echo 'do step X'  # TODO\n"
+            "Every step must be complete and runnable."
+        ),
+
+        _section("RULE 5 — ENVIRONMENT VARIABLES: ZERO OMISSIONS"),
+        (
+            "Every environment variable read by ANY service must appear in BOTH:\n"
+            "  a. The docker-compose.yml `environment:` or `env_file:` block for that service\n"
+            "  b. secrets-required.md as a GitHub Secret entry\n\n"
+            "Method: walk every .env.example file from backend, frontend, and integration steps. "
+            "Every variable listed there must be wired into the CI/CD.\n\n"
+            "CORRECT in docker-compose.yml:\n"
+            "  backend:\n"
+            "    environment:\n"
+            "      DATABASE_URL: ${DATABASE_URL}\n"
+            "      SUPABASE_URL: ${SUPABASE_URL}\n"
+            "      SUPABASE_KEY: ${SUPABASE_KEY}\n"
+            "      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY}\n\n"
+            "CORRECT in CI:\n"
+            "  env:\n"
+            "    DATABASE_URL: ${{ secrets.DATABASE_URL }}\n"
+            "    SUPABASE_URL: ${{ secrets.SUPABASE_URL }}\n\n"
+            "NEVER use placeholder values like YOUR_KEY_HERE or REPLACE_ME in workflow files."
+        ),
+
+        _section("RULE 6 — SUPABASE MIGRATIONS: USE SUPABASE CLI, NOT ALEMBIC"),
+        (
+            "The spec uses Supabase — do NOT generate Alembic migration files or alembic.ini.\n"
+            "Schema migrations are SQL files in supabase/migrations/, applied via Supabase CLI.\n\n"
+            "CORRECT in CI deploy workflow:\n"
+            "  - name: Run database migrations\n"
+            "    run: |\n"
+            "      npx supabase db push --project-ref ${{ secrets.SUPABASE_PROJECT_REF }}\n"
+            "    env:\n"
+            "      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}\n\n"
+            "WRONG:\n"
+            "  - run: alembic upgrade head  ← not the tool being used\n"
+            "  - run: python manage.py migrate  ← Django pattern, not FastAPI/Supabase\n\n"
+            "supabase/config.toml MUST be generated for local dev and CI to work. "
+            "Use `supabase init` output format with the project_id from the SUPABASE_PROJECT_REF secret."
+        ),
+
+        _section("RULE 7 — SECRETS-REQUIRED.MD: COMPLETE AND ACTIONABLE"),
+        (
+            "secrets-required.md is the ONLY manual step for the developer. It must be complete.\n\n"
+            "REQUIRED table format:\n"
+            "  | Secret Name | Where to get it | Used in | Required for |\n"
+            "  |---|---|---|---|\n"
+            "  | SUPABASE_URL | Supabase Dashboard → Settings → API → Project URL | CI + deploy | All |\n"
+            "  | SUPABASE_ANON_KEY | Supabase Dashboard → Settings → API → anon key | CI + deploy | All |\n"
+            "  | STRIPE_SECRET_KEY | Stripe Dashboard → Developers → API keys | deploy | Staging, Prod |\n\n"
+            "RULES:\n"
+            "  - List EVERY secret referenced in ANY workflow file\n"
+            "  - Explain exactly WHERE to find the value (URL, dashboard section, CLI command)\n"
+            "  - Never leave a row with 'See docs' or 'Contact admin' — be specific\n"
+            "  - Include instructions for SUPABASE_PROJECT_REF (it is the project ref ID, not the URL)"
+        ),
+
+        _section("RULE 8 — MAKEFILE: ALL TARGETS MUST BE RUNNABLE"),
+        (
+            "The Makefile is used by developers every day. Every target must work.\n\n"
+            "REQUIRED targets (copy this structure):\n"
+            "  .PHONY: dev migrate test e2e setup deploy-staging\n\n"
+            "  setup:\n"
+            "  \tcp .env.example .env.local\n"
+            "  \tnpx supabase start\n"
+            "  \t$(MAKE) migrate\n\n"
+            "  dev:\n"
+            "  \tdocker compose -f infra/docker-compose.yml up --build\n\n"
+            "  migrate:\n"
+            "  \tnpx supabase db push\n\n"
+            "  test:\n"
+            "  \tcd backend && pip install -r requirements-dev.txt -q && pytest\n"
+            "  \tcd frontend && npm install --no-audit --no-fund -s && npm test\n\n"
+            "  e2e:\n"
+            "  \tcd frontend && npx playwright test\n\n"
+            "NEVER use `npm ci` in the Makefile — use `npm install --no-audit --no-fund`.\n"
+            "NEVER have a target that does nothing (`@echo 'TODO'`)."
+        ),
+
+        _section("RULE 9 — NO PLACEHOLDERS, NO TODOS, NO INCOMPLETE STEPS"),
+        (
+            "Every file you generate must be complete and immediately runnable.\n\n"
+            "NEVER generate:\n"
+            "  # TODO: add deploy step here\n"
+            "  YOUR_DEPLOY_TOKEN_HERE\n"
+            "  - run: # implement this\n"
+            "  <your-project-name>    ← placeholder in fly.toml or vercel.json\n\n"
+            "INSTEAD: use environment variable references everywhere:\n"
+            "  ${{ secrets.FLY_APP_NAME }}      ← in GitHub Actions\n"
+            "  ${FLY_APP_NAME}                   ← in docker-compose env blocks\n"
+            "  $(FLY_APP_NAME)                   ← in Makefile\n\n"
+            "Then add FLY_APP_NAME to secrets-required.md so the developer knows to set it. "
+            "This is the correct pattern — not a placeholder, not a TODO."
         ),
         COMMON_FORMAT_RULE,
         contract_block,
@@ -1339,80 +1984,251 @@ def _fix_ui_component_exports(out_dir):
 
 
 def _validate_build(out_dir, step):
-    """Run `npm run build` in the generated directory and surface errors clearly.
+    """Dispatch to the correct static validator for each build step.
 
-    This catches TypeScript errors, missing imports, and JSX syntax failures that
-    only manifest at build time — not during file generation.
+    Each step has different build tooling:
+      frontend    → npm install + npm run build  (Next.js/Vite TypeScript compilation)
+      backend     → pip install + python -m py_compile on all .py files
+      integration → pip install + python -m py_compile on all .py files
+      tests       → pip install + pytest --collect-only (dry-run, no test execution)
+      infra       → docker compose config --quiet + YAML lint
 
-    The validation:
-    1. Runs `npm install --no-audit --no-fund` to install deps
-    2. Runs `npm run build` (which runs tsc + Next.js/Vite compilation)
-    3. If it fails, logs the first 50 lines of error output to the build status
-    4. Marks the step as having a build_validation_error (non-blocking — files are kept)
-
-    Why non-blocking: the files are already written and may be useful even if the build
-    fails. The developer can see the error, fix the generation prompt, and regenerate.
-    The status surfaces the error prominently in the dashboard.
+    All validators are non-blocking: files are kept even on failure.
+    Errors are written to build-system.json and surfaced in the dashboard.
     """
-    # Only validate frontend steps — backend/infra use different build systems
-    _VALIDATABLE_STEPS = {"frontend"}
-    if step not in _VALIDATABLE_STEPS:
-        return
+    _validators = {
+        "frontend": _validate_frontend,
+        "backend": _validate_python,
+        "integration": _validate_python,
+        "tests": _validate_tests,
+        "infra": _validate_infra,
+    }
+    validator = _validators.get(step)
+    if validator:
+        validator(out_dir, step)
 
-    # Check if this looks like a Node.js project
+
+def _run_subprocess(cmd, cwd, timeout=300, extra_env=None):
+    """Run a subprocess, returning (returncode, combined_output)."""
+    env = {**os.environ, **(extra_env or {})}
+    try:
+        result = subprocess.run(
+            cmd, cwd=cwd, capture_output=True, text=True, timeout=timeout, env=env,
+        )
+        combined = (result.stdout or "") + "\n" + (result.stderr or "")
+        return result.returncode, combined
+    except subprocess.TimeoutExpired:
+        return -1, f"Command timed out after {timeout}s: {' '.join(cmd)}"
+    except FileNotFoundError:
+        return -2, f"Command not found: {cmd[0]}"
+    except Exception as e:
+        return -3, str(e)
+
+
+def _extract_error_lines(text, limit=60):
+    """Extract error-relevant lines from build output."""
+    _ERROR_KW = (
+        "error", "Error", "ERROR", "Cannot find", "Module not found",
+        "SyntaxError", "Type error", "Failed to compile", "ImportError",
+        "ModuleNotFoundError", "NameError", "AttributeError", "TypeError",
+        "FAILED", "ERRORS", "invalid", "Invalid", "not found", "not installed",
+    )
+    error_lines = [ln for ln in text.splitlines() if any(kw in ln for kw in _ERROR_KW)]
+    return "\n".join(error_lines[:limit]) if error_lines else text[:3000]
+
+
+def _validate_frontend(out_dir, step):
+    """Validate frontend: npm install + npm run build."""
     pkg_json = os.path.join(out_dir, "package.json")
     if not os.path.isfile(pkg_json):
         return
 
-    print(_LOG_PREFIX + " [validate] Running npm install + npm run build to verify generated code...")
+    print(_LOG_PREFIX + " [validate:frontend] Running npm install + npm run build...")
 
-    try:
-        # Install deps first
-        install_result = subprocess.run(
-            ["npm", "install", "--no-audit", "--no-fund"],
-            cwd=out_dir,
-            capture_output=True,
-            text=True,
-            timeout=300,
-        )
-        if install_result.returncode != 0:
-            _record_build_validation_error(
-                step,
-                "npm install failed:\n" + (install_result.stderr or install_result.stdout)[:3000],
+    rc, out = _run_subprocess(["npm", "install", "--no-audit", "--no-fund"], out_dir, timeout=300)
+    if rc != 0 and rc != -2:
+        _record_build_validation_error(step, "npm install failed:\n" + out[:3000])
+        return
+    if rc == -2:
+        print(_LOG_PREFIX + " [validate:frontend] npm not found — skipping")
+        return
+
+    rc, out = _run_subprocess(
+        ["npm", "run", "build"], out_dir, timeout=360,
+        extra_env={"NEXT_TELEMETRY_DISABLED": "1"},
+    )
+    if rc != 0:
+        summary = _extract_error_lines(out)
+        _record_build_validation_error(step, summary)
+        print(_LOG_PREFIX + " [validate:frontend] BUILD FAILED — see build status for details")
+        print(_LOG_PREFIX + " [validate:frontend] First errors:\n" + summary[:500])
+    else:
+        print(_LOG_PREFIX + " [validate:frontend] Build succeeded.")
+        _clear_build_validation_error(step)
+
+
+def _find_python_service_dir(out_dir):
+    """Find the directory containing requirements.txt (the Python service root)."""
+    # Check out_dir itself first, then one level down
+    if os.path.isfile(os.path.join(out_dir, "requirements.txt")):
+        return out_dir
+    for entry in sorted(os.listdir(out_dir)):
+        candidate = os.path.join(out_dir, entry)
+        if os.path.isdir(candidate) and os.path.isfile(os.path.join(candidate, "requirements.txt")):
+            return candidate
+    return None
+
+
+def _validate_python(out_dir, step):
+    """Validate Python steps: pip install + py_compile all .py files."""
+    service_dir = _find_python_service_dir(out_dir)
+    if not service_dir:
+        # No requirements.txt — skip silently
+        return
+
+    print(_LOG_PREFIX + f" [validate:{step}] Installing requirements + checking Python syntax...")
+
+    # pip install
+    rc, out = _run_subprocess(
+        ["pip", "install", "--quiet", "--no-deps", "-r", "requirements.txt"],
+        service_dir, timeout=180,
+    )
+    if rc == -2:
+        print(_LOG_PREFIX + f" [validate:{step}] pip not found — skipping")
+        return
+    if rc != 0:
+        _record_build_validation_error(step, "pip install failed:\n" + out[:3000])
+        print(_LOG_PREFIX + f" [validate:{step}] pip install FAILED")
+        return
+
+    # Syntax-check every .py file
+    errors = []
+    for root, dirs, files in os.walk(service_dir):
+        dirs[:] = [d for d in dirs if d not in ("__pycache__", ".venv", "venv", "node_modules")]
+        for fname in files:
+            if not fname.endswith(".py"):
+                continue
+            fpath = os.path.join(root, fname)
+            rc2, out2 = _run_subprocess(
+                ["python", "-m", "py_compile", fpath], service_dir, timeout=30,
             )
-            return
+            if rc2 not in (0, -2) and out2.strip():
+                rel = os.path.relpath(fpath, service_dir)
+                errors.append(f"{rel}: {out2.strip()[:300]}")
 
-        # Run the build
-        build_result = subprocess.run(
-            ["npm", "run", "build"],
-            cwd=out_dir,
-            capture_output=True,
-            text=True,
-            timeout=300,
-            env={**os.environ, "NEXT_TELEMETRY_DISABLED": "1"},
+    if errors:
+        summary = f"Syntax errors in {len(errors)} file(s):\n" + "\n".join(errors[:20])
+        _record_build_validation_error(step, summary)
+        print(_LOG_PREFIX + f" [validate:{step}] SYNTAX ERRORS — see build status for details")
+    else:
+        print(_LOG_PREFIX + f" [validate:{step}] All Python files compile clean.")
+        _clear_build_validation_error(step)
+
+
+def _validate_tests(out_dir, step):
+    """Validate tests step: pip install + pytest --collect-only (no execution)."""
+    service_dir = _find_python_service_dir(out_dir)
+    if not service_dir:
+        return
+
+    print(_LOG_PREFIX + " [validate:tests] Installing deps + dry-running test collection...")
+
+    # Install dev requirements if present
+    req_dev = os.path.join(service_dir, "requirements-dev.txt")
+    req_file = req_dev if os.path.isfile(req_dev) else os.path.join(service_dir, "requirements.txt")
+
+    rc, out = _run_subprocess(
+        ["pip", "install", "--quiet", "--no-deps", "-r", req_file],
+        service_dir, timeout=180,
+    )
+    if rc == -2:
+        print(_LOG_PREFIX + " [validate:tests] pip not found — skipping")
+        return
+    if rc != 0:
+        _record_build_validation_error(step, "pip install failed:\n" + out[:3000])
+        return
+
+    # Dry-run test collection (--collect-only exits non-zero if collection fails)
+    rc, out = _run_subprocess(
+        ["python", "-m", "pytest", "--collect-only", "-q", "--no-header"],
+        service_dir, timeout=60,
+    )
+    if rc == -2:
+        print(_LOG_PREFIX + " [validate:tests] pytest not found — skipping")
+        return
+    if rc != 0:
+        summary = _extract_error_lines(out)
+        _record_build_validation_error(step, "Test collection failed:\n" + summary)
+        print(_LOG_PREFIX + " [validate:tests] TEST COLLECTION FAILED — see build status")
+        print(_LOG_PREFIX + " [validate:tests] First errors:\n" + summary[:500])
+    else:
+        print(_LOG_PREFIX + " [validate:tests] Test collection succeeded.")
+        _clear_build_validation_error(step)
+
+
+def _validate_infra(out_dir, step):
+    """Validate infra: docker compose config + YAML syntax check."""
+    # Look for docker-compose.yml in out_dir or one level down
+    compose_file = None
+    for candidate_name in ("docker-compose.yml", "docker-compose.yaml"):
+        for search_dir in [out_dir] + [os.path.join(out_dir, d) for d in os.listdir(out_dir)
+                                        if os.path.isdir(os.path.join(out_dir, d))]:
+            candidate = os.path.join(search_dir, candidate_name)
+            if os.path.isfile(candidate):
+                compose_file = candidate
+                break
+        if compose_file:
+            break
+
+    # YAML syntax check on all .yml/.yaml files
+    yaml_errors = []
+    try:
+        import yaml as _yaml
+        for root, dirs, files in os.walk(out_dir):
+            dirs[:] = [d for d in dirs if d != "node_modules"]
+            for fname in files:
+                if not fname.endswith((".yml", ".yaml")):
+                    continue
+                fpath = os.path.join(root, fname)
+                try:
+                    with open(fpath, encoding="utf-8") as f:
+                        _yaml.safe_load_all(f.read())
+                except _yaml.YAMLError as e:
+                    rel = os.path.relpath(fpath, out_dir)
+                    yaml_errors.append(f"{rel}: {str(e)[:200]}")
+                except OSError:
+                    pass
+    except ImportError:
+        pass  # PyYAML not available — skip YAML lint
+
+    if yaml_errors:
+        summary = f"YAML syntax errors in {len(yaml_errors)} file(s):\n" + "\n".join(yaml_errors[:20])
+        _record_build_validation_error(step, summary)
+        print(_LOG_PREFIX + " [validate:infra] YAML ERRORS — see build status for details")
+        return
+
+    # docker compose config (structural validation) if compose file found
+    if compose_file:
+        compose_dir = os.path.dirname(compose_file)
+        compose_fname = os.path.basename(compose_file)
+        print(_LOG_PREFIX + " [validate:infra] Running docker compose config...")
+        rc, out = _run_subprocess(
+            ["docker", "compose", "-f", compose_fname, "config", "--quiet"],
+            compose_dir, timeout=60,
         )
-
-        if build_result.returncode != 0:
-            combined = (build_result.stdout or "") + "\n" + (build_result.stderr or "")
-            # Extract meaningful lines: errors, not noise
-            error_lines = [
-                ln for ln in combined.splitlines()
-                if any(kw in ln for kw in ("error", "Error", "ERROR", "Cannot find", "Module not found", "SyntaxError", "Type error", "Failed to compile"))
-            ]
-            summary = "\n".join(error_lines[:60]) if error_lines else combined[:3000]
-            _record_build_validation_error(step, summary)
-            print(_LOG_PREFIX + " [validate] BUILD FAILED — see build status for details")
-            print(_LOG_PREFIX + " [validate] First errors:\n" + summary[:500])
+        if rc == -2:
+            print(_LOG_PREFIX + " [validate:infra] docker not found — skipping compose validation")
+        elif rc != 0:
+            summary = _extract_error_lines(out)
+            _record_build_validation_error(step, "docker compose config failed:\n" + summary)
+            print(_LOG_PREFIX + " [validate:infra] COMPOSE CONFIG FAILED — see build status")
+            return
         else:
-            print(_LOG_PREFIX + " [validate] Build succeeded — generated code is valid.")
-            _clear_build_validation_error(step)
+            print(_LOG_PREFIX + " [validate:infra] docker compose config passed.")
 
-    except subprocess.TimeoutExpired:
-        _record_build_validation_error(step, "Build validation timed out after 5 minutes")
-    except FileNotFoundError:
-        print(_LOG_PREFIX + " [validate] npm not found — skipping build validation")
-    except Exception as e:
-        print(_LOG_PREFIX + " [validate] Validation error (non-fatal): " + str(e))
+    if not yaml_errors:
+        print(_LOG_PREFIX + " [validate:infra] Infra validation passed.")
+        _clear_build_validation_error(step)
 
 
 def _record_build_validation_error(step, error_text):
