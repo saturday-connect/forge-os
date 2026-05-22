@@ -223,10 +223,16 @@ def build_backend_prompt(persona, docs):
         (
             "You are generating a production-grade backend codebase that must pass `docker compose up --build` "
             "on the FIRST attempt with ZERO post-generation fixes.\n\n"
-            "The definition of success is: every container starts, every endpoint responds correctly, "
-            "and `pytest` exits 0.\n\n"
-            "Every rule below exists because ignoring it causes a Docker build failure or a runtime crash. "
-            "Treat every rule as a hard constraint, not a suggestion."
+            "The definition of success: every container starts, every endpoint responds correctly, "
+            "and the test suite exits 0.\n\n"
+            "STEP ZERO — READ THE SPEC, IDENTIFY THE STACK:\n"
+            "Before writing a single line of code, read all specification documents below and identify:\n"
+            "  1. Language (Python, Node.js/TypeScript, Go, Ruby, Java, Rust, etc.)\n"
+            "  2. Framework (FastAPI, Express, Gin, Rails, Spring Boot, Actix, etc.)\n"
+            "  3. Database and client (Supabase, PostgreSQL + raw driver, MongoDB, MySQL, etc.)\n"
+            "  4. Auth mechanism (Supabase Auth, JWT, OAuth2, session cookies, API keys)\n"
+            "  5. Any named third-party services\n\n"
+            "Use EXACTLY what the spec names. Never substitute."
         ),
 
         _section("FIRST OUTPUT BLOCK — MANDATORY"),
@@ -235,223 +241,197 @@ def build_backend_prompt(persona, docs):
             "=== api-contract.md ===\n\n"
             "This file is read by the frontend and integration agents. It must contain:\n"
             "  - Base URL (e.g. http://localhost:8000/api/v1)\n"
-            "  - Auth mechanism (Supabase JWT Bearer token in Authorization header, session cookie, etc.)\n"
-            "  - Every endpoint: METHOD, full path, auth required (yes/no), request body JSON schema, response JSON schema\n"
+            "  - Auth mechanism and how to pass credentials\n"
+            "  - Every endpoint: METHOD, full path, auth required (yes/no), request body schema, response schema\n"
             "  - Every error response: status code, body shape, when it occurs\n"
-            "  - Supabase table names and RLS policies if applicable\n"
+            "  - Database table/collection names and access policies if applicable\n"
             "  - All environment variables: name, description, example value\n\n"
             "Do NOT skip this file. Do NOT generate it last. It goes FIRST."
         ),
 
-        _section("MANDATORY REQUIRED FILES — GENERATE ALL OF THESE"),
+        _section("RULE 1 — TECH STACK: USE EXACTLY WHAT THE SPEC SAYS, NEVER SUBSTITUTE"),
         (
-            "A missing file is a build failure. Generate ALL of:\n\n"
-            "  api-contract.md             — FIRST block (see above)\n"
-            "  app/main.py                 — FastAPI app entry, CORS, routers, lifespan\n"
-            "  app/routers/               — one file per domain (auth.py, items.py, etc.)\n"
-            "  app/models/                — Pydantic request/response models\n"
-            "  app/dependencies.py        — shared FastAPI dependencies (get_current_user, get_db, etc.)\n"
-            "  app/database.py            — DB client initialisation (supabase-py or SQLAlchemy)\n"
-            "  supabase/migrations/       — SQL migration files for all tables\n"
-            "  requirements.txt           — ALL Python packages (see package rules below)\n"
-            "  Dockerfile                 — multi-stage Python build (see Dockerfile rules below)\n"
-            "  .env.example               — every environment variable the app reads"
+            "Read the architecture documents. Use EXACTLY the language, framework, DB, and auth system named.\n\n"
+            "Common substitution mistakes to NEVER make:\n"
+            "  Spec says FastAPI (Python)  → use FastAPI, NOT Flask, NOT Django\n"
+            "  Spec says Express (Node.js) → use Express, NOT Fastify, NOT Koa\n"
+            "  Spec says Go + Gin          → use Gin, NOT Echo, NOT stdlib net/http\n"
+            "  Spec says Rails (Ruby)      → use Rails, NOT Sinatra\n"
+            "  Spec says Supabase DB       → use the Supabase client for that language, NOT a raw ORM\n"
+            "  Spec says PostgreSQL        → use PostgreSQL, NOT SQLite or in-memory store\n"
+            "  Spec says Redis             → use Redis client, NOT an in-memory dict/map\n"
+            "  Spec says JWT auth          → implement JWT, NOT session cookies\n\n"
+            "If the spec is ambiguous, pick the simplest correct interpretation and document it in api-contract.md."
         ),
 
-        _section("RULE 1 — TECH STACK: USE EXACTLY WHAT THE SPEC SAYS"),
+        _section("RULE 2 — DEPENDENCY MANIFEST: DECLARE EVERY PACKAGE"),
         (
-            "Read the architecture documents. Use EXACTLY the framework, DB, and auth system named.\n\n"
-            "NEVER substitute:\n"
-            "  Spec says Supabase   → use supabase-py, NOT SQLAlchemy + psycopg2\n"
-            "  Spec says FastAPI    → use FastAPI with async def handlers, NOT Flask or Django\n"
-            "  Spec says PostgreSQL via Supabase → use supabase-py client, NOT raw asyncpg\n"
-            "  Spec says JWT auth   → implement it exactly (Supabase JWT verification via JWKS)\n"
-            "  Spec says Redis      → use redis-py or aioredis, NOT in-memory dict\n\n"
-            "Never default to SQLite, in-memory stores, or mock data when the spec names a real DB.\n"
-            "Never add ORMs the spec doesn't mention."
+            "Every package imported in any source file MUST appear in the dependency manifest.\n"
+            "The Docker build installs from this manifest — a missing package = build failure.\n\n"
+            "The manifest filename depends on the language:\n"
+            "  Python      → requirements.txt  (pip install -r requirements.txt)\n"
+            "  Node.js/TS  → package.json      (npm install)\n"
+            "  Go          → go.mod            (go mod download)\n"
+            "  Ruby        → Gemfile           (bundle install)\n"
+            "  Java        → pom.xml / build.gradle\n"
+            "  Rust        → Cargo.toml        (cargo build)\n\n"
+            "RULE: walk every import/require/use statement in every source file. "
+            "For every external package (not stdlib, not a local file): it MUST be in the manifest.\n\n"
+            "Language-specific pitfalls:\n"
+            "  Python/FastAPI: `python-multipart` is required for form/file uploads but often missed\n"
+            "  Node.js: `@types/express`, `ts-node`, `typescript` belong in devDependencies\n"
+            "  Go: run `go mod tidy` conceptually — every import must have a corresponding require\n"
+            "  Ruby: separate test gems into group :test, :development in Gemfile"
         ),
 
-        _section("RULE 2 — SUPABASE-PY API: USE THE CORRECT VERSION"),
+        _section("RULE 3 — DOCKERFILE: MULTI-STAGE, NON-ROOT, CORRECT BASE IMAGE"),
         (
-            "supabase-py v2.x has a DIFFERENT API from v1.x. Use v2.x. The key differences:\n\n"
-            "CORRECT (v2.x):\n"
-            "  from supabase import create_client, Client\n"
-            "  supabase: Client = create_client(url, key)\n"
-            "  result = supabase.table('items').select('*').execute()\n"
-            "  data = result.data   ← NOT result['data']\n"
-            "  supabase.auth.sign_in_with_password({'email': e, 'password': p})\n\n"
-            "WRONG (v1.x — DO NOT USE):\n"
-            "  supabase.from_('items').select('*').execute()  ← removed in v2\n"
-            "  result['data']  ← wrong; use result.data\n\n"
-            "For JWT verification (Supabase Auth):\n"
-            "  Use PyJWT + the Supabase JWT secret from env, OR use supabase.auth.get_user(token).\n"
-            "  The JWKS endpoint is: https://<project>.supabase.co/auth/v1/.well-known/jwks.json\n\n"
-            "In FastAPI, create the Supabase client once at startup (lifespan context), "
-            "store it in app.state, and inject it via a dependency. "
-            "NEVER create a new client per request."
+            "Use a multi-stage Dockerfile. Copy only what the runtime needs. Never run as root.\n\n"
+            "Python/FastAPI:\n"
+            "  FROM python:3.12-slim AS builder\n"
+            "  COPY requirements.txt ./\n"
+            "  RUN pip install --no-cache-dir -r requirements.txt\n"
+            "  FROM python:3.12-slim AS runner\n"
+            "  COPY --from=builder /usr/local/lib /usr/local/lib\n"
+            "  COPY --from=builder /usr/local/bin /usr/local/bin\n"
+            "  COPY . .\n"
+            "  RUN useradd --create-home appuser && chown -R appuser /app\n"
+            "  USER appuser\n"
+            "  CMD ['uvicorn', 'app.main:app', '--host', '0.0.0.0', '--port', '8000']\n\n"
+            "Node.js/TypeScript:\n"
+            "  FROM node:20-alpine AS builder\n"
+            "  COPY package.json ./\n"
+            "  RUN npm install --no-audit --no-fund  ← NEVER npm ci (no lockfile)\n"
+            "  COPY . .\n"
+            "  RUN npm run build\n"
+            "  FROM node:20-alpine AS runner\n"
+            "  COPY --from=builder /app/dist ./dist\n"
+            "  COPY --from=builder /app/node_modules ./node_modules\n"
+            "  RUN addgroup -S appgroup && adduser -S appuser -G appgroup\n"
+            "  USER appuser\n"
+            "  CMD ['node', 'dist/index.js']\n\n"
+            "Go:\n"
+            "  FROM golang:1.22-alpine AS builder\n"
+            "  COPY go.mod go.sum ./\n"
+            "  RUN go mod download\n"
+            "  COPY . .\n"
+            "  RUN CGO_ENABLED=0 GOOS=linux go build -o server ./cmd/server\n"
+            "  FROM scratch AS runner\n"
+            "  COPY --from=builder /app/server /server\n"
+            "  USER 65534\n"
+            "  CMD ['/server']\n\n"
+            "Ruby/Rails:\n"
+            "  FROM ruby:3.3-slim AS builder\n"
+            "  COPY Gemfile Gemfile.lock ./\n"
+            "  RUN bundle install --without development test\n"
+            "  FROM ruby:3.3-slim AS runner\n"
+            "  COPY --from=builder /usr/local/bundle /usr/local/bundle\n"
+            "  COPY . .\n"
+            "  RUN useradd --create-home appuser && chown -R appuser /app\n"
+            "  USER appuser\n"
+            "  CMD ['bundle', 'exec', 'rails', 'server', '-b', '0.0.0.0']\n\n"
+            "UNIVERSAL RULES (apply regardless of language):\n"
+            "  - Dependency install step BEFORE COPY . . (Docker layer cache)\n"
+            "  - Explicit base image version — never :latest\n"
+            "  - Non-root user in runner stage\n"
+            "  - Server binds to 0.0.0.0 (not 127.0.0.1 — Docker won't expose it)"
         ),
 
-        _section("RULE 3 — PYDANTIC V2: USE CORRECT FIELD SYNTAX"),
+        _section("RULE 4 — LANGUAGE PACKAGE STRUCTURE: NO MISSING INIT FILES"),
         (
-            "FastAPI 0.100+ uses Pydantic v2 by default. The API changed significantly.\n\n"
-            "CORRECT (Pydantic v2):\n"
-            "  from pydantic import BaseModel, field_validator, model_validator\n"
-            "  class Item(BaseModel):\n"
-            "    name: str\n"
-            "    price: float\n"
-            "    @field_validator('name')  ← NOT @validator\n"
-            "    @classmethod\n"
-            "    def validate_name(cls, v): ...\n\n"
-            "WRONG (Pydantic v1 — DO NOT USE with FastAPI 0.100+):\n"
-            "  from pydantic import validator  ← removed\n"
-            "  class Config: orm_mode = True  ← replaced by model_config = ConfigDict(from_attributes=True)\n"
-            "  .dict()  ← use .model_dump() instead\n"
-            "  .json()  ← use .model_dump_json() instead\n\n"
-            "Check requirements.txt: if fastapi>=0.100, pydantic must be >=2.0."
+            "Every language has package/module structure rules. Violating them = import errors at startup.\n\n"
+            "Python:\n"
+            "  Every directory that contains importable modules MUST have __init__.py\n"
+            "  app/__init__.py, app/routers/__init__.py, app/models/__init__.py — ALL required\n"
+            "  Missing __init__.py → ModuleNotFoundError on startup\n\n"
+            "Node.js/TypeScript:\n"
+            "  Every barrel file (index.ts) that re-exports must actually export what consumers import\n"
+            "  tsconfig.json `paths` must align with the actual directory structure\n"
+            "  `outDir: dist` — all imports in src/ must resolve after compilation to dist/\n\n"
+            "Go:\n"
+            "  Package name at top of every .go file must match the directory name\n"
+            "  `package main` only in the entrypoint file (cmd/server/main.go)\n"
+            "  All other packages use their directory name: `package handlers`, `package models`\n\n"
+            "Ruby:\n"
+            "  Every require path must match the actual file path relative to lib/\n"
+            "  Rails autoloads from app/ — filenames must match class names exactly (snake_case)\n\n"
+            "Java:\n"
+            "  Package declarations must match directory path exactly\n"
+            "  com.example.app → src/main/java/com/example/app/"
         ),
 
-        _section("RULE 4 — FASTAPI ASYNC CORRECTNESS"),
+        _section("RULE 5 — FRAMEWORK-SPECIFIC CORRECTNESS"),
         (
-            "All route handlers that touch I/O (DB, HTTP, filesystem) MUST be async:\n"
-            "  async def get_items(db: Client = Depends(get_db)) → list[Item]:  ← CORRECT\n"
-            "  def get_items(...)  ← WRONG for async DB calls (blocks the event loop)\n\n"
-            "Background tasks:\n"
-            "  Use FastAPI's BackgroundTasks for fire-and-forget operations.\n"
-            "  Use asyncio.create_task() ONLY inside an async function.\n\n"
-            "Startup/shutdown:\n"
-            "  Use the lifespan context manager (FastAPI 0.93+), NOT @app.on_event:\n"
-            "  CORRECT:\n"
-            "    from contextlib import asynccontextmanager\n"
-            "    @asynccontextmanager\n"
-            "    async def lifespan(app: FastAPI):\n"
-            "      app.state.db = create_client(url, key)\n"
-            "      yield\n"
-            "      # cleanup here\n"
-            "    app = FastAPI(lifespan=lifespan)\n"
-            "  WRONG:\n"
-            "    @app.on_event('startup')  ← deprecated\n\n"
-            "CORS — ALWAYS configure explicitly:\n"
-            "  from fastapi.middleware.cors import CORSMiddleware\n"
-            "  app.add_middleware(CORSMiddleware,\n"
-            "    allow_origins=[os.getenv('FRONTEND_URL', 'http://localhost:3000')],\n"
-            "    allow_credentials=True, allow_methods=['*'], allow_headers=['*'])"
+            "Common framework-specific mistakes that cause silent failures or crashes:\n\n"
+            "PYTHON / FastAPI:\n"
+            "  - All I/O route handlers MUST be `async def` (sync handlers block the event loop)\n"
+            "  - Use lifespan context manager, NOT @app.on_event('startup') (deprecated)\n"
+            "  - Pydantic v2: use @field_validator not @validator; .model_dump() not .dict()\n"
+            "  - supabase-py v2: result.data not result['data']; create client ONCE at startup\n"
+            "  - CORS middleware MUST be added explicitly (FastAPI does not add it by default)\n\n"
+            "NODE.JS / Express or Fastify:\n"
+            "  - All async route handlers need try/catch or express-async-errors wrapper\n"
+            "  - JSON body parsing: app.use(express.json()) BEFORE route registration\n"
+            "  - TypeScript: compile with `tsc` before running; CMD must point to dist/, not src/\n"
+            "  - @supabase/supabase-js v2: createClient takes (url, key), returns typed client\n\n"
+            "GO / Gin or stdlib:\n"
+            "  - c.JSON(200, data) not fmt.Fprintf (use the framework's response helper)\n"
+            "  - Middleware registration order matters: auth before routes that need auth\n"
+            "  - go.sum must be committed; go mod tidy ensures it is consistent\n\n"
+            "RUBY / Rails:\n"
+            "  - Rails credentials for secrets, not hardcoded values\n"
+            "  - db:migrate must run before the app can start (include in Dockerfile or entrypoint)\n"
+            "  - CORS: use rack-cors gem, configure in config/initializers/cors.rb\n\n"
+            "JAVA / Spring Boot:\n"
+            "  - @RestController + @RequestMapping, not @Controller (returns view names, not JSON)\n"
+            "  - application.properties vs application.yml — pick one, be consistent\n"
+            "  - @Transactional on service methods that write to DB, NOT on controllers"
         ),
 
-        _section("RULE 5 — REQUIREMENTS.TXT: EVERY IMPORT MUST BE DECLARED"),
+        _section("RULE 6 — HEALTH CHECK ENDPOINT — ALWAYS REQUIRED"),
         (
-            "Every package imported in any .py file MUST appear in requirements.txt with a pinned version.\n"
-            "The Docker build runs `pip install -r requirements.txt` — a missing package = build failure.\n\n"
-            "MANDATORY packages — include these if your code uses them:\n"
-            "  fastapi>=0.110.0\n"
-            "  uvicorn[standard]>=0.27.0\n"
-            "  pydantic>=2.6.0\n"
-            "  python-dotenv>=1.0.0\n"
-            "  supabase>=2.3.0           — if using Supabase\n"
-            "  PyJWT>=2.8.0              — if verifying JWTs manually\n"
-            "  httpx>=0.27.0             — if making HTTP calls (also needed for tests)\n"
-            "  python-multipart>=0.0.9   — REQUIRED for FastAPI file upload / form data\n"
-            "  aiofiles>=23.0.0          — if serving static files or async file I/O\n"
-            "  redis>=5.0.0              — if using Redis\n"
-            "  celery>=5.3.0             — if using Celery tasks\n"
-            "  stripe>=8.0.0             — if using Stripe\n"
-            "  slack-sdk>=3.27.0         — if using Slack\n"
-            "  pytest>=8.0.0             — in requirements-dev.txt for tests\n"
-            "  pytest-asyncio>=0.23.0    — for async test functions\n\n"
-            "RULE: for every `import X` or `from X import Y` at the top level of any .py file, "
-            "verify X is either the Python stdlib or is listed in requirements.txt."
+            "ALWAYS generate a health check endpoint at GET /health.\n"
+            "It is required by docker-compose healthcheck and CI smoke tests.\n\n"
+            "Python/FastAPI:    @app.get('/health') async def health(): return {'status': 'ok'}\n"
+            "Node.js/Express:   app.get('/health', (req, res) => res.json({ status: 'ok' }))\n"
+            "Go/Gin:            r.GET('/health', func(c *gin.Context) { c.JSON(200, gin.H{'status': 'ok'}) })\n"
+            "Ruby/Rails:        get '/health', to: proc { [200, {}, ['{\"status\":\"ok\"}']] }\n"
+            "Java/Spring:       @GetMapping('/health') public Map<String,String> health() { return Map.of('status','ok'); }\n\n"
+            "The health endpoint must respond within 5 seconds even if the DB is unavailable. "
+            "If you check DB connectivity, return 503 on failure — not crash the process."
         ),
 
-        _section("RULE 6 — DOCKERFILE: PYTHON MULTI-STAGE EXACT PATTERN"),
+        _section("RULE 7 — EVERY IMPORT MUST RESOLVE"),
         (
-            "Use ONLY this Dockerfile pattern for Python/FastAPI. Deviations cause runtime failures.\n\n"
-            "```dockerfile\n"
-            "FROM python:3.12-slim AS base\n"
-            "WORKDIR /app\n"
-            "ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1\n\n"
-            "FROM base AS builder\n"
-            "COPY requirements.txt ./\n"
-            "RUN pip install --no-cache-dir --upgrade pip && \\\n"
-            "    pip install --no-cache-dir -r requirements.txt\n\n"
-            "FROM base AS runner\n"
-            "COPY --from=builder /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages\n"
-            "COPY --from=builder /usr/local/bin /usr/local/bin\n"
-            "COPY . .\n"
-            "RUN useradd --create-home appuser && chown -R appuser /app\n"
-            "USER appuser\n"
-            "EXPOSE 8000\n"
-            "CMD ['uvicorn', 'app.main:app', '--host', '0.0.0.0', '--port', '8000']\n"
-            "```\n\n"
-            "CRITICAL — DO NOT:\n"
-            "  - Use pip install without --no-cache-dir (inflates image size)\n"
-            "  - Run as root in production (security violation)\n"
-            "  - Use `CMD python app.main` — use uvicorn with --host 0.0.0.0\n"
-            "  - COPY requirements.txt after COPY . . (breaks Docker layer caching)\n"
-            "  - Use `python:latest` (use explicit version: python:3.12-slim)"
+            "Before finalising output, walk every import/require/use in every source file:\n\n"
+            "Step 1 — Local imports: does the target file exist in your output?\n"
+            "          Does it export the named symbol?\n\n"
+            "Step 2 — Package imports: is the package in the dependency manifest?\n"
+            "          Is the import path correct for that package's actual export shape?\n\n"
+            "Step 3 — Circular imports (Python/Node.js): if A imports B and B imports A, "
+            "          the runtime throws ImportError or undefined-at-require-time.\n"
+            "          Fix: extract shared types into a separate types/models file.\n\n"
+            "Step 4 — Case sensitivity (Linux Docker): `import './UserService'` fails if the file "
+            "          is named `userService.ts`. Use consistent lowercase filenames.\n\n"
+            "An unresolved import crashes the server at startup. "
+            "There is no partial startup — one bad import and zero endpoints are served."
         ),
 
-        _section("RULE 7 — PYTHON PACKAGE STRUCTURE: __init__.py FILES"),
+        _section("RULE 8 — COMPLETE IMPLEMENTATION: NO STUBS OR TODOS"),
         (
-            "Python treats directories as packages ONLY if they contain __init__.py.\n"
-            "Missing __init__.py = ImportError at startup.\n\n"
-            "EVERY directory under app/ MUST have __init__.py:\n"
-            "  app/__init__.py\n"
-            "  app/routers/__init__.py\n"
-            "  app/models/__init__.py\n"
-            "  app/services/__init__.py  (if you create this dir)\n"
-            "  app/utils/__init__.py     (if you create this dir)\n\n"
-            "Generate each __init__.py as an empty file or with __all__ exports.\n"
-            "This rule applies to EVERY package directory you create — not just app/."
-        ),
-
-        _section("RULE 8 — IMPORT CORRECTNESS: EVERY IMPORT MUST RESOLVE"),
-        (
-            "Before finalising output, mentally walk every import in every .py file:\n\n"
-            "Step 1 — Relative imports: `from .models import Item`\n"
-            "   Is models.py in the same package directory? Does it export Item?\n\n"
-            "Step 2 — Absolute imports: `from app.dependencies import get_current_user`\n"
-            "   Does app/dependencies.py exist in your output? Does it define get_current_user?\n\n"
-            "Step 3 — Third-party imports: `from stripe import StripeError`\n"
-            "   Is stripe in requirements.txt? Is StripeError actually exported by stripe?\n\n"
-            "Step 4 — Circular imports: if A imports from B and B imports from A, the app crashes.\n"
-            "   Break cycles by moving shared types to a separate models.py / types.py.\n\n"
-            "Step 5 — MODULE vs FUNCTION: `from app.database import supabase` — is `supabase`\n"
-            "   a module-level variable in database.py, or a class? Import accordingly."
-        ),
-
-        _section("RULE 9 — HEALTH CHECK ENDPOINT"),
-        (
-            "ALWAYS generate a health check endpoint. It is required by docker-compose healthcheck "
-            "and by the infra agent's CI/CD smoke tests.\n\n"
-            "MINIMUM:\n"
-            "  @app.get('/health')\n"
-            "  async def health() -> dict:\n"
-            "      return {'status': 'ok', 'version': '1.0.0'}\n\n"
-            "BETTER — also check DB connectivity:\n"
-            "  @app.get('/health')\n"
-            "  async def health(db: Client = Depends(get_db)) -> dict:\n"
-            "      try:\n"
-            "          db.table('health_check').select('1').limit(1).execute()\n"
-            "          return {'status': 'ok', 'db': 'connected'}\n"
-            "      except Exception as e:\n"
-            "          return JSONResponse({'status': 'degraded', 'db': str(e)}, status_code=503)"
-        ),
-
-        _section("RULE 10 — COMPLETE IMPLEMENTATION: NO STUBS OR TODOS"),
-        (
-            "Every endpoint listed in the engineering spec MUST be fully implemented:\n"
-            "  - Real business logic (not `return {}` or `pass`)\n"
-            "  - Real DB queries via supabase-py (or the specified ORM)\n"
-            "  - Real error handling with HTTPException and specific status codes\n"
-            "  - Real input validation via Pydantic models\n"
-            "  - Real auth checks (verify JWT, check RLS, return 401/403 when unauthorized)\n\n"
+            "Every endpoint in the engineering spec MUST be fully implemented:\n"
+            "  - Real business logic\n"
+            "  - Real database queries (not hardcoded return values)\n"
+            "  - Real error handling with appropriate HTTP status codes\n"
+            "  - Real input validation\n"
+            "  - Real auth checks (return 401 when unauthenticated, 403 when unauthorized)\n\n"
             "NEVER generate:\n"
-            "  return {}        ← empty response\n"
-            "  # TODO: implement  ← unimplemented stub\n"
-            "  raise NotImplementedError  ← crashes immediately\n"
-            "  pass             ← silent no-op\n\n"
-            "If an endpoint requires a third-party service (email, payments, etc.) that isn't "
-            "available yet, implement it with proper error handling and a feature flag, "
-            "not a stub."
+            "  return {}          / return nil   / return null     ← empty response\n"
+            "  # TODO: implement  / // TODO       / /* TODO */      ← unimplemented stub\n"
+            "  raise NotImplementedError / panic('not implemented') ← crashes immediately\n"
+            "  pass               / { }                             ← silent no-op\n\n"
+            "If an endpoint depends on a third-party service that may not be available, "
+            "implement it with a feature flag and a graceful fallback — not a stub."
         ),
 
         COMMON_FORMAT_RULE,
@@ -1983,29 +1963,81 @@ def _fix_ui_component_exports(out_dir):
         break  # only process first src/components/ui found
 
 
+def _detect_language(service_dir):
+    """Detect the backend language from the generated files in service_dir.
+
+    Returns one of: 'python', 'node', 'go', 'ruby', 'java', 'rust', or None.
+    Detection is by presence of the language's dependency manifest file.
+    """
+    markers = [
+        ("python", "requirements.txt"),
+        ("python", "setup.py"),
+        ("python", "pyproject.toml"),
+        ("node",   "package.json"),
+        ("go",     "go.mod"),
+        ("ruby",   "Gemfile"),
+        ("java",   "pom.xml"),
+        ("java",   "build.gradle"),
+        ("rust",   "Cargo.toml"),
+    ]
+    for lang, filename in markers:
+        if os.path.isfile(os.path.join(service_dir, filename)):
+            return lang
+    return None
+
+
+def _find_service_dir(out_dir):
+    """Find the actual service root (may be out_dir itself or one level down)."""
+    # Check if out_dir is the service root
+    if _detect_language(out_dir):
+        return out_dir
+    # Check one level down (e.g. generated as backend/backend/ or backend/app/)
+    try:
+        for entry in sorted(os.listdir(out_dir)):
+            candidate = os.path.join(out_dir, entry)
+            if os.path.isdir(candidate) and _detect_language(candidate):
+                return candidate
+    except OSError:
+        pass
+    return None
+
+
 def _validate_build(out_dir, step):
     """Dispatch to the correct static validator for each build step.
 
-    Each step has different build tooling:
-      frontend    → npm install + npm run build  (Next.js/Vite TypeScript compilation)
-      backend     → pip install + python -m py_compile on all .py files
-      integration → pip install + python -m py_compile on all .py files
-      tests       → pip install + pytest --collect-only (dry-run, no test execution)
-      infra       → docker compose config --quiet + YAML lint
+    Detection is automatic:
+      frontend    → always npm (Next.js/Vite)
+      backend     → detect language from generated files, then validate accordingly
+      integration → same as backend (may be any language)
+      tests       → detect language, run test collection dry-run
+      infra       → YAML lint + docker compose config
 
     All validators are non-blocking: files are kept even on failure.
     Errors are written to build-system.json and surfaced in the dashboard.
     """
-    _validators = {
-        "frontend": _validate_frontend,
-        "backend": _validate_python,
-        "integration": _validate_python,
-        "tests": _validate_tests,
-        "infra": _validate_infra,
-    }
-    validator = _validators.get(step)
-    if validator:
-        validator(out_dir, step)
+    if step == "frontend":
+        _validate_frontend(out_dir, step)
+    elif step == "infra":
+        _validate_infra(out_dir, step)
+    elif step in ("backend", "integration", "tests"):
+        service_dir = _find_service_dir(out_dir)
+        if not service_dir:
+            print(_LOG_PREFIX + f" [validate:{step}] No recognised language manifest found — skipping")
+            return
+        lang = _detect_language(service_dir)
+        print(_LOG_PREFIX + f" [validate:{step}] Detected language: {lang or 'unknown'}")
+        if lang == "python":
+            _validate_python(service_dir, step)
+        elif lang == "node":
+            _validate_node_backend(service_dir, step)
+        elif lang == "go":
+            _validate_go(service_dir, step)
+        elif lang == "ruby":
+            _validate_ruby(service_dir, step)
+        elif lang == "java":
+            _validate_java(service_dir, step)
+        else:
+            print(_LOG_PREFIX + f" [validate:{step}] No validator for language '{lang}' — skipping")
 
 
 def _run_subprocess(cmd, cwd, timeout=300, extra_env=None):
@@ -2067,28 +2099,10 @@ def _validate_frontend(out_dir, step):
         _clear_build_validation_error(step)
 
 
-def _find_python_service_dir(out_dir):
-    """Find the directory containing requirements.txt (the Python service root)."""
-    # Check out_dir itself first, then one level down
-    if os.path.isfile(os.path.join(out_dir, "requirements.txt")):
-        return out_dir
-    for entry in sorted(os.listdir(out_dir)):
-        candidate = os.path.join(out_dir, entry)
-        if os.path.isdir(candidate) and os.path.isfile(os.path.join(candidate, "requirements.txt")):
-            return candidate
-    return None
+def _validate_python(service_dir, step):
+    """Validate Python: pip install (no-deps) + py_compile every .py file."""
+    print(_LOG_PREFIX + f" [validate:{step}] Checking Python syntax (pip + py_compile)...")
 
-
-def _validate_python(out_dir, step):
-    """Validate Python steps: pip install + py_compile all .py files."""
-    service_dir = _find_python_service_dir(out_dir)
-    if not service_dir:
-        # No requirements.txt — skip silently
-        return
-
-    print(_LOG_PREFIX + f" [validate:{step}] Installing requirements + checking Python syntax...")
-
-    # pip install
     rc, out = _run_subprocess(
         ["pip", "install", "--quiet", "--no-deps", "-r", "requirements.txt"],
         service_dir, timeout=180,
@@ -2101,44 +2115,178 @@ def _validate_python(out_dir, step):
         print(_LOG_PREFIX + f" [validate:{step}] pip install FAILED")
         return
 
-    # Syntax-check every .py file
     errors = []
+    _skip_dirs = {"__pycache__", ".venv", "venv", "node_modules", ".git"}
     for root, dirs, files in os.walk(service_dir):
-        dirs[:] = [d for d in dirs if d not in ("__pycache__", ".venv", "venv", "node_modules")]
+        dirs[:] = [d for d in dirs if d not in _skip_dirs]
         for fname in files:
             if not fname.endswith(".py"):
                 continue
             fpath = os.path.join(root, fname)
-            rc2, out2 = _run_subprocess(
-                ["python", "-m", "py_compile", fpath], service_dir, timeout=30,
-            )
+            rc2, out2 = _run_subprocess(["python", "-m", "py_compile", fpath], service_dir, timeout=15)
             if rc2 not in (0, -2) and out2.strip():
-                rel = os.path.relpath(fpath, service_dir)
-                errors.append(f"{rel}: {out2.strip()[:300]}")
+                errors.append(f"{os.path.relpath(fpath, service_dir)}: {out2.strip()[:300]}")
 
     if errors:
         summary = f"Syntax errors in {len(errors)} file(s):\n" + "\n".join(errors[:20])
         _record_build_validation_error(step, summary)
-        print(_LOG_PREFIX + f" [validate:{step}] SYNTAX ERRORS — see build status for details")
+        print(_LOG_PREFIX + f" [validate:{step}] SYNTAX ERRORS — see build status")
     else:
         print(_LOG_PREFIX + f" [validate:{step}] All Python files compile clean.")
         _clear_build_validation_error(step)
 
 
-def _validate_tests(out_dir, step):
-    """Validate tests step: pip install + pytest --collect-only (no execution)."""
-    service_dir = _find_python_service_dir(out_dir)
-    if not service_dir:
+def _validate_node_backend(service_dir, step):
+    """Validate Node.js/TypeScript backend: npm install + tsc --noEmit (if tsconfig exists)."""
+    print(_LOG_PREFIX + f" [validate:{step}] Checking Node.js/TypeScript (npm install + tsc)...")
+
+    rc, out = _run_subprocess(
+        ["npm", "install", "--no-audit", "--no-fund"], service_dir, timeout=300,
+    )
+    if rc == -2:
+        print(_LOG_PREFIX + f" [validate:{step}] npm not found — skipping")
+        return
+    if rc != 0:
+        _record_build_validation_error(step, "npm install failed:\n" + out[:3000])
         return
 
-    print(_LOG_PREFIX + " [validate:tests] Installing deps + dry-running test collection...")
+    # TypeScript type-check if tsconfig present
+    tsconfig = os.path.join(service_dir, "tsconfig.json")
+    if os.path.isfile(tsconfig):
+        rc, out = _run_subprocess(
+            ["npx", "--yes", "tsc", "--noEmit"], service_dir, timeout=180,
+        )
+        if rc != 0:
+            summary = _extract_error_lines(out)
+            _record_build_validation_error(step, "TypeScript errors:\n" + summary)
+            print(_LOG_PREFIX + f" [validate:{step}] TYPESCRIPT ERRORS — see build status")
+            return
 
-    # Install dev requirements if present
+    # If there's an npm build script, run it
+    try:
+        import json as _json
+        meta = _json.loads(open(os.path.join(service_dir, "package.json"), encoding="utf-8").read())
+        if "build" in meta.get("scripts", {}):
+            rc, out = _run_subprocess(["npm", "run", "build"], service_dir, timeout=300)
+            if rc != 0:
+                summary = _extract_error_lines(out)
+                _record_build_validation_error(step, "npm run build failed:\n" + summary)
+                print(_LOG_PREFIX + f" [validate:{step}] BUILD FAILED — see build status")
+                return
+    except Exception:
+        pass
+
+    print(_LOG_PREFIX + f" [validate:{step}] Node.js validation passed.")
+    _clear_build_validation_error(step)
+
+
+def _validate_go(service_dir, step):
+    """Validate Go: go build ./... to catch compilation errors."""
+    print(_LOG_PREFIX + f" [validate:{step}] Checking Go (go build)...")
+
+    rc, out = _run_subprocess(["go", "build", "./..."], service_dir, timeout=120)
+    if rc == -2:
+        print(_LOG_PREFIX + f" [validate:{step}] go not found — skipping")
+        return
+    if rc != 0:
+        summary = _extract_error_lines(out)
+        _record_build_validation_error(step, "go build failed:\n" + summary)
+        print(_LOG_PREFIX + f" [validate:{step}] GO BUILD FAILED — see build status")
+    else:
+        print(_LOG_PREFIX + f" [validate:{step}] go build passed.")
+        _clear_build_validation_error(step)
+
+
+def _validate_ruby(service_dir, step):
+    """Validate Ruby: bundle install + ruby -e 'require' syntax check on .rb files."""
+    print(_LOG_PREFIX + f" [validate:{step}] Checking Ruby (bundle install + syntax check)...")
+
+    rc, out = _run_subprocess(["bundle", "install", "--quiet"], service_dir, timeout=180)
+    if rc == -2:
+        print(_LOG_PREFIX + f" [validate:{step}] bundle not found — skipping")
+        return
+    if rc != 0:
+        _record_build_validation_error(step, "bundle install failed:\n" + out[:3000])
+        return
+
+    errors = []
+    _skip_dirs = {".git", "tmp", "log", "node_modules", ".bundle"}
+    for root, dirs, files in os.walk(service_dir):
+        dirs[:] = [d for d in dirs if d not in _skip_dirs]
+        for fname in files:
+            if not fname.endswith(".rb"):
+                continue
+            fpath = os.path.join(root, fname)
+            rc2, out2 = _run_subprocess(["ruby", "-c", fpath], service_dir, timeout=10)
+            if rc2 not in (0, -2) and out2.strip() and "Syntax OK" not in out2:
+                errors.append(f"{os.path.relpath(fpath, service_dir)}: {out2.strip()[:300]}")
+
+    if errors:
+        summary = f"Ruby syntax errors in {len(errors)} file(s):\n" + "\n".join(errors[:20])
+        _record_build_validation_error(step, summary)
+        print(_LOG_PREFIX + f" [validate:{step}] RUBY SYNTAX ERRORS — see build status")
+    else:
+        print(_LOG_PREFIX + f" [validate:{step}] Ruby syntax check passed.")
+        _clear_build_validation_error(step)
+
+
+def _validate_java(service_dir, step):
+    """Validate Java: mvn compile or gradle compileJava."""
+    print(_LOG_PREFIX + f" [validate:{step}] Checking Java (compile)...")
+
+    if os.path.isfile(os.path.join(service_dir, "pom.xml")):
+        rc, out = _run_subprocess(
+            ["mvn", "compile", "-q", "--batch-mode"], service_dir, timeout=300,
+        )
+        tool = "mvn compile"
+    else:
+        rc, out = _run_subprocess(
+            ["./gradlew", "compileJava", "--quiet"], service_dir, timeout=300,
+        )
+        tool = "gradle compileJava"
+
+    if rc == -2:
+        print(_LOG_PREFIX + f" [validate:{step}] Build tool not found — skipping")
+        return
+    if rc != 0:
+        summary = _extract_error_lines(out)
+        _record_build_validation_error(step, f"{tool} failed:\n" + summary)
+        print(_LOG_PREFIX + f" [validate:{step}] JAVA COMPILE FAILED — see build status")
+    else:
+        print(_LOG_PREFIX + f" [validate:{step}] Java compile passed.")
+        _clear_build_validation_error(step)
+
+
+def _validate_tests(out_dir, step):
+    """Validate tests: detect language and run test collection dry-run."""
+    service_dir = _find_service_dir(out_dir)
+    if not service_dir:
+        print(_LOG_PREFIX + " [validate:tests] No service dir found — skipping")
+        return
+
+    lang = _detect_language(service_dir)
+    print(_LOG_PREFIX + f" [validate:tests] Detected language: {lang or 'unknown'}")
+
+    if lang == "python":
+        _validate_python_tests(service_dir)
+    elif lang == "node":
+        _validate_node_tests(service_dir)
+    elif lang == "go":
+        _validate_go_tests(service_dir)
+    else:
+        # Fall back to generic syntax check for the detected language
+        if lang:
+            _validate_go(service_dir, step) if lang == "go" else _validate_python(service_dir, step)
+
+
+def _validate_python_tests(service_dir):
+    """Python tests: pip install + pytest --collect-only."""
+    step = "tests"
     req_dev = os.path.join(service_dir, "requirements-dev.txt")
     req_file = req_dev if os.path.isfile(req_dev) else os.path.join(service_dir, "requirements.txt")
 
     rc, out = _run_subprocess(
-        ["pip", "install", "--quiet", "--no-deps", "-r", req_file],
+        ["pip", "install", "--quiet", "--no-deps", "-r", os.path.basename(req_file)],
         service_dir, timeout=180,
     )
     if rc == -2:
@@ -2148,7 +2296,6 @@ def _validate_tests(out_dir, step):
         _record_build_validation_error(step, "pip install failed:\n" + out[:3000])
         return
 
-    # Dry-run test collection (--collect-only exits non-zero if collection fails)
     rc, out = _run_subprocess(
         ["python", "-m", "pytest", "--collect-only", "-q", "--no-header"],
         service_dir, timeout=60,
@@ -2160,9 +2307,52 @@ def _validate_tests(out_dir, step):
         summary = _extract_error_lines(out)
         _record_build_validation_error(step, "Test collection failed:\n" + summary)
         print(_LOG_PREFIX + " [validate:tests] TEST COLLECTION FAILED — see build status")
-        print(_LOG_PREFIX + " [validate:tests] First errors:\n" + summary[:500])
+        print(_LOG_PREFIX + " [validate:tests] First errors:\n" + summary[:400])
     else:
         print(_LOG_PREFIX + " [validate:tests] Test collection succeeded.")
+        _clear_build_validation_error(step)
+
+
+def _validate_node_tests(service_dir):
+    """Node.js tests: npm install + npx tsc --noEmit."""
+    step = "tests"
+    rc, out = _run_subprocess(
+        ["npm", "install", "--no-audit", "--no-fund"], service_dir, timeout=300,
+    )
+    if rc == -2:
+        print(_LOG_PREFIX + " [validate:tests] npm not found — skipping")
+        return
+    if rc != 0:
+        _record_build_validation_error(step, "npm install failed:\n" + out[:3000])
+        return
+
+    if os.path.isfile(os.path.join(service_dir, "tsconfig.json")):
+        rc, out = _run_subprocess(["npx", "--yes", "tsc", "--noEmit"], service_dir, timeout=120)
+        if rc != 0:
+            summary = _extract_error_lines(out)
+            _record_build_validation_error(step, "TypeScript errors in tests:\n" + summary)
+            print(_LOG_PREFIX + " [validate:tests] TYPESCRIPT ERRORS — see build status")
+            return
+
+    print(_LOG_PREFIX + " [validate:tests] Node.js test validation passed.")
+    _clear_build_validation_error(step)
+
+
+def _validate_go_tests(service_dir):
+    """Go tests: go test -run '^$' ./... (compile all test files, run none)."""
+    step = "tests"
+    rc, out = _run_subprocess(
+        ["go", "test", "-run", "^$", "./..."], service_dir, timeout=120,
+    )
+    if rc == -2:
+        print(_LOG_PREFIX + " [validate:tests] go not found — skipping")
+        return
+    if rc != 0:
+        summary = _extract_error_lines(out)
+        _record_build_validation_error(step, "go test compile failed:\n" + summary)
+        print(_LOG_PREFIX + " [validate:tests] GO TEST COMPILE FAILED — see build status")
+    else:
+        print(_LOG_PREFIX + " [validate:tests] Go test compilation passed.")
         _clear_build_validation_error(step)
 
 
