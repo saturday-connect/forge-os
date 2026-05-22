@@ -3544,13 +3544,44 @@ class ForgeHandler(BaseHTTPRequestHandler):
                 compose_abs = os.path.join(_compose_base, cfg["compose_file"])
                 compose_dir = os.path.dirname(compose_abs)
 
+                # ── Auto-create missing env files so docker compose doesn't abort ──
+                # For each env_warning about a missing file, try to copy from
+                # .env.example; fall back to an empty placeholder. This prevents
+                # docker compose from hard-failing with "env file not found".
+                _env_auto_log = []
+                import re as _re_env
+                try:
+                    _compose_content = open(compose_abs, encoding="utf-8").read()
+                    _env_file_re = _re_env.compile(r'env_file:\s*\n((?:\s+-\s+.+\n?)+)|env_file:\s*(.+)')
+                    _ef_line_re = _re_env.compile(r'^\s*-?\s*(.+\.env\S*)\s*$')
+                    for _line in _compose_content.splitlines():
+                        _em = _ef_line_re.match(_line) if 'env' in _line and '.env' in _line else None
+                        if _em:
+                            _ef_name = _em.group(1).strip().strip('"\'')
+                            if not _ef_name.startswith('#'):
+                                _ef_path = os.path.join(compose_dir, _ef_name)
+                                if not os.path.exists(_ef_path):
+                                    _example = _ef_path + ".example"
+                                    try:
+                                        if os.path.exists(_example):
+                                            import shutil as _shutil
+                                            _shutil.copy2(_example, _ef_path)
+                                            _env_auto_log.append(f"Auto-created {_ef_name} from {_ef_name}.example")
+                                        else:
+                                            open(_ef_path, "w").close()
+                                            _env_auto_log.append(f"Auto-created empty {_ef_name} (fill in required vars)")
+                                    except OSError as _e:
+                                        _env_auto_log.append(f"Warning: could not create {_ef_name}: {_e}")
+                except OSError:
+                    pass
+
                 initial_state = {
                     "status": "starting",
                     "method": "docker-compose",
                     "compose_file": cfg["compose_file"],
                     "services": cfg["services"],
                     "health": {s["name"]: "starting" for s in cfg["services"]},
-                    "log": [f"Starting docker compose — {cfg['compose_file']}"],
+                    "log": [f"Starting docker compose — {cfg['compose_file']}"] + _env_auto_log,
                     "pid": None,
                     "started_at": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
                     "heartbeat": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
