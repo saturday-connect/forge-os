@@ -2341,6 +2341,7 @@ function renderLocalRun() {
   const services = detect.services || [];
   const health   = d.health || {};
   const envWarns = detect.env_warnings || [];
+  const blockingErrors = detect.blocking_errors || [];
 
   // ── Manual mode — show copy-pasteable commands ──────────────────────────
   if (method === 'manual') {
@@ -2412,10 +2413,15 @@ function renderLocalRun() {
 
   const ctaBtn = (isRunning || isStarting || isStopping)
     ? `<button class="btn btn-sm" style="background:#ef4444;color:#fff;border-color:#ef4444;" onclick="stopLocalRun()">Stop</button>`
-    : `<button class="btn btn-primary btn-sm" onclick="startLocalRun()">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-        Run Locally
-       </button>`;
+    : blockingErrors.length
+      ? `<button class="btn btn-primary btn-sm" disabled title="${escapeHtml(blockingErrors[0])}" style="opacity:0.45;cursor:not-allowed;">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+          Run Locally
+         </button>`
+      : `<button class="btn btn-primary btn-sm" onclick="startLocalRun()">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+          Run Locally
+         </button>`;
 
   const servicesHtml = services.map(svc => {
     const h = health[svc.name] || 'starting';
@@ -2433,6 +2439,15 @@ function renderLocalRun() {
         ${isRunning && h === 'starting' ? `<span class="local-preview-health-wait">◌&nbsp;Waiting</span>` : ''}
       </div>`;
   }).join('');
+
+  const blockingErrorsHtml = blockingErrors.length ? `
+    <div class="local-preview-env-warns" style="background:rgba(239,68,68,0.08);border-color:rgba(239,68,68,0.3);">
+      ${blockingErrors.map(e => `
+        <div class="local-preview-env-warn-row">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          ${escapeHtml(e)}
+        </div>`).join('')}
+    </div>` : '';
 
   const envWarnsHtml = envWarns.length ? `
     <div class="local-preview-env-warns">
@@ -2481,6 +2496,7 @@ function renderLocalRun() {
           ${ctaBtn}
         </div>
       </div>
+      ${blockingErrorsHtml}
       ${envWarnsHtml}
       ${errorHtml}
       <div class="local-preview-services">

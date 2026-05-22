@@ -1399,6 +1399,7 @@ def _detect_local_run(repo_root, forge_dir=None):
         "services": [],
         "manual_cmds": [],
         "env_warnings": [],
+        "blocking_errors": [],   # hard errors that must block the start
         "docker_available": False,
         "available": False,
         "scan_root": repo_root,
@@ -1496,18 +1497,24 @@ def _detect_local_run(repo_root, forge_dir=None):
 
             # Check for missing build contexts — docker compose hard-fails if
             # a 'build: context:' or 'build: ./path' points to a non-existent dir.
+            # These are blocking errors: we cannot start until they are resolved.
             build_ctx_re = _re.compile(r'^\s+build:\s*(\./\S+|\S+)\s*$')
             build_ctx_key_re = _re.compile(r'^\s+context:\s*(\./\S+|\S+)\s*$')
+            _seen_ctx = set()
             for line in lines:
                 for pat in (build_ctx_re, build_ctx_key_re):
                     bm = pat.match(line)
                     if bm:
                         ctx = bm.group(1).strip().strip('"\'')
+                        if ctx in _seen_ctx:
+                            continue
+                        _seen_ctx.add(ctx)
                         ctx_full = os.path.join(compose_dir, ctx)
-                        if not os.path.exists(ctx_full):
-                            result["env_warnings"].append(
-                                f"Build context '{ctx}' not found — source directory missing. "
-                                f"Docker cannot build this service until the code is present."
+                        # '.' refers to compose_dir itself — always exists
+                        if ctx != '.' and not os.path.exists(ctx_full):
+                            result["blocking_errors"].append(
+                                f"Build context '{ctx}' not found — source directory is missing. "
+                                f"The generated compose file references code that hasn't been built yet."
                             )
         except OSError:
             pass
@@ -3536,6 +3543,13 @@ class ForgeHandler(BaseHTTPRequestHandler):
                 if not cfg["available"]:
                     self._json_response(400, {
                         "error": "No runnable code found in this project. Run Build All first."
+                    })
+                    return
+
+                blocking = cfg.get("blocking_errors", [])
+                if blocking:
+                    self._json_response(400, {
+                        "error": "\n".join(blocking)
                     })
                     return
 
