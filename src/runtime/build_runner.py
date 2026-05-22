@@ -356,12 +356,52 @@ def build_tests_prompt(persona, docs, api_contract):
     ]
     return "\n\n".join(parts)
 
+def _infra_layout_block():
+    """Tell the infra agent the exact sibling directory layout so it generates correct paths."""
+    # Compute peer step names excluding 'infra' — these become sibling dirs next to infra/
+    peers = [s for s in BUILD_ORDER if s != "infra"]
+    lines = [
+        "CRITICAL — DIRECTORY LAYOUT:",
+        "All build steps are generated as SIBLING directories inside the same phase folder:",
+        "",
+    ]
+    for p in peers:
+        lines.append(f"  {p}/    ← peer service directory")
+    lines += [
+        "  infra/  ← YOU are generating files into this directory",
+        "",
+        "RULES THAT FOLLOW FROM THIS LAYOUT:",
+        "",
+        "1. docker-compose.yml lives inside infra/ — build contexts must use RELATIVE PARENT paths:",
+    ]
+    for p in peers:
+        lines.append(f"     context: ../{p}   (NOT ./{p} — that would look inside infra/)")
+    lines += [
+        "",
+        "2. Each service's Dockerfile belongs INSIDE THAT SERVICE'S directory, NOT here:",
+    ]
+    for p in peers:
+        lines.append(f"     ../{p}/Dockerfile  ← generate this file as '{p}/Dockerfile' in your output")
+    lines += [
+        "",
+        "3. Output Dockerfiles using the peer directory as the path prefix:",
+        "   === backend/Dockerfile ===     (written to ../backend/Dockerfile)",
+        "   === frontend/Dockerfile ===    (written to ../frontend/Dockerfile)",
+        "",
+        "4. The infra/ directory itself contains ONLY orchestration files:",
+        "   docker-compose.yml, Makefile, README.md, CI/CD workflows, Terraform, monitoring config.",
+        "   No application Dockerfiles belong here.",
+    ]
+    return _section("REPOSITORY LAYOUT — READ BEFORE GENERATING ANYTHING") + "\n" + "\n".join(lines)
+
+
 def build_infra_prompt(persona, docs, api_contract):
     contract_block = _contract_block(api_contract, "API CONTRACT (use to derive all required env vars and service dependencies)")
     parts = [persona]
     if _phase_context_block():
         parts.append(_phase_context_block())
     parts += [
+        _infra_layout_block(),
         _section("YOUR MISSION"),
         (
             "Read EVERY specification document below. Identify:\n"
@@ -406,6 +446,9 @@ def build_infra_prompt(persona, docs, api_contract):
 
             "5. `docker-compose.yml` — Local development stack:\n"
             "   - Every service the app needs (backend, frontend, redis, etc.)\n"
+            "   - Build contexts MUST use ../service paths (e.g. context: ../backend, context: ../frontend)\n"
+            "     because this file lives inside infra/ and the service dirs are siblings, not children\n"
+            "   - Each service's Dockerfile is at ../service/Dockerfile — reference it as dockerfile: Dockerfile\n"
             "   - Healthchecks on every service\n"
             "   - Volumes for persistence\n"
             "   - .env.local loaded via env_file\n\n"
@@ -458,6 +501,34 @@ def build_prompt_for_step(step, persona, docs, api_contract):
     if builder:
         return builder()
     return persona + "\n\n---\n\n## Specification Documents\n\n" + docs
+
+# -----------------------------------------------------------------------
+# Post-generation fixups
+# -----------------------------------------------------------------------
+
+def _post_generate_fixups(out_dir):
+    """Run automatic fixups on generated code after files are written.
+
+    Current fixups:
+    - npm lockfile: any directory with package.json but no package-lock.json
+      gets `npm install --package-lock-only` so docker builds can use `npm ci`.
+    """
+    for root, dirs, files in os.walk(out_dir):
+        # Skip node_modules if somehow present
+        dirs[:] = [d for d in dirs if d != "node_modules"]
+        if "package.json" in files and "package-lock.json" not in files:
+            print(_LOG_PREFIX + " Generating package-lock.json in: " + root)
+            try:
+                subprocess.run(
+                    ["npm", "install", "--package-lock-only", "--ignore-scripts",
+                     "--no-audit", "--no-fund"],
+                    cwd=root,
+                    capture_output=True,
+                    timeout=120,
+                )
+            except Exception as e:
+                print(_LOG_PREFIX + " Warning: could not generate lockfile in " + root + ": " + str(e))
+
 
 # -----------------------------------------------------------------------
 # Step runner
@@ -531,6 +602,10 @@ def run_step(step):
 
     save_step_status(step, STATUS_COMPLETE, files=file_list)
     print(_LOG_PREFIX + " Done. " + str(len(file_list)) + " files generated.")
+
+    # Run post-generation fixups (lockfile generation, etc.)
+    _post_generate_fixups(out_dir)
+
     return True
 
 if __name__ == "__main__":
