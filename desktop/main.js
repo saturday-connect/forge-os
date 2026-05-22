@@ -547,6 +547,7 @@ function startServer(projectRoot, forgeDataDir, port) {
   const projectsRoot = path.join(os.homedir(), '.forge', 'projects')
 
   serverProcess = spawn(PYTHON3 || 'python3', [serverScript, String(port)], {
+    cwd: os.homedir(),  // explicit cwd — never inherit Electron's launch dir (may be Desktop)
     env: {
       ...process.env,
       FORGE_REPO_ROOT: projectRoot,
