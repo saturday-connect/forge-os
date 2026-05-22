@@ -266,60 +266,349 @@ def build_frontend_prompt(persona, docs, api_contract):
     if _phase_context_block():
         parts.append(_phase_context_block())
     parts += [
-        _section("SPEC COMPLIANCE RULES — NON-NEGOTIABLE"),
+        _section("PRIMARY DIRECTIVE — READ THIS FIRST"),
         (
-            "1. TECH STACK: Read the design and architecture documents below. Use EXACTLY the "
-            "framework, component library, and styling system named — no substitutions.\n"
-            "   - If spec says React + TypeScript: use React with strict TypeScript, no JS files.\n"
-            "   - If spec says Next.js: use Next.js App Router or Pages as specified.\n"
-            "   - If spec says Tailwind CSS: use Tailwind utility classes, not custom CSS.\n"
-            "   - If spec says Supabase Auth: use @supabase/supabase-js for auth on the frontend.\n\n"
-            "2. REAL API INTEGRATION — MANDATORY:\n"
-            "   Every data fetch, mutation, and auth call MUST use the actual backend endpoints "
-            "from the API contract above. NO mock data. NO hardcoded arrays. NO placeholder fetch calls.\n"
-            "   - Create a typed API client (e.g. src/lib/api.ts) that wraps all endpoint calls.\n"
-            "   - Use the exact request/response shapes from the contract.\n"
-            "   - Handle loading, error, and empty states for every async operation.\n\n"
-            "3. AUTH WIRING: If the backend uses Supabase Auth, implement the full auth flow:\n"
-            "   - Sign in / sign up / sign out using @supabase/supabase-js\n"
-            "   - Protected routes that redirect unauthenticated users\n"
-            "   - Pass the Supabase session JWT as Bearer token to backend API calls\n\n"
-            "4. ENVIRONMENT VARIABLES: Use the correct prefix for your framework:\n"
-            "   - Vite: VITE_API_URL, VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY\n"
-            "   - Next.js: NEXT_PUBLIC_API_URL, NEXT_PUBLIC_SUPABASE_URL, etc.\n"
-            "   Generate .env.example with all required variables.\n\n"
-            "5. EVERY SCREEN FROM THE DESIGN SPEC must be implemented — no missing pages.\n\n"
-            "6. PRODUCTION QUALITY: TypeScript strict mode, proper error boundaries, "
-            "loading skeletons, form validation, accessible markup (ARIA where needed).\n\n"
-            "7. tsconfig.json EXACT VALUES — use only these strings, no variations:\n"
-            "   - moduleResolution: must be one of: 'node10', 'node16', 'nodenext', 'bundler'\n"
-            "     For Next.js 14+: use 'bundler'. NOT 'bundle', NOT 'node', NOT 'NodeNext' (case matters).\n"
-            "   - module: 'esnext' for Next.js App Router\n"
-            "   - Do NOT include 'noImplicitReturns', 'noUnusedLocals', or other options not supported\n"
-            "     by your Next.js version — they cause build failures.\n\n"
-            "8. Dockerfile and next.config.js MUST be consistent:\n"
-            "   - Always set `output: 'standalone'` in next.config.js for Docker builds.\n"
-            "   - The Dockerfile runner stage MUST copy from `.next/standalone` — this only works\n"
-            "     when `output: 'standalone'` is set. If you omit it, the runner has nothing to copy.\n"
-            "   - Use `npm install --no-audit --no-fund` NOT `npm ci`. Copy only `package.json`.\n\n"
-            "9. ROUTING PARADIGM — PICK ONE, NEVER MIX:\n"
-            "   - Next.js App Router: use ONLY `src/app/`. NEVER generate `src/pages/`.\n"
-            "   - Next.js Pages Router: use ONLY `src/pages/`. NEVER generate `src/app/`.\n"
-            "   - NEVER import `react-router-dom` in a Next.js project. Next.js has its own router.\n"
-            "   - Check `package.json`: if `next` is a dependency, you are in Next.js — no React Router.\n\n"
-            "10. CASE-SENSITIVE IMPORTS — DOCKER LINUX FILESYSTEM IS CASE-SENSITIVE:\n"
-            "    All component directory names MUST be lowercase: `components/layout/`, `components/ui/`,\n"
-            "    `components/editor/`, `components/canvas/`, `components/shared/`.\n"
-            "    Every import path must EXACTLY match the generated filename including case.\n"
-            "    Rule: if you generate `components/ui/button.tsx`, import it as `@/components/ui/button`.\n"
-            "    Never mix `Button` and `button` in the same path — pick lowercase and be consistent.\n\n"
-            "11. IMPORT COMPLETENESS — EVERY IMPORT MUST RESOLVE:\n"
-            "    Before finalising output, mentally walk every `import` statement:\n"
-            "    - Is the imported file being generated in this output? If not, remove the import.\n"
-            "    - Is the imported npm package listed in package.json? If not, add it.\n"
-            "    - Are all named exports (`{ Button }`, `{ AppShell }`) actually exported by that file?\n"
-            "    A build that compiles is the minimum bar. Missing imports are build failures."
+            "You are generating a production-grade frontend codebase that must pass `npm run build` "
+            "inside a Docker Linux container on the FIRST attempt, with ZERO post-generation fixes.\n\n"
+            "The definition of success is: `docker compose up --build` starts all containers with exit code 0.\n\n"
+            "Every rule below exists because ignoring it causes a Docker build failure. "
+            "Treat every rule as a hard constraint, not a suggestion."
         ),
+
+        _section("MANDATORY REQUIRED FILES — YOU MUST GENERATE ALL OF THESE"),
+        (
+            "Generate ALL files in this list. A missing file is a build failure.\n\n"
+            "  src/lib/api.ts              — typed HTTP client, ALL endpoints from the API contract\n"
+            "  src/lib/store.ts            — ONE unified Zustand store (see store rules below)\n"
+            "  src/lib/supabase.ts         — lazy Supabase client (see supabase rules below)\n"
+            "  src/types/api.ts            — TypeScript interfaces for all API request/response types\n"
+            "  src/app/layout.tsx          — root layout with metadata and font setup\n"
+            "  src/app/page.tsx            — root page (redirect or landing)\n"
+            "  src/components/ui/button.tsx\n"
+            "  src/components/ui/card.tsx\n"
+            "  src/components/ui/input.tsx\n"
+            "  tsconfig.json               — exact values specified below\n"
+            "  next.config.js              — must include output:'standalone'\n"
+            "  Dockerfile                  — multi-stage, no npm ci, uses standalone output\n"
+            "  package.json                — all deps INCLUDING tailwindcss/autoprefixer/postcss if using Tailwind\n"
+            "  .env.example                — all required environment variables"
+        ),
+
+        _section("RULE 1 — SINGLE UNIFIED STATE STORE (CRITICAL)"),
+        (
+            "Generate EXACTLY ONE state store file: `src/lib/store.ts`.\n\n"
+            "DO NOT generate multiple store files at different paths. Having two or more store files "
+            "that export the same hook name (useDiagramStore, useAppStore, etc.) at different import paths "
+            "creates 61+ TypeScript errors because each consumer imagines a different state shape.\n\n"
+            "The store MUST include every field that ANY consumer component needs. Before writing "
+            "the store, list every component and what state it reads/writes. The store interface "
+            "must be the UNION of all those fields.\n\n"
+            "CORRECT pattern (one store, all state):\n"
+            "```typescript\n"
+            "// src/lib/store.ts\n"
+            "import { create } from 'zustand';\n\n"
+            "interface AppState {\n"
+            "  // all fields any consumer needs\n"
+            "  user: User | null;\n"
+            "  items: Item[];\n"
+            "  isLoading: boolean;\n"
+            "  error: string | null;\n"
+            "  setUser: (user: User | null) => void;\n"
+            "  setItems: (items: Item[]) => void;\n"
+            "  setLoading: (v: boolean) => void;\n"
+            "  setError: (e: string | null) => void;\n"
+            "  fetchItems: () => Promise<void>;\n"
+            "}\n\n"
+            "export const useAppStore = create<AppState>((set, get) => ({ ... }));\n"
+            "```\n\n"
+            "WRONG pattern (DO NOT DO THIS):\n"
+            "  src/lib/store.ts        exports useAppStore with fields A, B\n"
+            "  src/store/useStore.ts   exports useAppStore with fields C, D  ← NEVER\n"
+            "  src/store/appStore.ts   exports useAppStore with fields E, F  ← NEVER\n\n"
+            "If a component needs a field, that field must exist in the store. "
+            "If it doesn't exist yet, add it to the store before writing the component."
+        ),
+
+        _section("RULE 2 — UI COMPONENT CONTRACTS (NEVER GENERATE INCOMPLETE COMPONENTS)"),
+        (
+            "Every UI component must export EVERY named export that any consumer will import.\n\n"
+
+            "CARD COMPONENT — src/components/ui/card.tsx MUST export ALL of:\n"
+            "  export const Card, CardHeader, CardContent, CardFooter, CardTitle, CardDescription\n"
+            "  Reason: consumers import subcomponents by convention. Missing any = TypeScript error.\n\n"
+
+            "BUTTON COMPONENT — src/components/ui/button.tsx MUST support:\n"
+            "  variant: 'primary' | 'secondary' | 'ghost' | 'outline' | 'destructive' | 'link' | 'error'\n"
+            "  size: 'sm' | 'md' | 'lg' | 'icon'\n"
+            "  isLoading?: boolean   (also accept loading?: boolean as alias)\n"
+            "  icon?: React.ReactNode\n"
+            "  Reason: consumers use all of these. Missing variant/size = TypeScript build failure.\n\n"
+
+            "INPUT COMPONENT — src/components/ui/input.tsx MUST export:\n"
+            "  export const Input  (with label?, error?, helperText? props)\n\n"
+
+            "GENERAL RULE: When you write a component that uses <ComponentName>, you MUST verify "
+            "that ComponentName is exported by the file you're importing from. "
+            "If CardHeader isn't exported by card.tsx, add it to card.tsx before using it."
+        ),
+
+        _section("RULE 3 — CSS VARIABLES CANNOT BE USED AS JSX EXPRESSION VALUES"),
+        (
+            "ILLEGAL — this causes a SyntaxError crash in SWC (Next.js compiler):\n"
+            "  <rect rx={var(--radius-sm)} />        ← 'var' is a JS keyword, not a function\n"
+            "  <circle r={var(--size-md)} />          ← same crash\n"
+            "  <line strokeWidth={var(--border)} />   ← same crash\n\n"
+
+            "CORRECT — use these patterns instead:\n"
+            "  <rect rx={4} />                        ← numeric literal for SVG attributes\n"
+            "  <rect rx='4' />                        ← string literal (SVG accepts this too)\n"
+            "  <rect style={{ borderRadius: 'var(--radius-sm)' }} />  ← CSS var in style prop\n"
+            "  <rect className={styles.rounded} />    ← CSS class where the var is applied\n\n"
+
+            "Rule: `{var(--anything)}` is NEVER valid JSX. It is CSS syntax. "
+            "If you want a CSS variable value in a JSX attribute, use a CSS class or inline style object."
+        ),
+
+        _section("RULE 4 — NEXT.JS ROUTING (NEVER MIX ROUTING LIBRARIES)"),
+        (
+            "Next.js has its own router. NEVER use react-router-dom in a Next.js project.\n\n"
+
+            "BANNED — will crash at runtime:\n"
+            "  import { useNavigate, NavLink, Link } from 'react-router-dom'  ← NEVER\n"
+            "  import { BrowserRouter, Route, Routes } from 'react-router-dom'  ← NEVER\n"
+            "  'react-router-dom' in package.json  ← NEVER\n\n"
+
+            "CORRECT Next.js equivalents:\n"
+            "  import Link from 'next/link'                          ← replaces <NavLink to=>\n"
+            "  import { useRouter } from 'next/navigation'           ← replaces useNavigate()\n"
+            "  import { usePathname } from 'next/navigation'         ← replaces useLocation()\n\n"
+
+            "Active link detection — next/link does NOT support className as a function.\n"
+            "WRONG:  <Link href='/' className={({ isActive }) => isActive ? 'active' : ''}>\n"
+            "CORRECT:\n"
+            "  const pathname = usePathname();\n"
+            "  <Link href='/' className={pathname === '/' ? styles.active : ''}>\n\n"
+
+            "Router navigation:\n"
+            "  const router = useRouter();   ← NOT const navigate = useRouter()\n"
+            "  router.push('/path');         ← NOT router('/path') or navigate('/path')"
+        ),
+
+        _section("RULE 5 — TYPESCRIPT MUST COMPILE WITH ZERO ERRORS"),
+        (
+            "The build runs `tsc --noEmit` before producing output. Any TypeScript error = build failure.\n\n"
+
+            "tsconfig.json EXACT VALUES for Next.js 14+:\n"
+            "  'moduleResolution': 'bundler'   ← NOT 'bundle' (invalid), NOT 'node' (wrong for Next.js 14)\n"
+            "  'module': 'esnext'\n"
+            "  'target': 'es5'\n"
+            "  'strict': true\n"
+            "  'noEmit': true\n"
+            "  'jsx': 'preserve'\n"
+            "  'incremental': true\n"
+            "  'plugins': [{ 'name': 'next' }]\n"
+            "  'paths': { '@/*': ['./src/*'] }\n\n"
+
+            "TypeScript rules that prevent build failures:\n\n"
+
+            "a) All named imports must be exported by the source file:\n"
+            "   If you write: import { Foo, Bar } from './baz'\n"
+            "   Then baz.tsx MUST export Foo AND export Bar.\n\n"
+
+            "b) All props passed to a component must exist in its interface:\n"
+            "   If you use <Button loading={true}>, then ButtonProps must have loading?: boolean.\n"
+            "   If you use size='icon', then ButtonProps size must include 'icon'.\n\n"
+
+            "c) Types from @/types/api.ts must match what the API actually returns:\n"
+            "   If ValidateResponse has is_valid: boolean, you cannot access .valid on it.\n"
+            "   Add alias fields to the type if consumers use different names.\n\n"
+
+            "d) Never access properties that don't exist on a type:\n"
+            "   If LayoutCoordinates has nodes[] and edges[], don't access .children or .layout_coordinates.\n\n"
+
+            "e) useRouter() returns a Router object, not a function:\n"
+            "   WRONG: const navigate = useRouter(); navigate('/path');\n"
+            "   CORRECT: const router = useRouter(); router.push('/path');\n\n"
+
+            "f) Array/object index access may be undefined — guard accordingly:\n"
+            "   const icon = node.type ? IconMap[node.type] : IconMap.default;  ← safe\n"
+            "   NOT: IconMap[node.type]  ← crashes if node.type is undefined"
+        ),
+
+        _section("RULE 6 — SUPABASE CLIENT INITIALIZATION"),
+        (
+            "The Supabase client MUST be lazy-initialized to avoid build failures when env vars "
+            "are not set at Next.js static generation time.\n\n"
+
+            "WRONG — crashes SSG build with 'supabaseUrl is required':\n"
+            "  export const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, ...);\n\n"
+
+            "CORRECT — use exactly this pattern:\n"
+            "```typescript\n"
+            "// src/lib/supabase.ts\n"
+            "import { createClient, SupabaseClient } from '@supabase/supabase-js';\n\n"
+            "let _client: SupabaseClient | null = null;\n\n"
+            "function getClient(): SupabaseClient {\n"
+            "  if (!_client) {\n"
+            "    const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? 'https://placeholder.supabase.co';\n"
+            "    const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? 'placeholder';\n"
+            "    _client = createClient(url, key);\n"
+            "  }\n"
+            "  return _client;\n"
+            "}\n\n"
+            "export const supabase = new Proxy({} as SupabaseClient, {\n"
+            "  get(_t, prop) { return getClient()[prop as keyof SupabaseClient]; },\n"
+            "});\n"
+            "```\n\n"
+            "Also: add `export const dynamic = 'force-dynamic';` at the top of any page that "
+            "calls Supabase auth (login, signup, protected pages). "
+            "This prevents Next.js from statically rendering the page at build time without env vars."
+        ),
+
+        _section("RULE 7 — CASE-SENSITIVE FILENAMES AND IMPORTS (LINUX DOCKER)"),
+        (
+            "macOS filesystem is case-insensitive. Docker Linux is case-sensitive. "
+            "A file that imports correctly on Mac will crash in Docker if the case doesn't match.\n\n"
+
+            "MANDATORY conventions — enforce these EXACTLY:\n"
+            "  All directories under src/components/ MUST be lowercase:\n"
+            "    src/components/ui/       ← CORRECT\n"
+            "    src/components/layout/   ← CORRECT\n"
+            "    src/components/editor/   ← CORRECT\n"
+            "    src/components/shared/   ← CORRECT\n"
+            "    src/components/UI/       ← WRONG — will crash in Docker\n"
+            "    src/components/Layout/   ← WRONG — will crash in Docker\n\n"
+
+            "  All filenames inside src/components/ MUST be lowercase:\n"
+            "    src/components/ui/button.tsx    ← CORRECT\n"
+            "    src/components/ui/card.tsx      ← CORRECT\n"
+            "    src/components/ui/Button.tsx    ← WRONG\n"
+            "    src/components/ui/Card.tsx      ← WRONG\n\n"
+
+            "  Imports MUST exactly match the filename case:\n"
+            "    import { Button } from '@/components/ui/button'   ← CORRECT\n"
+            "    import { Button } from '@/components/ui/Button'   ← WRONG\n\n"
+
+            "  NEVER generate two files that differ only in case:\n"
+            "    src/components/ui/button.tsx AND src/components/ui/Button.tsx  ← CRASHES DOCKER\n\n"
+
+            "  Page components (src/app/**/page.tsx) and layout files use lowercase directory names:\n"
+            "    src/app/dashboard/page.tsx   ← CORRECT\n"
+            "    src/app/Dashboard/page.tsx   ← WRONG"
+        ),
+
+        _section("RULE 8 — PACKAGE.JSON — ALL DEPENDENCIES MUST BE DECLARED"),
+        (
+            "Every package that is imported in any source file MUST appear in package.json.\n"
+            "The Docker build runs `npm install` from package.json. "
+            "An import for a package not in package.json = build failure at compile time.\n\n"
+
+            "MANDATORY entries — add these if your code uses them:\n"
+            "  'zustand'              — if using Zustand store\n"
+            "  'axios'                — if using axios HTTP client\n"
+            "  '@supabase/supabase-js' — if using Supabase auth or DB\n"
+            "  'tailwindcss'          — in devDependencies if using Tailwind CSS\n"
+            "  'autoprefixer'         — in devDependencies if using Tailwind\n"
+            "  'postcss'              — in devDependencies if using Tailwind\n"
+            "  'clsx'                 — if using clsx() for class merging\n"
+            "  'tailwind-merge'       — if using twMerge()\n"
+            "  'lucide-react'         — if using Lucide icons\n"
+            "  '@monaco-editor/react' — if using Monaco editor\n"
+            "  'elkjs'                — if rendering ELK graph layouts\n"
+            "  'web-worker'           — if using ELK (it requires web-worker)\n"
+            "  'framer-motion'        — if using animation\n"
+            "  'zod'                  — if using schema validation\n"
+            "  'react-hook-form'      — if using form handling\n"
+            "  'date-fns'             — if formatting dates\n\n"
+
+            "RULE: scan every `import` statement in your output. For every package that is not "
+            "a relative import (./), a path alias (@/), or a Node.js built-in — it MUST be in package.json."
+        ),
+
+        _section("RULE 9 — DOCKERFILE REQUIREMENTS"),
+        (
+            "Use ONLY this Dockerfile pattern for Next.js. Deviating from it causes runtime failures.\n\n"
+            "```dockerfile\n"
+            "FROM node:18-alpine AS base\n\n"
+            "FROM base AS builder\n"
+            "WORKDIR /app\n"
+            "COPY package.json ./\n"
+            "RUN npm install --no-audit --no-fund\n"
+            "COPY . .\n"
+            "RUN npm run build\n\n"
+            "FROM base AS runner\n"
+            "WORKDIR /app\n"
+            "ENV NODE_ENV production\n"
+            "ENV NEXT_TELEMETRY_DISABLED 1\n"
+            "RUN addgroup --system --gid 1001 nodejs\n"
+            "RUN adduser --system --uid 1001 nextjs\n"
+            "COPY --from=builder /app/public ./public\n"
+            "COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./\n"
+            "COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static\n"
+            "USER nextjs\n"
+            "EXPOSE 3000\n"
+            "ENV PORT 3000\n"
+            "ENV HOSTNAME '0.0.0.0'\n"
+            "CMD ['node', 'server.js']\n"
+            "```\n\n"
+            "CRITICAL — DO NOT:\n"
+            "  - Use `npm ci` — there is no package-lock.json\n"
+            "  - COPY `package*.json` — only COPY `package.json`\n"
+            "  - Omit `output: 'standalone'` in next.config.js — the runner stage needs it\n"
+            "  - Use `CMD ['npm', 'start']` — use `CMD ['node', 'server.js']`"
+        ),
+
+        _section("RULE 10 — COMPLETE API CLIENT WITH CORRECT SIGNATURES"),
+        (
+            "src/lib/api.ts must be a complete, typed HTTP client. Rules:\n\n"
+
+            "a) Every method accepts ONLY the arguments it actually uses.\n"
+            "   WRONG: validateMermaid(raw: string, type: string, token: string) "
+            "if the HTTP call only uses `raw`.\n"
+            "   CORRECT: validateMermaid(raw: string) — add optional _extra?: string for forward-compat.\n\n"
+
+            "b) Response types must match what the API actually returns.\n"
+            "   If the endpoint returns { is_valid: boolean }, the response type MUST have is_valid.\n"
+            "   You cannot access .valid on a type that only has .is_valid.\n\n"
+
+            "c) Export ALL types that any consumer file will import:\n"
+            "   export type { Diagram, Node, Edge, Group, TransformResponse, ValidateResponse };\n"
+            "   Consumers often do: import { Node, Edge } from '@/lib/api' — these must be exported.\n\n"
+
+            "d) The api object must only contain methods that actually exist:\n"
+            "   NEVER generate usage like api.clearToken(), api.logout(), api.calculateLayout() "
+            "unless those methods are defined in the api object in api.ts.\n"
+            "   To clear auth: use localStorage.removeItem('auth_token') directly."
+        ),
+
+        _section("RULE 11 — EVERY IMPORT MUST RESOLVE TO A REAL EXPORT"),
+        (
+            "Before finalising your output, execute this mental checklist for EVERY file you generate:\n\n"
+
+            "Step 1 — For every `import { A, B, C } from './path'`:\n"
+            "   Verify that the target file exports A, exports B, and exports C.\n"
+            "   If any of them are not exported — either add the export, or remove the import.\n\n"
+
+            "Step 2 — For every `import { A } from '@/components/ui/x'`:\n"
+            "   Verify the file src/components/ui/x.tsx exists in your output.\n"
+            "   Verify it exports A.\n\n"
+
+            "Step 3 — For every `import { Icon } from 'lucide-react'`:\n"
+            "   Only import icons that actually exist in lucide-react.\n"
+            "   Valid: ArrowRight, Check, X, ChevronDown, Search, Plus, Settings, User, etc.\n"
+            "   If unsure about a specific icon name — use a definitely-valid one instead.\n\n"
+
+            "Step 4 — For every npm package import:\n"
+            "   Verify it is in package.json dependencies or devDependencies.\n\n"
+
+            "Step 5 — For every React component used in JSX:\n"
+            "   Verify the component is imported in the file.\n"
+            "   Verify it is exported by the file it's imported from.\n\n"
+
+            "This checklist is not optional. A build that compiles clean on first `npm run build` "
+            "is the only acceptable output."
+        ),
+
         COMMON_FORMAT_RULE,
         contract_block,
         _section("SPECIFICATION DOCUMENTS"),
@@ -856,10 +1145,302 @@ def _ensure_package_dependencies(out_dir):
                 pass
 
 
+def _fix_css_var_in_jsx(out_dir):
+    """Replace CSS var() used as JSX expression values — invalid JS that crashes SWC.
+
+    AI models sometimes emit patterns like:
+        rx={var(--radius-sm)}
+        strokeWidth={var(--border-width)}
+    These are CSS syntax, not JavaScript. `var` is a JS keyword, not a function,
+    so the SWC parser fails immediately with "Unexpected token".
+
+    Fix strategy:
+    - SVG numeric attributes (rx, ry, r, cx, cy, strokeWidth, strokeDashoffset,
+      strokeDasharray, x, y, x1, y1, x2, y2, offset): replace with sensible defaults.
+    - Any other attribute: convert to string form `="var(--...)"` which at least
+      compiles (even if the CSS var won't resolve for SVG presentation attrs).
+    """
+    import re as _re
+
+    # Pattern: ={var(--<name>)}  (with optional whitespace inside braces)
+    _css_var_re = _re.compile(r'=\{\s*var\((--[\w-]+)\)\s*\}')
+
+    # SVG numeric attribute defaults — these can't take CSS string values
+    _SVG_NUMERIC_DEFAULTS: dict = {
+        "rx": "4", "ry": "4", "r": "4",
+        "cx": "0", "cy": "0",
+        "x": "0", "y": "0",
+        "x1": "0", "y1": "0", "x2": "100", "y2": "0",
+        "strokeWidth": "1", "stroke-width": "1",
+        "strokeDashoffset": "0", "stroke-dashoffset": "0",
+        "strokeDasharray": "4", "stroke-dasharray": "4",
+        "offset": "0",
+        "fontSize": "14", "font-size": "14",
+    }
+
+    def _replace_attr(m: "_re.Match") -> str:
+        css_var_name = m.group(1)
+        full_match = m.group(0)
+        # Determine which attribute this belongs to by looking backwards in context
+        # We can't easily do lookbehind for the attribute name in a general regex;
+        # instead return string form — caller will do a second pass for numeric attrs
+        return f'="{css_var_name}"'
+
+    extensions = (".tsx", ".jsx", ".ts", ".js")
+    for root, dirs, files in os.walk(out_dir):
+        dirs[:] = [d for d in dirs if d != "node_modules"]
+        for fname in files:
+            if not fname.endswith(extensions):
+                continue
+            fpath = os.path.join(root, fname)
+            try:
+                text = open(fpath, encoding="utf-8").read()
+            except OSError:
+                continue
+            if "var(--" not in text:
+                continue
+
+            # Two-pass replacement:
+            # Pass 1: replace ={var(--...)} for SVG numeric attrs with a number
+            new_text = text
+            for attr_name, default_val in _SVG_NUMERIC_DEFAULTS.items():
+                # Match: attr={var(--anything)}  (with optional whitespace)
+                attr_re = _re.compile(
+                    r'(?<=' + _re.escape(attr_name) + r')\s*=\s*\{\s*var\(--[\w-]+\)\s*\}'
+                )
+                new_text = attr_re.sub(f"={{{default_val}}}", new_text)
+
+            # Pass 2: any remaining ={var(--...)} → convert to string form
+            new_text = _css_var_re.sub(_replace_attr, new_text)
+
+            if new_text != text:
+                try:
+                    open(fpath, "w", encoding="utf-8").write(new_text)
+                except OSError:
+                    pass
+
+
+def _fix_ui_component_exports(out_dir):
+    """Synthesize missing shadcn-style sub-component exports in UI component files.
+
+    AI frequently generates consumer code that imports sub-components:
+        import { Card, CardHeader, CardContent, CardFooter, CardTitle, CardDescription }
+            from '@/components/ui/card'
+    but the generated card.tsx only exports the base Card component.
+
+    This fixup scans all imports from @/components/ui/<name>, collects the union of
+    named exports required, then appends any missing ones to the component file.
+
+    Currently covers: Card sub-components, Button variants, Input variants.
+    Extend _UI_SUBCOMPONENT_TEMPLATES as new patterns emerge.
+    """
+    import re as _re, json as _json
+
+    # Map: (ui-file-basename, export-name) → code fragment to append
+    _UI_SUBCOMPONENT_TEMPLATES: dict[tuple[str, str], str] = {
+        ("card", "CardHeader"): (
+            "\nexport const CardHeader: React.FC<{ children: React.ReactNode; className?: string }> = "
+            "({ children, className }) => (\n"
+            "  <div className={['card-header', className].filter(Boolean).join(' ')}>{children}</div>\n"
+            ");\n"
+        ),
+        ("card", "CardContent"): (
+            "\nexport const CardContent: React.FC<{ children: React.ReactNode; className?: string }> = "
+            "({ children, className }) => (\n"
+            "  <div className={['card-content', className].filter(Boolean).join(' ')}>{children}</div>\n"
+            ");\n"
+        ),
+        ("card", "CardFooter"): (
+            "\nexport const CardFooter: React.FC<{ children: React.ReactNode; className?: string }> = "
+            "({ children, className }) => (\n"
+            "  <div className={['card-footer', className].filter(Boolean).join(' ')}>{children}</div>\n"
+            ");\n"
+        ),
+        ("card", "CardTitle"): (
+            "\nexport const CardTitle: React.FC<{ children: React.ReactNode; className?: string }> = "
+            "({ children, className }) => (\n"
+            "  <h3 className={['card-title', className].filter(Boolean).join(' ')}>{children}</h3>\n"
+            ");\n"
+        ),
+        ("card", "CardDescription"): (
+            "\nexport const CardDescription: React.FC<{ children: React.ReactNode; className?: string }> = "
+            "({ children, className }) => (\n"
+            "  <p className={['card-description', className].filter(Boolean).join(' ')}>{children}</p>\n"
+            ");\n"
+        ),
+    }
+
+    # regex: from '@/components/ui/<name>' with named imports
+    _ui_import_re = _re.compile(
+        r"import\s*\{([^}]+)\}\s*from\s*['\"]@/components/ui/(\w+)['\"]"
+    )
+    _export_name_re = _re.compile(r"\bexport\s+(?:const|function|class|type|interface)\s+(\w+)")
+
+    for root, dirs, files in os.walk(out_dir):
+        dirs[:] = [d for d in dirs if d not in ("node_modules", ".next")]
+        ui_dir = os.path.join(root, "src", "components", "ui")
+        if not os.path.isdir(ui_dir):
+            continue
+
+        # Collect required exports per ui-file from all consumer files
+        required: dict[str, set] = {}  # basename → set of export names needed
+        src_dir = os.path.join(root, "src")
+        for froot, fdirs, ffiles in os.walk(src_dir):
+            fdirs[:] = [d for d in fdirs if d != "node_modules"]
+            for fname in ffiles:
+                if not fname.endswith((".tsx", ".ts", ".jsx", ".js")):
+                    continue
+                try:
+                    text = open(os.path.join(froot, fname), encoding="utf-8").read()
+                except OSError:
+                    continue
+                for m in _ui_import_re.finditer(text):
+                    names_str, ui_basename = m.group(1), m.group(2)
+                    names = [n.strip() for n in names_str.split(",") if n.strip()]
+                    required.setdefault(ui_basename, set()).update(names)
+
+        # For each ui file, append any missing sub-components
+        for ui_basename, needed_names in required.items():
+            # Look for the file (could be .tsx or .ts)
+            ui_file = None
+            for ext in (".tsx", ".ts", ".jsx", ".js"):
+                candidate = os.path.join(ui_dir, ui_basename + ext)
+                if os.path.isfile(candidate):
+                    ui_file = candidate
+                    break
+            if not ui_file:
+                continue
+
+            try:
+                text = open(ui_file, encoding="utf-8").read()
+            except OSError:
+                continue
+
+            # Find what the file already exports
+            already_exported = set(_export_name_re.findall(text))
+
+            # Append missing sub-components
+            appended = False
+            for name in sorted(needed_names):
+                if name in already_exported:
+                    continue
+                fragment = _UI_SUBCOMPONENT_TEMPLATES.get((ui_basename, name))
+                if fragment and name not in text:
+                    text += fragment
+                    already_exported.add(name)
+                    appended = True
+
+            if appended:
+                try:
+                    open(ui_file, "w", encoding="utf-8").write(text)
+                except OSError:
+                    pass
+        break  # only process first src/components/ui found
+
+
+def _validate_build(out_dir, step):
+    """Run `npm run build` in the generated directory and surface errors clearly.
+
+    This catches TypeScript errors, missing imports, and JSX syntax failures that
+    only manifest at build time — not during file generation.
+
+    The validation:
+    1. Runs `npm install --no-audit --no-fund` to install deps
+    2. Runs `npm run build` (which runs tsc + Next.js/Vite compilation)
+    3. If it fails, logs the first 50 lines of error output to the build status
+    4. Marks the step as having a build_validation_error (non-blocking — files are kept)
+
+    Why non-blocking: the files are already written and may be useful even if the build
+    fails. The developer can see the error, fix the generation prompt, and regenerate.
+    The status surfaces the error prominently in the dashboard.
+    """
+    # Only validate frontend steps — backend/infra use different build systems
+    _VALIDATABLE_STEPS = {"frontend"}
+    if step not in _VALIDATABLE_STEPS:
+        return
+
+    # Check if this looks like a Node.js project
+    pkg_json = os.path.join(out_dir, "package.json")
+    if not os.path.isfile(pkg_json):
+        return
+
+    print(_LOG_PREFIX + " [validate] Running npm install + npm run build to verify generated code...")
+
+    try:
+        # Install deps first
+        install_result = subprocess.run(
+            ["npm", "install", "--no-audit", "--no-fund"],
+            cwd=out_dir,
+            capture_output=True,
+            text=True,
+            timeout=300,
+        )
+        if install_result.returncode != 0:
+            _record_build_validation_error(
+                step,
+                "npm install failed:\n" + (install_result.stderr or install_result.stdout)[:3000],
+            )
+            return
+
+        # Run the build
+        build_result = subprocess.run(
+            ["npm", "run", "build"],
+            cwd=out_dir,
+            capture_output=True,
+            text=True,
+            timeout=300,
+            env={**os.environ, "NEXT_TELEMETRY_DISABLED": "1"},
+        )
+
+        if build_result.returncode != 0:
+            combined = (build_result.stdout or "") + "\n" + (build_result.stderr or "")
+            # Extract meaningful lines: errors, not noise
+            error_lines = [
+                ln for ln in combined.splitlines()
+                if any(kw in ln for kw in ("error", "Error", "ERROR", "Cannot find", "Module not found", "SyntaxError", "Type error", "Failed to compile"))
+            ]
+            summary = "\n".join(error_lines[:60]) if error_lines else combined[:3000]
+            _record_build_validation_error(step, summary)
+            print(_LOG_PREFIX + " [validate] BUILD FAILED — see build status for details")
+            print(_LOG_PREFIX + " [validate] First errors:\n" + summary[:500])
+        else:
+            print(_LOG_PREFIX + " [validate] Build succeeded — generated code is valid.")
+            _clear_build_validation_error(step)
+
+    except subprocess.TimeoutExpired:
+        _record_build_validation_error(step, "Build validation timed out after 5 minutes")
+    except FileNotFoundError:
+        print(_LOG_PREFIX + " [validate] npm not found — skipping build validation")
+    except Exception as e:
+        print(_LOG_PREFIX + " [validate] Validation error (non-fatal): " + str(e))
+
+
+def _record_build_validation_error(step, error_text):
+    status = load_build_status()
+    entry = status.get(step, {})
+    entry["build_validation_error"] = error_text[:4000]
+    status[step] = entry
+    with open(BUILD_STATUS_FILE, "w", encoding=FILE_ENCODING) as f:
+        import json as _json
+        _json.dump(status, f, indent=2)
+
+
+def _clear_build_validation_error(step):
+    status = load_build_status()
+    entry = status.get(step, {})
+    entry.pop("build_validation_error", None)
+    status[step] = entry
+    with open(BUILD_STATUS_FILE, "w", encoding=FILE_ENCODING) as f:
+        import json as _json
+        _json.dump(status, f, indent=2)
+
+
 def _post_generate_fixups(out_dir):
     """Run automatic fixups on generated code after files are written."""
     _delete_vite_artifacts(out_dir)
     _fix_react_router_in_nextjs(out_dir)
+    _fix_css_var_in_jsx(out_dir)
+    _fix_ui_component_exports(out_dir)
     _ensure_package_dependencies(out_dir)
     _normalize_component_dirs(out_dir)
 
@@ -937,8 +1518,11 @@ def run_step(step):
     save_step_status(step, STATUS_COMPLETE, files=file_list)
     print(_LOG_PREFIX + " Done. " + str(len(file_list)) + " files generated.")
 
-    # Run post-generation fixups (lockfile generation, etc.)
+    # Pass 1: deterministic fixups (correct AI-generated code mistakes)
     _post_generate_fixups(out_dir)
+
+    # Pass 2: build validation (run actual npm build to surface any remaining errors)
+    _validate_build(out_dir, step)
 
     return True
 
