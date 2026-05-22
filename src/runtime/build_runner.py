@@ -613,8 +613,77 @@ def _normalize_component_dirs(out_dir):
                 pass
 
 
+def _delete_vite_artifacts(out_dir):
+    """Remove Vite/CRA entry files from Next.js App Router projects.
+
+    AI models trained on both Vite and Next.js frequently generate Vite-pattern
+    entry files (src/App.tsx, src/main.tsx) and Vite-style page files
+    (src/pages/*.tsx using react-router-dom) even when the project is Next.js.
+    These cause TypeScript errors at build time and pollute the Next.js build.
+
+    Detection: if package.json contains 'next' as a dependency AND src/app/
+    exists (App Router), this is a Next.js project — delete Vite artifacts.
+    """
+    import json as _json
+    import shutil as _shutil
+
+    for root, dirs, files in os.walk(out_dir):
+        dirs[:] = [d for d in dirs if d != "node_modules"]
+
+        pkg = os.path.join(root, "package.json")
+        if not os.path.isfile(pkg):
+            continue
+
+        try:
+            meta = _json.loads(open(pkg, encoding="utf-8").read())
+        except Exception:
+            continue
+
+        deps = {**meta.get("dependencies", {}), **meta.get("devDependencies", {})}
+        is_nextjs = "next" in deps
+        src_app = os.path.join(root, "src", "app")
+        has_app_router = os.path.isdir(src_app)
+
+        if not (is_nextjs and has_app_router):
+            continue
+
+        # Delete Vite/CRA entry files
+        vite_files = [
+            os.path.join(root, "src", "App.tsx"),
+            os.path.join(root, "src", "App.jsx"),
+            os.path.join(root, "src", "main.tsx"),
+            os.path.join(root, "src", "main.jsx"),
+            os.path.join(root, "src", "index.tsx"),
+            os.path.join(root, "src", "index.jsx"),
+            os.path.join(root, "index.html"),
+            os.path.join(root, "vite.config.ts"),
+            os.path.join(root, "vite.config.js"),
+        ]
+        for f in vite_files:
+            if os.path.isfile(f):
+                os.remove(f)
+
+        # Delete src/pages/ if it contains react-router-dom imports
+        src_pages = os.path.join(root, "src", "pages")
+        if os.path.isdir(src_pages):
+            has_router = False
+            for pf in os.listdir(src_pages):
+                pf_path = os.path.join(src_pages, pf)
+                if os.path.isfile(pf_path):
+                    try:
+                        content = open(pf_path, encoding="utf-8").read()
+                        if "react-router-dom" in content:
+                            has_router = True
+                            break
+                    except OSError:
+                        pass
+            if has_router:
+                _shutil.rmtree(src_pages)
+
+
 def _post_generate_fixups(out_dir):
     """Run automatic fixups on generated code after files are written."""
+    _delete_vite_artifacts(out_dir)
     _normalize_component_dirs(out_dir)
 
 
