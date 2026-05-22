@@ -391,6 +391,10 @@ def _infra_layout_block():
         "4. The infra/ directory itself contains ONLY orchestration files:",
         "   docker-compose.yml, Makefile, README.md, CI/CD workflows, Terraform, monitoring config.",
         "   No application Dockerfiles belong here.",
+        "",
+        "5. In every Dockerfile, use `npm install --no-audit --no-fund` NOT `npm ci`.",
+        "   Reason: there is no package-lock.json — AI-generated projects do not include lockfiles.",
+        "   Also: COPY only `package.json` (not `package*.json`) so Docker never sees a stale lockfile.",
     ]
     return _section("REPOSITORY LAYOUT — READ BEFORE GENERATING ANYTHING") + "\n" + "\n".join(lines)
 
@@ -509,25 +513,15 @@ def build_prompt_for_step(step, persona, docs, api_contract):
 def _post_generate_fixups(out_dir):
     """Run automatic fixups on generated code after files are written.
 
-    Current fixups:
-    - npm lockfile: any directory with package.json but no package-lock.json
-      gets `npm install --package-lock-only` so docker builds can use `npm ci`.
+    Lockfile note: we intentionally do NOT generate package-lock.json here.
+    A lockfile produced on macOS (host) contains platform-specific optional
+    deps (e.g. @next/swc-darwin-arm64) that are incompatible with Linux
+    Docker builds using npm ci. Dockerfiles must use `npm install` from
+    package.json alone so npm resolves the correct platform variants inside
+    the container. If developers want a lockfile for local use they can run
+    `npm install` in each service directory.
     """
-    for root, dirs, files in os.walk(out_dir):
-        # Skip node_modules if somehow present
-        dirs[:] = [d for d in dirs if d != "node_modules"]
-        if "package.json" in files and "package-lock.json" not in files:
-            print(_LOG_PREFIX + " Generating package-lock.json in: " + root)
-            try:
-                subprocess.run(
-                    ["npm", "install", "--package-lock-only", "--ignore-scripts",
-                     "--no-audit", "--no-fund"],
-                    cwd=root,
-                    capture_output=True,
-                    timeout=120,
-                )
-            except Exception as e:
-                print(_LOG_PREFIX + " Warning: could not generate lockfile in " + root + ": " + str(e))
+    pass  # reserved for future platform-safe fixups
 
 
 # -----------------------------------------------------------------------
