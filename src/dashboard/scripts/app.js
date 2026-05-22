@@ -2449,8 +2449,13 @@ function renderLocalRun() {
   const logs = (d.log || []);
   const logsHtml = logs.length ? `
     <details id="local-preview-log-details" class="local-preview-log-details"${_localRunLogOpen ? ' open' : ''}>
-      <summary>Output log (${logs.length} lines)</summary>
-      <pre class="local-preview-log">${escapeHtml(logs.slice(-80).join('\n'))}</pre>
+      <summary style="display:flex;align-items:center;justify-content:space-between;">
+        <span>Output log (${logs.length} lines)</span>
+        <button id="local-preview-log-copy" class="btn-icon" title="Copy log" style="margin-left:8px;flex-shrink:0;" onclick="event.stopPropagation();event.preventDefault();(function(){var t=document.getElementById('local-preview-log-pre');if(t)navigator.clipboard.writeText(t.textContent).then(function(){var b=document.getElementById('local-preview-log-copy');if(b){b.title='Copied!';setTimeout(function(){b.title='Copy log';},1500);}});})();">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+        </button>
+      </summary>
+      <pre id="local-preview-log-pre" class="local-preview-log">${escapeHtml(logs.slice(-80).join('\n'))}</pre>
     </details>` : '';
 
   const startedStr = d.started_at
@@ -2484,12 +2489,21 @@ function renderLocalRun() {
       ${logsHtml}
     </div>`;
 
-  // Persist log open/closed state across re-renders
+  // Persist log open/closed state and scroll-to-bottom across re-renders
   const logDetails = document.getElementById('local-preview-log-details');
+  const logPre     = document.getElementById('local-preview-log-pre');
+
+  function _scrollLogToBottom() {
+    if (logPre) logPre.scrollTop = logPre.scrollHeight;
+  }
+
   if (logDetails) {
     logDetails.addEventListener('toggle', () => {
       _localRunLogOpen = logDetails.open;
+      if (logDetails.open) _scrollLogToBottom();
     });
+    // If already open (restored state), scroll to bottom immediately
+    if (logDetails.open) _scrollLogToBottom();
   }
 }
 

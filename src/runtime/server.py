@@ -1474,9 +1474,10 @@ def _detect_local_run(repo_root, forge_dir=None):
 
             result["services"] = services_raw
 
+            compose_dir = os.path.dirname(compose_path)
+
             # Check for env_file requirements
             env_file_re = _re.compile(r'^\s+- (.+\.env)\s*$')
-            compose_dir = os.path.dirname(compose_path)
             for line in lines:
                 em = env_file_re.match(line)
                 if em:
@@ -1491,6 +1492,22 @@ def _detect_local_run(repo_root, forge_dir=None):
                         else:
                             result["env_warnings"].append(
                                 f"{env_fname} missing — create it with the required variables"
+                            )
+
+            # Check for missing build contexts — docker compose hard-fails if
+            # a 'build: context:' or 'build: ./path' points to a non-existent dir.
+            build_ctx_re = _re.compile(r'^\s+build:\s*(\./\S+|\S+)\s*$')
+            build_ctx_key_re = _re.compile(r'^\s+context:\s*(\./\S+|\S+)\s*$')
+            for line in lines:
+                for pat in (build_ctx_re, build_ctx_key_re):
+                    bm = pat.match(line)
+                    if bm:
+                        ctx = bm.group(1).strip().strip('"\'')
+                        ctx_full = os.path.join(compose_dir, ctx)
+                        if not os.path.exists(ctx_full):
+                            result["env_warnings"].append(
+                                f"Build context '{ctx}' not found — source directory missing. "
+                                f"Docker cannot build this service until the code is present."
                             )
         except OSError:
             pass
