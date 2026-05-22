@@ -3538,7 +3538,10 @@ class ForgeHandler(BaseHTTPRequestHandler):
                     return
 
                 # ── Start docker compose ────────────────────────────────────
-                compose_abs = os.path.join(REPO_ROOT, cfg["compose_file"])
+                # Use scan_root (may differ from REPO_ROOT for Electron projects
+                # where build output lives in FORGE_DIR/15-build/<phase>/)
+                _compose_base = cfg.get("scan_root") or REPO_ROOT
+                compose_abs = os.path.join(_compose_base, cfg["compose_file"])
                 compose_dir = os.path.dirname(compose_abs)
 
                 initial_state = {
