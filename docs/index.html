@@ -45,7 +45,7 @@
     "description": "Documentation-first PDLC automation desktop app. AI-generated requirements, design, architecture, build systems, and deployment.",
     "url": "https://saturday-connect.github.io/forge-os/",
     "downloadUrl": "https://github.com/saturday-connect/forge-os/releases",
-    "softwareVersion": "1.0.0-beta.25",
+    "softwareVersion": "1.0.0-beta.28",
     "license": "https://www.apache.org/licenses/LICENSE-2.0",
     "author": {
       "@type": "Organization",
@@ -1057,12 +1057,12 @@
 
 <!-- WHAT'S NEW -->
 <div class="whats-new-strip" role="banner" aria-label="What's new">
-  <span class="badge">beta.25</span>
+  <span class="badge">beta.28</span>
   <div class="items">
-    <span class="whats-new-item">Local Preview — run built code with one click</span>
-    <span class="whats-new-item">Stuck build detection &amp; Stop/Restart</span>
-    <span class="whats-new-item">Semantic branch names + atomic commits</span>
-    <span class="whats-new-item">Phase deployment status model</span>
+    <span class="whats-new-item">Local Preview fix — docker compose runs from correct build output path</span>
+    <span class="whats-new-item">Phase labels — "Deployed" vs "Merged" correctly distinguished</span>
+    <span class="whats-new-item">Startup crash recovery — stale running status auto-reset on launch</span>
+    <span class="whats-new-item">Local Preview detection for Electron-managed projects</span>
   </div>
   <a href="https://github.com/saturday-connect/forge-os/releases" target="_blank" rel="noopener noreferrer">Release notes →</a>
 </div>
@@ -1185,7 +1185,7 @@
         </div>
         <div class="feature-title">Local Preview</div>
         <div class="feature-desc">Auto-detects Docker Compose or your stack (FastAPI, Flask, Next.js). One-click run with live service health dots, port links, and streamed logs.</div>
-        <span class="feature-tag feature-tag--new">New in beta.25</span>
+        <span class="feature-tag feature-tag--new">New in beta.28</span>
       </div>
 
       <div class="feature-card" role="listitem">
@@ -1202,7 +1202,7 @@
         </div>
         <div class="feature-title">Stuck build detection</div>
         <div class="feature-desc">Heartbeat ticker detects frozen git operations. Amber warning at 30s, prominent Stop button at 60s. Cancel kills the subprocess; Restart triggers a fresh branch.</div>
-        <span class="feature-tag feature-tag--new">New in beta.25</span>
+        <span class="feature-tag feature-tag--new">New in beta.28</span>
       </div>
 
       <div class="feature-card" role="listitem">
