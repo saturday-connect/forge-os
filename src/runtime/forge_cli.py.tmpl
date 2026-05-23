@@ -445,7 +445,8 @@ def invoke_model(prompt, output_path):
                     stdin=subprocess.PIPE,
                     stdout=out_f,
                     stderr=subprocess.STDOUT,
-                    text=True
+                    text=True,
+                    cwd=FORGE_DIR,  # pin cwd — prevents CLI scanning ~/ or Desktop for context
                 )
                 started_at = time.time()
                 auth_prompt_answered = False
@@ -482,13 +483,15 @@ def invoke_model(prompt, output_path):
                 sys.exit(1)
         elif tool == "claude":
             with open(tmp_path, 'w', encoding='utf-8') as out_f:
-                subprocess.run(["claude"], input=prompt, text=True, stdout=out_f, timeout=AI_GENERATION_TIMEOUT_SECS, check=True)
+                subprocess.run(["claude"], input=prompt, text=True, stdout=out_f, timeout=AI_GENERATION_TIMEOUT_SECS, check=True,
+                               cwd=FORGE_DIR)  # pin cwd — prevents Claude scanning ~/ or Desktop
         elif tool == "codex":
             cmd = ["codex", "exec", "--dangerously-bypass-approvals-and-sandbox", "--ephemeral",
                    "-o", tmp_path]
             if model_id:
                 cmd += ["-m", model_id]
-            subprocess.run(cmd, input=prompt, text=True, timeout=AI_GENERATION_TIMEOUT_SECS, check=True)
+            subprocess.run(cmd, input=prompt, text=True, timeout=AI_GENERATION_TIMEOUT_SECS, check=True,
+                           cwd=FORGE_DIR)  # pin cwd — prevents Codex scanning ~/ or Desktop
         elif tool == "openai":
             api_key = os.environ.get("OPENAI_API_KEY")
             if not api_key:

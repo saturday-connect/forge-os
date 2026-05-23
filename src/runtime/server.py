@@ -2821,7 +2821,8 @@ class ForgeHandler(BaseHTTPRequestHandler):
                         cmd = [TOOL_GEMINI, GEMINI_ARG_SKIP_TRUST, GEMINI_ARG_PROMPT, prompt]
 
                     with open(tmp_path, "w") as out_f:
-                        ai_proc = subprocess.Popen(cmd, stdout=out_f, stderr=subprocess.PIPE)
+                        ai_proc = subprocess.Popen(cmd, stdout=out_f, stderr=subprocess.PIPE,
+                                                   cwd=FORGE_DIR)  # pin cwd — prevents CLI scanning Desktop
 
                     review_entry["pid"] = ai_proc.pid
                     _save_review(review_entry)
