@@ -1,6 +1,20 @@
 {
+  "antigravity": {
+    "label": "Antigravity CLI",
+    "install_cmd": "npm install -g @google/antigravity-cli",
+    "install_url": "https://github.com/google/antigravity-cli",
+    "models": [
+      {"id": "gemini-3-flash-preview",  "label": "Gemini 3 Flash (recommended)"},
+      {"id": "gemini-3-pro-preview",    "label": "Gemini 3 Pro"},
+      {"id": "gemini-2.5-flash",        "label": "Gemini 2.5 Flash"},
+      {"id": "gemini-2.5-pro",          "label": "Gemini 2.5 Pro"},
+      {"id": "gemini-2.5-flash-lite",   "label": "Gemini 2.5 Flash Lite (fastest)"}
+    ]
+  },
   "gemini": {
     "label": "Gemini CLI",
+    "deprecated": true,
+    "deprecated_message": "Gemini CLI ends June 18 2026. Switch to Antigravity CLI in Settings.",
     "install_cmd": "npm install -g @google/gemini-cli",
     "install_url": "https://github.com/google-gemini/gemini-cli",
     "models": [

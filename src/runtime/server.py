@@ -65,9 +65,13 @@ from constants import (
     GATE_STATUS_APPROVED,
     GATE_STATUS_PASSED,
     GATE_STATUS_PENDING,
+    ANTIGRAVITY_ARG_MODEL,
+    ANTIGRAVITY_ARG_PROMPT,
+    ANTIGRAVITY_ARG_SKIP_TRUST,
     GEMINI_ARG_MODEL,
     GEMINI_ARG_PROMPT,
     GEMINI_ARG_SKIP_TRUST,
+    GEMINI_FAMILY_TOOLS,
     GENERATE_TIMEOUT_SECS,
     GIT_COMMIT_EMAIL,
     GIT_COMMIT_NAME,
@@ -117,6 +121,7 @@ from constants import (
     STATUS_IDLE,
     STATUS_PENDING,
     STATUS_RUNNING,
+    TOOL_ANTIGRAVITY,
     TOOL_CLAUDE,
     TOOL_GEMINI,
     USER_FILE_PATH,
@@ -482,6 +487,8 @@ _CLI_WARNING_PATTERNS = (
     "Ripgrep is not available",
     "Falling back to GrepTool",
     "256-color support not detected",
+    # Antigravity CLI diagnostic noise (same patterns as Gemini CLI)
+    "antigravity: ",
 )
 
 
@@ -495,15 +502,17 @@ def invoke_ai(prompt, tool, model_id):
     with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".txt", encoding=FILE_ENCODING) as t:
         tmp_path = t.name
     try:
-        if tool == TOOL_GEMINI:
-            cmd = [TOOL_GEMINI, GEMINI_ARG_SKIP_TRUST]
+        if tool in GEMINI_FAMILY_TOOLS:
+            # Antigravity CLI and legacy Gemini CLI share the same interface
+            cmd = [tool, ANTIGRAVITY_ARG_SKIP_TRUST]
             if model_id:
-                cmd += [GEMINI_ARG_MODEL, model_id]
-            cmd += [GEMINI_ARG_PROMPT, prompt]
+                cmd += [ANTIGRAVITY_ARG_MODEL, model_id]
+            cmd += [ANTIGRAVITY_ARG_PROMPT, prompt]
         elif tool == TOOL_CLAUDE:
             cmd = [TOOL_CLAUDE, CLAUDE_ARG_PROMPT, prompt, CLAUDE_ARG_OUTPUT_FORMAT, CLAUDE_OUTPUT_TEXT]
         else:
-            cmd = [TOOL_GEMINI, GEMINI_ARG_SKIP_TRUST, GEMINI_ARG_PROMPT, prompt]
+            # Fallback: default to antigravity
+            cmd = [TOOL_ANTIGRAVITY, ANTIGRAVITY_ARG_SKIP_TRUST, ANTIGRAVITY_ARG_PROMPT, prompt]
         with open(tmp_path, "w") as out_f:
             result = subprocess.run(cmd, stdout=out_f, stderr=subprocess.PIPE, timeout=GENERATE_TIMEOUT_SECS,
                                     cwd=FORGE_DIR)  # pin cwd — prevents AI CLI scanning ~ or Desktop for context
@@ -2813,12 +2822,12 @@ class ForgeHandler(BaseHTTPRequestHandler):
                     with _tmp.NamedTemporaryFile(mode="w", delete=False, suffix=".txt", encoding="utf-8") as t:
                         tmp_path = t.name
 
-                    if tool == TOOL_GEMINI:
-                        cmd = [TOOL_GEMINI, GEMINI_ARG_SKIP_TRUST] + ([GEMINI_ARG_MODEL, model_id] if model_id else []) + [GEMINI_ARG_PROMPT, prompt]
+                    if tool in GEMINI_FAMILY_TOOLS:
+                        cmd = [tool, ANTIGRAVITY_ARG_SKIP_TRUST] + ([ANTIGRAVITY_ARG_MODEL, model_id] if model_id else []) + [ANTIGRAVITY_ARG_PROMPT, prompt]
                     elif tool == TOOL_CLAUDE:
                         cmd = [TOOL_CLAUDE, CLAUDE_ARG_PROMPT, prompt, CLAUDE_ARG_OUTPUT_FORMAT, CLAUDE_OUTPUT_TEXT]
                     else:
-                        cmd = [TOOL_GEMINI, GEMINI_ARG_SKIP_TRUST, GEMINI_ARG_PROMPT, prompt]
+                        cmd = [TOOL_ANTIGRAVITY, ANTIGRAVITY_ARG_SKIP_TRUST, ANTIGRAVITY_ARG_PROMPT, prompt]
 
                     with open(tmp_path, "w") as out_f:
                         ai_proc = subprocess.Popen(cmd, stdout=out_f, stderr=subprocess.PIPE,

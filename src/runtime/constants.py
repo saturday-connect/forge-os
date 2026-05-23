@@ -67,15 +67,24 @@ OPENAI_DEFAULT_MODEL = "gpt-4o"
 # ---------------------------------------------------------------------------
 # AI tool identifiers
 # ---------------------------------------------------------------------------
-TOOL_GEMINI = "gemini"
+TOOL_ANTIGRAVITY = "antigravity"   # successor to Gemini CLI (June 2026+)
+TOOL_GEMINI = "gemini"             # deprecated — ends June 18 2026; kept for enterprise
 TOOL_CLAUDE = "claude"
 TOOL_CODEX = "codex"
 TOOL_OPENAI = "openai"
-DEFAULT_TOOL = TOOL_GEMINI
+DEFAULT_TOOL = TOOL_ANTIGRAVITY
+
+# Tools that share the Gemini CLI interface (same flags, same auth flow)
+GEMINI_FAMILY_TOOLS = {TOOL_ANTIGRAVITY, TOOL_GEMINI}
 
 # ---------------------------------------------------------------------------
 # AI tool CLI arguments
 # ---------------------------------------------------------------------------
+# Antigravity CLI — same interface as Gemini CLI
+ANTIGRAVITY_ARG_SKIP_TRUST = "--skip-trust"
+ANTIGRAVITY_ARG_MODEL = "-m"
+ANTIGRAVITY_ARG_PROMPT = "-p"
+# Gemini CLI (deprecated)
 GEMINI_ARG_SKIP_TRUST = "--skip-trust"
 GEMINI_ARG_MODEL = "-m"
 GEMINI_ARG_PROMPT = "-p"
