@@ -193,9 +193,7 @@ GEMINI_AUTH_PROMPT_MARKERS = [
 GEMINI_AUTH_CONFIRMATION = "y\n"
 ERROR_GEMINI_AUTH_REQUIRED = "Gemini CLI is waiting for browser authentication. Complete the browser sign-in that Gemini opened, then retry generation."
 ERROR_GEMINI_AUTH_TIMEOUT = "Gemini browser authentication did not complete before the generation timeout. Run `gemini` in Terminal, finish sign-in, then retry generation."
-ERROR_ANTIGRAVITY_AUTH_REQUIRED = "Antigravity CLI is waiting for browser authentication. Complete the browser sign-in that Antigravity opened, then retry generation."
-ERROR_ANTIGRAVITY_AUTH_TIMEOUT = "Antigravity browser authentication did not complete before the generation timeout. Run `antigravity` in Terminal, finish sign-in, then retry generation."
-_GEMINI_FAMILY_TOOLS = {{"antigravity", "gemini"}}  # share same CLI interface
+ERROR_AGY_NOT_FOUND = "Antigravity CLI (agy) not found. Install it from https://agy.sh then retry."
 ERROR_AI_QUOTA_LIMIT = "The AI request failed because the model quota or rate limit was reached. Wait a few minutes, then retry."
 ERROR_AI_GENERATION_TIMEOUT = "The AI model did not respond before the generation timeout. Check Gemini CLI authentication or quota, then retry."
 ERROR_AI_GENERATION_FAILED = "The AI model returned an error. It may have reached its usage limit. Wait a minute and try again."
@@ -276,7 +274,7 @@ def display_rel_path(path_value):
 def parse_args():
     parser = argparse.ArgumentParser(description="Forge Pipeline Runner")
     parser.add_argument("stage", help="Stage name (e.g., context, requirements)")
-    parser.add_argument("--model", default=os.environ.get("AI_MODEL", "antigravity"), help="AI model to use")
+    parser.add_argument("--model", default=os.environ.get("AI_MODEL", "agy"), help="AI model to use")
     parser.add_argument("--output", help="Specific output file for multi-output stages")
     parser.add_argument("--raw-input", help="Raw input file for context stage")
     parser.add_argument("--critique", help="User critique or feedback to fix the file")
@@ -437,10 +435,17 @@ def invoke_model(prompt, output_path):
         if model_id and tool in _ALLOWED_MODELS and model_id not in _ALLOWED_MODELS[tool]:
             log_error(f"Unsupported model '{{model_id}}' for tool '{{tool}}'. Aborting.")
             sys.exit(1)
-        if tool in _GEMINI_FAMILY_TOOLS:
-            # Antigravity CLI and legacy Gemini CLI share the same interface
-            _auth_timeout_msg = ERROR_ANTIGRAVITY_AUTH_TIMEOUT if tool == "antigravity" else ERROR_GEMINI_AUTH_TIMEOUT
-            cmd = [tool, "--skip-trust"]
+        if tool == "agy":
+            # Antigravity CLI: agy --dangerously-skip-permissions -p "prompt"
+            with open(tmp_path, 'w', encoding='utf-8') as out_f:
+                subprocess.run(
+                    ["agy", "--dangerously-skip-permissions", "-p", prompt],
+                    stdout=out_f, stderr=subprocess.PIPE,
+                    timeout=AI_GENERATION_TIMEOUT_SECS, check=True,
+                    cwd=FORGE_DIR,  # pin cwd — prevents agy scanning ~/ or Desktop for context
+                )
+        elif tool == "gemini":
+            cmd = ["gemini", "--skip-trust"]
             if model_id:
                 cmd += ["-m", model_id]
             cmd += ["-p", prompt]
@@ -462,7 +467,7 @@ def invoke_model(prompt, output_path):
                         with open(tmp_path, 'r', encoding='utf-8') as f:
                             timeout_output = f.read()
                         append_ai_log(output_path, tool, model_id, timeout_output, "")
-                        msg = _auth_timeout_msg if auth_prompt_answered else normalize_model_failure(timeout_output, ERROR_AI_GENERATION_TIMEOUT)
+                        msg = ERROR_GEMINI_AUTH_TIMEOUT if auth_prompt_answered else normalize_model_failure(timeout_output, ERROR_AI_GENERATION_TIMEOUT)
                         _write_run_error(output_path, msg)
                         log_error(msg)
                         sys.exit(1)
@@ -528,7 +533,7 @@ def invoke_model(prompt, output_path):
                 log_error(f"OpenAI API request failed: {{e}}")
                 sys.exit(1)
         else:
-            log_error(f"Unsupported tool: '{{tool}}'. Supported: antigravity, gemini, claude, codex, openai")
+            log_error(f"Unsupported tool: '{{tool}}'. Supported: agy, gemini, claude, codex, openai")
             sys.exit(1)
             
         with open(tmp_path, 'r', encoding='utf-8') as f:

@@ -1,14 +1,10 @@
 {
-  "antigravity": {
+  "agy": {
     "label": "Antigravity CLI",
-    "install_cmd": "npm install -g @google/antigravity-cli",
-    "install_url": "https://github.com/google/antigravity-cli",
+    "install_cmd": "curl -fsSL https://agy.sh | sh",
+    "install_url": "https://agy.sh",
     "models": [
-      {"id": "gemini-3-flash-preview",  "label": "Gemini 3 Flash (recommended)"},
-      {"id": "gemini-3-pro-preview",    "label": "Gemini 3 Pro"},
-      {"id": "gemini-2.5-flash",        "label": "Gemini 2.5 Flash"},
-      {"id": "gemini-2.5-pro",          "label": "Gemini 2.5 Pro"},
-      {"id": "gemini-2.5-flash-lite",   "label": "Gemini 2.5 Flash Lite (fastest)"}
+      {"id": "default", "label": "Default (configured in agy)"}
     ]
   },
   "gemini": {
