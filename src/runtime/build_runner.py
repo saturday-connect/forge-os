@@ -123,7 +123,8 @@ def invoke_ai(prompt, tool, model_id):
         else:
             cmd = [TOOL_GEMINI, GEMINI_ARG_SKIP_TRUST, GEMINI_ARG_PROMPT, prompt]
         with open(tmp_path, "w", encoding=FILE_ENCODING) as out_f:
-            result = subprocess.run(cmd, stdout=out_f, stderr=subprocess.PIPE, timeout=GENERATE_TIMEOUT_SECS)
+            result = subprocess.run(cmd, stdout=out_f, stderr=subprocess.PIPE, timeout=GENERATE_TIMEOUT_SECS,
+                                    cwd=FORGE_DIR)  # pin cwd — prevents AI CLI scanning ~ or Desktop for context
         if result.returncode != 0:
             err = result.stderr.decode(FILE_ENCODING, errors="replace") if result.stderr else "AI call failed"
             return None, err
