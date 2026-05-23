@@ -3078,6 +3078,93 @@ def _detect_truncated_files(out_dir):
     return flagged
 
 
+def _ensure_dockerignore(out_dir):
+    """Create .dockerignore files for all service directories that have a Dockerfile.
+
+    Root cause: AI generators never emit .dockerignore. Without it, COPY . . in a
+    Dockerfile copies the local node_modules (platform-specific, potentially stale)
+    into the container on top of the fresh npm-installed node_modules. This produces
+    @next/swc version mismatches (darwin binary overwrites linux install target) and
+    Prisma binary mismatches, causing the build to fail inside Docker even though it
+    works locally.
+
+    Pattern that breaks:
+        RUN npm install            <- container installs linux binaries
+        COPY . .                   <- overwrites node_modules with macOS binaries!
+        RUN npm run build          <- SWC/Prisma binary mismatch -> crash
+
+    Fix: write .dockerignore if missing or incomplete, excluding node_modules, dist,
+    .next, and common development artifacts. This ensures COPY . . never overrides
+    the container's cleanly-installed native binaries.
+    """
+    _DOCKERFILE_NAMES = {"Dockerfile", "dockerfile"}
+    _SKIP_DIRS = {"node_modules", ".git", "__pycache__", "dist", ".next", "build"}
+
+    # Lines that must appear in every service's .dockerignore
+    _REQUIRED_LINES = {
+        "node_modules",
+        "dist",
+        ".git",
+        ".DS_Store",
+        ".env",
+        ".env.local",
+        "npm-debug.log*",
+        "*.log",
+    }
+    # Frontend-specific additions (for Next.js projects)
+    _NEXTJS_LINES = {".next", ".next/cache"}
+
+    for root, dirs, files in os.walk(out_dir):
+        dirs[:] = [d for d in dirs if d not in _SKIP_DIRS]
+        has_dockerfile = any(f in _DOCKERFILE_NAMES for f in files)
+        if not has_dockerfile:
+            continue
+
+        # Detect if this is a Next.js project
+        is_nextjs = False
+        pkg_path = os.path.join(root, "package.json")
+        if os.path.exists(pkg_path):
+            try:
+                with open(pkg_path, encoding=FILE_ENCODING) as f:
+                    pkg = json.load(f)
+                deps = {**pkg.get("dependencies", {}), **pkg.get("devDependencies", {})}
+                is_nextjs = "next" in deps
+            except (OSError, json.JSONDecodeError):
+                pass
+
+        required = set(_REQUIRED_LINES)
+        if is_nextjs:
+            required |= _NEXTJS_LINES
+
+        dockerignore_path = os.path.join(root, ".dockerignore")
+        existing_lines = set()
+        if os.path.exists(dockerignore_path):
+            try:
+                with open(dockerignore_path, encoding=FILE_ENCODING) as f:
+                    existing_lines = {l.strip() for l in f if l.strip()}
+            except OSError:
+                pass
+
+        missing = required - existing_lines
+        if not missing:
+            continue
+
+        # Append missing lines or create file
+        mode = "a" if existing_lines else "w"
+        with open(dockerignore_path, mode, encoding=FILE_ENCODING) as f:
+            if not existing_lines:
+                f.write("\n".join(sorted(required)) + "\n")
+            else:
+                f.write("\n" + "\n".join(sorted(missing)) + "\n")
+
+        rel = os.path.relpath(dockerignore_path, out_dir)
+        action = "Updated" if existing_lines else "Created"
+        print(
+            _LOG_PREFIX + " [fixup] " + action + " " + rel
+            + " — node_modules excluded from COPY to prevent platform binary conflicts"
+        )
+
+
 def _fix_nextjs_swc_version(out_dir):
     """Align @next/swc-* package versions with the installed next version.
 
@@ -3224,6 +3311,7 @@ def _post_generate_fixups(out_dir):
     _normalize_component_dirs(out_dir)
     _fix_npm_ci_in_dockerfiles(out_dir)
     _fix_openssl_in_alpine_dockerfiles(out_dir)
+    _ensure_dockerignore(out_dir)
     _fix_ts_openai_timeout(out_dir)
     _fix_nextjs_swc_version(out_dir)
     _fix_tsconfig_entry_point_scope(out_dir)
