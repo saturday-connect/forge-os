@@ -3078,6 +3078,142 @@ def _detect_truncated_files(out_dir):
     return flagged
 
 
+def _fix_nextjs_swc_version(out_dir):
+    """Align @next/swc-* package versions with the installed next version.
+
+    Root cause: AI generators sometimes write @next/swc-linux-x64-gnu@14.2.x into
+    package.json while next itself is pinned to 14.0.x (or any other mismatch). Docker
+    build then installs both, Next.js detects the version conflict and aborts with:
+        "Your local Next.js version (14.0.x) does not match your @next/swc version (14.2.x)"
+
+    Fix: scan every package.json that contains "next" in dependencies. If any key matching
+    @next/swc-* has a version that does not match the next version, rewrite it to match.
+    Also removes @next/swc-* from devDependencies (they belong in dependencies or not at all —
+    Next.js manages the right platform binary itself at install time via optionalDependencies).
+    """
+    import re as _re
+
+    _SWC_PREFIX = "@next/swc-"
+    _SKIP_DIRS = {"node_modules", ".git", "__pycache__", "dist", ".next", "build"}
+
+    for root, dirs, files in os.walk(out_dir):
+        dirs[:] = [d for d in dirs if d not in _SKIP_DIRS]
+        if "package.json" not in files:
+            continue
+        pkg_path = os.path.join(root, "package.json")
+        try:
+            with open(pkg_path, encoding=FILE_ENCODING) as f:
+                pkg = json.load(f)
+        except (OSError, json.JSONDecodeError):
+            continue
+
+        deps = pkg.get("dependencies", {})
+        dev_deps = pkg.get("devDependencies", {})
+        opt_deps = pkg.get("optionalDependencies", {})
+
+        # Only act on Next.js projects
+        next_ver = deps.get("next") or dev_deps.get("next")
+        if not next_ver:
+            continue
+
+        # Strip semver range prefix (^, ~, >=, etc.) to get bare version
+        bare_next = next_ver.lstrip("^~>=<")
+
+        changed = False
+
+        # Remove @next/swc-* from devDependencies entirely (Next.js handles them)
+        swc_dev_keys = [k for k in dev_deps if k.startswith(_SWC_PREFIX)]
+        for k in swc_dev_keys:
+            del dev_deps[k]
+            changed = True
+            print(_LOG_PREFIX + " [fixup] Removed misplaced " + k + " from devDependencies in " + os.path.relpath(pkg_path, out_dir))
+
+        # Align @next/swc-* in dependencies/optionalDependencies
+        for section in (deps, opt_deps):
+            swc_keys = [k for k in section if k.startswith(_SWC_PREFIX)]
+            for k in swc_keys:
+                current = section[k].lstrip("^~>=<")
+                if current != bare_next:
+                    section[k] = bare_next
+                    changed = True
+                    print(
+                        _LOG_PREFIX + " [fixup] Aligned " + k + ": "
+                        + current + " -> " + bare_next
+                        + " in " + os.path.relpath(pkg_path, out_dir)
+                    )
+
+        if changed:
+            with open(pkg_path, "w", encoding=FILE_ENCODING) as f:
+                json.dump(pkg, f, indent=2)
+                f.write("\n")
+
+
+def _fix_tsconfig_entry_point_scope(out_dir):
+    """Scope TypeScript compilation to the entry point rather than all files.
+
+    Root cause: AI generators produce "orphan" files across multiple passes —
+    controllers, routes, and middleware files that use different frameworks
+    (express vs fastify, etc.) or naming conventions from different generation
+    sessions. When tsconfig.json has "include": ["src/**/*"], TypeScript compiles
+    all of these orphan files and fails on their import errors.
+
+    Fix: if tsconfig.json uses broad include/exclude glob patterns, replace with
+    "files": ["src/index.ts"] (or the detected main entry point). TypeScript
+    follows imports transitively from the entry point — orphan files that are
+    not imported by anything are automatically excluded.
+
+    This is the correct production behaviour: only files reachable from the entry
+    point should be part of the build. Orphan files are either dead code from
+    superseded generation passes, or unreachable alternative implementations.
+    """
+    _ENTRY_CANDIDATES = ("src/index.ts", "src/main.ts", "src/server.ts", "index.ts", "main.ts")
+    _BROAD_INCLUDE = {"src/**/*", "src/**/*.ts", "./**/*", "**/*"}
+    _SKIP_DIRS = {"node_modules", ".git", "__pycache__", "dist", ".next", "build"}
+
+    for root, dirs, files in os.walk(out_dir):
+        dirs[:] = [d for d in dirs if d not in _SKIP_DIRS]
+        if "tsconfig.json" not in files:
+            continue
+        tsconfig_path = os.path.join(root, "tsconfig.json")
+        try:
+            with open(tsconfig_path, encoding=FILE_ENCODING) as f:
+                tsconfig = json.load(f)
+        except (OSError, json.JSONDecodeError):
+            continue
+
+        # Skip if already scoped via "files" key
+        if "files" in tsconfig:
+            continue
+
+        includes = tsconfig.get("include", [])
+        # Only act if the include is a broad glob
+        if not any(inc.strip() in _BROAD_INCLUDE for inc in includes):
+            continue
+
+        # Detect the entry point
+        entry = None
+        for candidate in _ENTRY_CANDIDATES:
+            if os.path.exists(os.path.join(root, candidate)):
+                entry = candidate
+                break
+
+        if not entry:
+            continue  # Cannot determine entry point — leave tsconfig alone
+
+        tsconfig.pop("include", None)
+        tsconfig.pop("exclude", None)
+        tsconfig["files"] = [entry]
+
+        with open(tsconfig_path, "w", encoding=FILE_ENCODING) as f:
+            json.dump(tsconfig, f, indent=2)
+            f.write("\n")
+
+        print(
+            _LOG_PREFIX + " [fixup] Scoped " + os.path.relpath(tsconfig_path, out_dir)
+            + " to entry point '" + entry + "' — orphan files from prior generation passes excluded"
+        )
+
+
 def _post_generate_fixups(out_dir):
     """Run automatic fixups on generated code after files are written."""
     _delete_vite_artifacts(out_dir)
@@ -3089,6 +3225,8 @@ def _post_generate_fixups(out_dir):
     _fix_npm_ci_in_dockerfiles(out_dir)
     _fix_openssl_in_alpine_dockerfiles(out_dir)
     _fix_ts_openai_timeout(out_dir)
+    _fix_nextjs_swc_version(out_dir)
+    _fix_tsconfig_entry_point_scope(out_dir)
     _fix_infra_compose_build_contexts(out_dir)
     _detect_truncated_files(out_dir)
 
