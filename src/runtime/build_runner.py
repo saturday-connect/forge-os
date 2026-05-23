@@ -2985,6 +2985,99 @@ def _fix_infra_compose_build_contexts(out_dir):
         break  # Only one compose file expected
 
 
+def _detect_truncated_files(out_dir):
+    """Scan generated source files for AI timeout/error messages embedded mid-file.
+
+    Root cause: when an AI CLI times out mid-generation, the timeout error string
+    is appended to whatever partial content was written. The file ends up as valid
+    content up to the timeout point, then garbage like:
+        req: AuError: timed out waiting for response
+        ...connection reset by peer
+
+    This causes tsc / the Python parser / the Go compiler to fail with syntax errors
+    on the corrupted line -- errors that look like code bugs but are generation artifacts.
+
+    This fixup:
+    1. Scans .ts, .js, .py, .go, .rs files for known AI error message substrings
+    2. If found, truncates the file at the first corrupted line and logs a warning
+    3. If the truncation leaves unclosed braces (unbalanced {/}), appends closing
+       braces to produce a syntactically complete (though semantically incomplete) file
+       so the build at least compiles and the missing logic is visible
+
+    The build step is NOT re-run automatically -- the step is marked with a warning
+    so the user knows which files need attention (or a rebuild).
+    """
+    import re as _re
+
+    _ERROR_MARKERS = [
+        "Error: timed out waiting for response",
+        "timed out waiting for response",
+        "connection reset by peer",
+        "Error: read ECONNRESET",
+        "Error: socket hang up",
+        "SIGTERM",
+        "Process exited unexpectedly",
+    ]
+    _SOURCE_EXTS = (".ts", ".tsx", ".js", ".jsx", ".py", ".go", ".rs", ".java")
+    _SKIP_DIRS = {"node_modules", ".git", "__pycache__", "dist", ".next", "build"}
+
+    flagged = []
+
+    for root, dirs, files in os.walk(out_dir):
+        dirs[:] = [d for d in dirs if d not in _SKIP_DIRS]
+        for fname in files:
+            if not any(fname.endswith(ext) for ext in _SOURCE_EXTS):
+                continue
+            fpath = os.path.join(root, fname)
+            try:
+                with open(fpath, encoding=FILE_ENCODING, errors="replace") as f:
+                    lines = f.readlines()
+            except OSError:
+                continue
+
+            corrupt_line = None
+            for idx, line in enumerate(lines):
+                for marker in _ERROR_MARKERS:
+                    if marker in line:
+                        corrupt_line = idx
+                        break
+                if corrupt_line is not None:
+                    break
+
+            if corrupt_line is None:
+                continue
+
+            # Truncate at the corrupted line
+            clean_lines = lines[:corrupt_line]
+            content = "".join(clean_lines)
+
+            # For brace-delimited languages, balance open/close braces
+            if fname.endswith((".ts", ".tsx", ".js", ".jsx", ".go", ".java", ".rs")):
+                open_count = content.count("{") - content.count("}")
+                if open_count > 0:
+                    content = content.rstrip()
+                    content += "\n" + ("}" * open_count) + "\n"
+
+            with open(fpath, "w", encoding=FILE_ENCODING) as f:
+                f.write(content)
+
+            rel = os.path.relpath(fpath, out_dir)
+            flagged.append(rel)
+            print(
+                _LOG_PREFIX + " [fixup] TRUNCATION DETECTED in " + rel
+                + " at line " + str(corrupt_line + 1)
+                + " — AI timed out mid-generation. File patched; logic may be incomplete."
+            )
+
+    if flagged:
+        print(
+            _LOG_PREFIX + " [WARNING] " + str(len(flagged))
+            + " file(s) were truncated by AI timeout. Review and consider rebuilding this step."
+        )
+
+    return flagged
+
+
 def _post_generate_fixups(out_dir):
     """Run automatic fixups on generated code after files are written."""
     _delete_vite_artifacts(out_dir)
@@ -2997,6 +3090,7 @@ def _post_generate_fixups(out_dir):
     _fix_openssl_in_alpine_dockerfiles(out_dir)
     _fix_ts_openai_timeout(out_dir)
     _fix_infra_compose_build_contexts(out_dir)
+    _detect_truncated_files(out_dir)
 
 
 # -----------------------------------------------------------------------
