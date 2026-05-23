@@ -57,6 +57,11 @@
       "gatekeeperAssess": false,
       "entitlements": "assets/entitlements.mac.plist",
       "entitlementsInherit": "assets/entitlements.mac.plist",
+      "extendInfo": {
+        "NSApplicationDataUsageDescription": "Forge OS runs AI CLI tools (Gemini, Claude, Codex) as subprocesses. These tools read their own stored credentials to authenticate with AI APIs.",
+        "NSDesktopFolderUsageDescription": "Forge OS does not access your Desktop. If prompted, deny — this request should not occur.",
+        "NSDocumentsFolderUsageDescription": "Forge OS accesses project files you have opened or created within the app."
+      },
       "target": [
         "dmg",
         "pkg",
