@@ -143,6 +143,7 @@ HOT_DEPLOY_FILES = [
     DASHBOARD_OUTPUT_FILE,
     RUNTIME_SERVER_FILE,
     RUNTIME_CONSTANTS_FILE,
+    RUNTIME_BUILD_RUNNER_FILE,
 ]
 
 # ---------------------------------------------------------------------------

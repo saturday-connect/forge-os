@@ -1442,20 +1442,56 @@ def _detect_local_run(repo_root, forge_dir=None):
         result["docker_available"] = False
 
     # ── Look for docker-compose file ─────────────────────────────────────────
-    compose_candidates = [
-        "docker-compose.yml", "docker-compose.yaml",
-        "compose.yml", "compose.yaml",
-        "infra/docker-compose.yml", "infra/docker-compose.yaml",
-        "infra/compose.yml", "infra/compose.yaml",
-    ]
+    # Priority: infra-generated compose in FORGE_DIR/15-build/<phase>/infra/ wins
+    # over any compose in repo_root. The infra step produces the authoritative
+    # full-stack compose (backend + frontend + worker + deps). Individual build
+    # steps (backend) also emit a docker-compose.yml but it only has that one
+    # service. We always prefer the full-stack one.
     compose_path = None
     compose_rel = None
-    for rel in compose_candidates:
-        full = os.path.join(repo_root, rel)
-        if os.path.exists(full):
-            compose_path = full
-            compose_rel = rel
-            break
+
+    # 1. Check forge_dir/15-build/<active-phase>/infra/ first
+    if forge_dir and os.path.isdir(forge_dir):
+        _build_root = os.path.join(forge_dir, "15-build")
+        _phase_dir = None
+        if os.path.isdir(_build_root):
+            try:
+                _bsys = json.load(open(os.path.join(forge_dir, "runs", "build-system.json")))
+                _slug = (_bsys.get("active_phase_id") or _bsys.get("phase_slug") or "")
+                if _slug:
+                    _cand = os.path.join(_build_root, _slug)
+                    if os.path.isdir(_cand):
+                        _phase_dir = _cand
+            except (OSError, json.JSONDecodeError, KeyError):
+                pass
+            if not _phase_dir:
+                try:
+                    _subs = [os.path.join(_build_root, d) for d in os.listdir(_build_root)
+                             if os.path.isdir(os.path.join(_build_root, d))]
+                    if _subs:
+                        _phase_dir = max(_subs, key=os.path.getmtime)
+                except OSError:
+                    pass
+        if _phase_dir:
+            for _ic in ["infra/docker-compose.yml", "infra/docker-compose.yaml",
+                        "docker-compose.yml", "docker-compose.yaml"]:
+                _full = os.path.join(_phase_dir, _ic)
+                if os.path.exists(_full):
+                    compose_path = _full
+                    compose_rel = _ic
+                    result["scan_root"] = _phase_dir
+                    break
+
+    # 2. Fall back to repo_root scan if nothing found in 15-build
+    if not compose_path:
+        for rel in ["docker-compose.yml", "docker-compose.yaml",
+                    "compose.yml", "compose.yaml",
+                    "infra/docker-compose.yml", "infra/docker-compose.yaml"]:
+            full = os.path.join(repo_root, rel)
+            if os.path.exists(full):
+                compose_path = full
+                compose_rel = rel
+                break
 
     if compose_path:
         result["method"] = "docker-compose"
@@ -1491,7 +1527,11 @@ def _detect_local_run(repo_root, forge_dir=None):
                         in_ports_block = True
                         continue
                     if in_ports_block and _re.match(r'^\s+- ', line):
+                        # Match explicit digit:digit format: "8000:8000"
                         pm = _re.search(r'["\']?(\d+):(\d+)["\']?', line)
+                        if not pm:
+                            # Match ${VAR:-default}:port format
+                            pm = _re.search(r'\$\{[^}]+:-(\d+)\}:(\d+)', line)
                         if pm and current_svc and current_svc["host_port"] is None:
                             hp = int(pm.group(1))
                             current_svc["host_port"] = hp

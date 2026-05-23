@@ -491,7 +491,31 @@ def build_backend_prompt(persona, docs):
             "  - Dependency install step BEFORE COPY . . (Docker layer cache)\n"
             "  - Explicit base image version — never :latest\n"
             "  - Non-root user in runner stage\n"
-            "  - Server binds to 0.0.0.0 (not 127.0.0.1 — Docker won't expose it)"
+            "  - Server binds to 0.0.0.0 (not 127.0.0.1 — Docker won't expose it)\n\n"
+            "PRISMA + ALPINE — MANDATORY (causes PrismaClientInitializationError if missed):\n"
+            "  Alpine Linux does not include OpenSSL. Prisma's query engine requires libssl at both\n"
+            "  build time (for `prisma generate`) and runtime. Missing OpenSSL = crash on startup.\n\n"
+            "  BOTH stages must install it:\n\n"
+            "  FROM node:20-alpine AS builder\n"
+            "  WORKDIR /app\n"
+            "  RUN apk add --no-cache openssl   <- REQUIRED before prisma generate\n"
+            "  COPY package.json ./\n"
+            "  COPY prisma ./prisma/\n"
+            "  RUN npm install --no-audit --no-fund\n"
+            "  COPY . .\n"
+            "  RUN npx prisma generate\n"
+            "  RUN npm run build\n\n"
+            "  FROM node:20-alpine\n"
+            "  WORKDIR /app\n"
+            "  RUN apk add --no-cache openssl   <- REQUIRED at runtime\n"
+            "  ...\n\n"
+            "NODE.JS + TYPESCRIPT API SDK RULES:\n"
+            "  - openai SDK: `timeout` is a RequestOptions arg, NOT a body property:\n"
+            "      WRONG: openai.chat.completions.create({ model, messages, timeout: 10000 })\n"
+            "      RIGHT: openai.chat.completions.create({ model, messages }, { timeout: 10000 })\n"
+            "  - Never pass `npm ci` in Dockerfiles — no lockfile is generated, it will crash\n"
+            "      WRONG: RUN npm ci\n"
+            "      RIGHT: RUN npm install --no-audit --no-fund"
         ),
 
         _section("RULE 4 — LANGUAGE PACKAGE STRUCTURE: NO MISSING INIT FILES"),
@@ -2729,6 +2753,238 @@ def _fix_npm_ci_in_dockerfiles(out_dir):
                     print(_LOG_PREFIX + " [fixup] Replaced npm ci in " + os.path.relpath(fpath, out_dir))
 
 
+def _fix_openssl_in_alpine_dockerfiles(out_dir):
+    """Inject 'RUN apk add --no-cache openssl' into every Alpine stage of Dockerfiles
+    that use Prisma.
+
+    Root cause: node:20-alpine does not ship with OpenSSL. Prisma's query engine links
+    against libssl.so at both build time (prisma generate) and runtime. Without it, the
+    container crashes with:
+        PrismaClientInitializationError: Unable to require libquery_engine-linux-musl-*.node
+        Error loading shared library libssl.so.1.1: No such file or directory
+
+    This fixup is deterministic -- it runs after every build step regardless of what the
+    AI generated. It covers both the builder stage (needed before prisma generate) and the
+    production stage (needed at runtime). Idempotent: skips stages that already have openssl.
+    """
+    import re as _re
+    _OPENSSL_LINE = "RUN apk add --no-cache openssl\n"
+
+    for root, dirs, files in os.walk(out_dir):
+        dirs[:] = [d for d in dirs if d not in ("node_modules", ".git")]
+        for fname in files:
+            if fname != "Dockerfile" and not fname.startswith("Dockerfile."):
+                continue
+            fpath = os.path.join(root, fname)
+            try:
+                with open(fpath, encoding=FILE_ENCODING) as f:
+                    original = f.read()
+            except OSError:
+                continue
+
+            # Only process Alpine-based Dockerfiles that reference Prisma
+            if not _re.search(r"FROM\s+\S*alpine", original, _re.IGNORECASE):
+                continue
+            if "prisma" not in original.lower():
+                continue
+
+            lines = original.splitlines(keepends=True)
+            out_lines = []
+            i = 0
+            injected_stages = 0
+
+            while i < len(lines):
+                line = lines[i]
+                # Detect stage boundary
+                if _re.match(r"^FROM\s+", line.strip(), _re.IGNORECASE):
+                    is_alpine = bool(_re.search(r"alpine", line, _re.IGNORECASE))
+                    out_lines.append(line)
+                    i += 1
+                    # Collect all lines belonging to this stage
+                    stage_buf = []
+                    while i < len(lines) and not _re.match(r"^FROM\s+", lines[i].strip(), _re.IGNORECASE):
+                        stage_buf.append(lines[i])
+                        i += 1
+                    if is_alpine and "openssl" not in "".join(stage_buf).lower():
+                        # Insert after the last WORKDIR line; if none, insert at position 0
+                        insert_idx = 0
+                        for k, sl in enumerate(stage_buf):
+                            if sl.strip().upper().startswith("WORKDIR"):
+                                insert_idx = k + 1
+                        stage_buf.insert(insert_idx, _OPENSSL_LINE)
+                        injected_stages += 1
+                    out_lines.extend(stage_buf)
+                else:
+                    out_lines.append(line)
+                    i += 1
+
+            if injected_stages:
+                with open(fpath, "w", encoding=FILE_ENCODING) as f:
+                    f.writelines(out_lines)
+                print(
+                    _LOG_PREFIX + " [fixup] Injected openssl into "
+                    + str(injected_stages) + " Alpine stage(s) in "
+                    + os.path.relpath(fpath, out_dir)
+                )
+
+
+def _fix_ts_openai_timeout(out_dir):
+    """Fix OpenAI SDK `timeout` passed as body property instead of options argument.
+
+    TypeScript compile error:
+        TS2769: Object literal may only specify known properties, and 'timeout'
+        does not exist in type 'ChatCompletionCreateParamsNonStreaming'.
+
+    Root cause: The OpenAI SDK's create() overloads take timeout in the second
+    argument (RequestOptions), not in the request body. AI consistently generates
+    the wrong form because it pattern-matches against fetch() / axios conventions.
+
+    WRONG: openai.chat.completions.create({ model, messages, timeout: N })
+    RIGHT: openai.chat.completions.create({ model, messages }, { timeout: N })
+
+    This fixup rewrites the wrong form to the right form in all .ts / .js files.
+    It matches the pattern robustly: a closing brace for the body object followed
+    immediately by a timeout property -- then moves it to a second argument.
+    """
+    import re as _re
+
+    # Match: openai.chat.completions.create({...body..., timeout: N, ...})
+    # Capture: everything before timeout in body, the timeout value, everything after
+    _TIMEOUT_IN_BODY = _re.compile(
+        r"(openai(?:\.\w+)*\.create\s*\(\s*\{)(.*?),?\s*timeout\s*:\s*(\d+)([^}]*)\}(\s*\))",
+        _re.DOTALL,
+    )
+
+    def _rewrite(m):
+        prefix = m.group(1)     # openai.chat.completions.create({
+        before = m.group(2).rstrip(", \t\n")  # body props before timeout
+        timeout_val = m.group(3)   # the timeout number
+        after = m.group(4).rstrip(", \t\n")   # body props after timeout
+        close = m.group(5)      # })
+        body_props = (before + after).rstrip(", \t\n")
+        return prefix + body_props + "}\n        , {{ timeout: {val} }}{close}".format(
+            val=timeout_val, close=close.replace(")", ")")
+        )
+
+    for root, dirs, files in os.walk(out_dir):
+        dirs[:] = [d for d in dirs if d not in ("node_modules", ".git")]
+        for fname in files:
+            if not (fname.endswith(".ts") or fname.endswith(".js")):
+                continue
+            fpath = os.path.join(root, fname)
+            try:
+                with open(fpath, encoding=FILE_ENCODING) as f:
+                    original = f.read()
+            except OSError:
+                continue
+            if "timeout" not in original or ".create(" not in original:
+                continue
+            fixed = _TIMEOUT_IN_BODY.sub(_rewrite, original)
+            if fixed != original:
+                with open(fpath, "w", encoding=FILE_ENCODING) as f:
+                    f.write(fixed)
+                print(_LOG_PREFIX + " [fixup] Moved OpenAI SDK timeout to options arg in " + os.path.relpath(fpath, out_dir))
+
+
+def _fix_infra_compose_build_contexts(out_dir):
+    """Fix docker-compose.yml build contexts when they point inside infra/ instead of sibling dirs.
+
+    Root cause: AI generates infra/docker-compose.yml with:
+        backend:
+          build:
+            context: .           <- wrong: builds from infra/, no backend code here
+            dockerfile: backend.Dockerfile
+
+    Correct form (infra/docker-compose.yml runs compose from infra/):
+        backend:
+          build:
+            context: ../backend  <- sibling directory where the actual backend code lives
+            dockerfile: Dockerfile
+
+    This fixup detects compose files in an 'infra' output directory and rewrites any
+    service build context that:
+      - uses '.' or './<name>' (points inside infra/) to '../<name>'
+      - references a <name>.Dockerfile pattern to Dockerfile (the service dir's own Dockerfile)
+
+    It also deletes the misplaced <name>.Dockerfile files from the infra directory since
+    the actual Dockerfile belongs inside each service's directory.
+    """
+    import re as _re
+
+    _KNOWN_SERVICES = {"backend", "frontend", "worker", "api", "web", "app", "jobs", "cron", "celery"}
+
+    infra_dir = os.path.join(out_dir, "infra")
+    if not os.path.isdir(infra_dir):
+        return
+
+    for fname in ("docker-compose.yml", "docker-compose.yaml", "compose.yml", "compose.yaml"):
+        compose_path = os.path.join(infra_dir, fname)
+        if not os.path.exists(compose_path):
+            continue
+        try:
+            with open(compose_path, encoding=FILE_ENCODING) as f:
+                original = f.read()
+        except OSError:
+            continue
+
+        lines = original.splitlines(keepends=True)
+        out_lines = []
+        modified = False
+
+        i = 0
+        while i < len(lines):
+            line = lines[i]
+            stripped = line.rstrip()
+
+            # Detect: context: . or context: ./name or context: name
+            ctx_m = _re.match(r'^(\s+context:\s*)(\./)?([^\s/]+)\s*$', stripped)
+            if ctx_m:
+                prefix = ctx_m.group(1)
+                name = ctx_m.group(3)
+                if name in _KNOWN_SERVICES or name == ".":
+                    svc = name if name != "." else ""
+                    if svc:
+                        new_line = line.replace(stripped, f"{prefix}../{svc}")
+                    else:
+                        # context: . — look back to find service name
+                        new_line = line  # can't reliably fix this without more context
+                    if new_line != line:
+                        out_lines.append(new_line)
+                        modified = True
+                        i += 1
+                        continue
+
+            # Detect: dockerfile: backend.Dockerfile → dockerfile: Dockerfile
+            df_m = _re.match(r'^(\s+dockerfile:\s*)([a-zA-Z0-9_-]+)\.Dockerfile\s*$', stripped)
+            if df_m:
+                new_line = line.replace(stripped, f"{df_m.group(1)}Dockerfile")
+                out_lines.append(new_line)
+                modified = True
+                i += 1
+                continue
+
+            out_lines.append(line)
+            i += 1
+
+        if modified:
+            with open(compose_path, "w", encoding=FILE_ENCODING) as f:
+                f.writelines(out_lines)
+            print(_LOG_PREFIX + " [fixup] Fixed infra/docker-compose.yml build contexts")
+
+        # Delete misplaced <name>.Dockerfile files from infra/ directory.
+        # They belong inside each service dir, not here.
+        for infra_fname in os.listdir(infra_dir):
+            if _re.match(r'^[a-zA-Z0-9_-]+\.Dockerfile$', infra_fname):
+                svc_name = infra_fname.replace(".Dockerfile", "")
+                if svc_name in _KNOWN_SERVICES:
+                    try:
+                        os.remove(os.path.join(infra_dir, infra_fname))
+                        print(_LOG_PREFIX + f" [fixup] Removed misplaced {infra_fname} from infra/ (belongs in {svc_name}/Dockerfile)")
+                    except OSError:
+                        pass
+        break  # Only one compose file expected
+
+
 def _post_generate_fixups(out_dir):
     """Run automatic fixups on generated code after files are written."""
     _delete_vite_artifacts(out_dir)
@@ -2738,6 +2994,9 @@ def _post_generate_fixups(out_dir):
     _ensure_package_dependencies(out_dir)
     _normalize_component_dirs(out_dir)
     _fix_npm_ci_in_dockerfiles(out_dir)
+    _fix_openssl_in_alpine_dockerfiles(out_dir)
+    _fix_ts_openai_timeout(out_dir)
+    _fix_infra_compose_build_contexts(out_dir)
 
 
 # -----------------------------------------------------------------------

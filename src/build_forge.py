@@ -340,6 +340,9 @@ def _hot_deploy_runtime():
                 _sf.write(SERVER_PY_CONTENT)
             # constants.py — copy file directly
             shutil.copy2(constants_src, os.path.join(sd, HOT_DEPLOY_FILES[2]))
+            # build_runner.py — write the injected content (STEPS populated), not the raw source
+            with open(os.path.join(sd, HOT_DEPLOY_FILES[3]), "w", encoding=FILE_ENCODING) as _bf:
+                _bf.write(BUILD_RUNNER_PY_CONTENT)
             copied += 1
         except Exception:
             pass
