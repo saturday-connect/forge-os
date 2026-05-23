@@ -4,36 +4,78 @@
     "backend": {
       "label": "Backend & API",
       "agent": "code-architect",
-      "source_dirs": ["01-requirements", "03-analysis", "04-architecture", "06-engineering"],
+      "source_dirs": [
+        "01-requirements",
+        "02-design",
+        "03-analysis",
+        "04-architecture",
+        "05-delivery",
+        "06-engineering"
+      ],
       "source_files": [],
       "output_dir": "15-build/backend"
     },
     "frontend": {
       "label": "Frontend UI",
       "agent": "frontend-coder",
-      "source_dirs": ["02-design", "01-requirements"],
-      "source_files": ["06-engineering/frontend-spec.md", "04-architecture/system-architecture.md"],
+      "source_dirs": [
+        "01-requirements",
+        "02-design",
+        "03-analysis",
+        "05-delivery"
+      ],
+      "source_files": [
+        "04-architecture/system-architecture.md",
+        "06-engineering/frontend-spec.md",
+        "06-engineering/coding-guidelines.md"
+      ],
       "output_dir": "15-build/frontend"
     },
     "integration": {
       "label": "Integration Layer",
       "agent": "integration-engineer",
-      "source_dirs": ["06-engineering"],
-      "source_files": ["04-architecture/api-design.md"],
+      "source_dirs": [
+        "01-requirements",
+        "03-analysis",
+        "05-delivery",
+        "06-engineering"
+      ],
+      "source_files": [
+        "04-architecture/system-architecture.md",
+        "04-architecture/api-design.md"
+      ],
       "output_dir": "15-build/integration"
     },
     "tests": {
       "label": "Test Suite",
       "agent": "qa-coder",
-      "source_dirs": ["07-quality"],
-      "source_files": ["06-engineering/backend-spec.md", "06-engineering/frontend-spec.md"],
+      "source_dirs": [
+        "04-architecture",
+        "05-delivery",
+        "07-quality"
+      ],
+      "source_files": [
+        "06-engineering/backend-spec.md",
+        "06-engineering/frontend-spec.md",
+        "06-engineering/integration-spec.md",
+        "06-engineering/coding-guidelines.md"
+      ],
       "output_dir": "15-build/tests"
     },
     "infra": {
       "label": "Infrastructure",
       "agent": "devops-coder",
-      "source_dirs": ["04-architecture", "06-engineering", "07-quality", "08-operations"],
-      "source_files": ["01-requirements/prd.md"],
+      "source_dirs": [
+        "04-architecture",
+        "05-delivery",
+        "06-engineering",
+        "07-quality",
+        "08-operations"
+      ],
+      "source_files": [
+        "01-requirements/prd.md",
+        "01-requirements/non-functional-requirements.md"
+      ],
       "output_dir": "15-build/infra"
     }
   }

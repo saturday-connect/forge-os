@@ -2708,12 +2708,45 @@ def _post_generate_fixups(out_dir):
 _API_CONTRACT_FILENAME = "api-contract.md"
 _STEPS_NEEDING_CONTRACT = ("frontend", "integration", "tests")
 
+# Hard prerequisite map: a step will not run unless ALL listed upstream steps
+# have produced generated output. This prevents incoherent stack mismatches
+# (e.g. Python integration code on a Node.js backend) that occur when a step
+# runs before its upstream context exists.
+#
+# Design intent:
+#   - "Build All" runs steps in declared order — prerequisites are always met.
+#   - Individual step re-runs are allowed IF upstream artifacts exist (even from
+#     a previous run). The user is re-generating, not starting from scratch.
+#   - Hard block only when the upstream directory is missing or empty — not when
+#     it might be stale. Staleness is a UX concern (show a warning badge), not
+#     a build-time enforcement concern.
+_STEP_REQUIRES = {
+    "backend":     [],
+    "frontend":    [],                  # reads api-contract but can run independently
+    "integration": ["backend"],         # MUST match backend language/framework
+    "tests":       ["backend"],         # imports must resolve to real backend paths
+    "infra":       ["backend", "frontend"],  # needs both for correct Docker build contexts
+}
+
 
 def run_step(step):
     meta = STEPS.get(step)
     if not meta:
         print(_LOG_PREFIX + " Unknown step: " + step)
         sys.exit(1)
+
+    # Hard prerequisite check — block before doing any work if upstream steps
+    # have not produced output. Prevents stack-incoherent generation (e.g.
+    # Python integration on a Node.js backend).
+    for required in _STEP_REQUIRES.get(step, []):
+        if not collect_built_step(required):
+            msg = (
+                "Cannot run '" + step + "': the '" + required + "' step has not been built yet. "
+                "Run the " + required + " step first, then retry."
+            )
+            save_step_status(step, STATUS_ERROR, error=msg)
+            print(_LOG_PREFIX + " BLOCKED: " + msg)
+            return False
 
     print(_LOG_PREFIX + " Running: " + meta["label"])
     save_step_status(step, STATUS_RUNNING)
@@ -2739,8 +2772,6 @@ def run_step(step):
         if backend_built:
             built_context["backend"] = backend_built
             print(_LOG_PREFIX + " Loaded backend built context (" + str(len(backend_built)) + " chars)")
-        else:
-            print(_LOG_PREFIX + " WARNING: no built backend found — run backend step first for stack-coherent output.")
     if step in _NEEDS_FRONTEND:
         frontend_built = collect_built_step("frontend")
         if frontend_built:
