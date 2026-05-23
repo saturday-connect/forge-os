@@ -2524,11 +2524,12 @@ def run_step(step):
     save_step_status(step, STATUS_COMPLETE, files=file_list)
     print(_LOG_PREFIX + " Done. " + str(len(file_list)) + " files generated.")
 
-    # Pass 1: deterministic fixups (correct AI-generated code mistakes)
+    # Deterministic fixups (correct AI-generated code mistakes)
     _post_generate_fixups(out_dir)
-
-    # Pass 2: build validation (run actual npm build to surface any remaining errors)
-    _validate_build(out_dir, step)
+    # Note: _validate_build() exists for opt-in use but is NOT called automatically.
+    # Running npm install / pip install post-generation triggers macOS TCC permission
+    # prompts (Desktop/Documents/Downloads access) and takes 3-5 min. The prompt
+    # rules are the primary protection against bad generated code.
 
     return True
 
