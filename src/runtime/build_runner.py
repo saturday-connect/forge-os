@@ -2691,6 +2691,44 @@ def _clear_build_validation_error(step):
         _json.dump(status, f, indent=2)
 
 
+def _fix_npm_ci_in_dockerfiles(out_dir):
+    """Replace `npm ci` with `npm install` in all generated Dockerfiles.
+
+    AI-generated projects do not include package-lock.json. `npm ci` requires
+    one and crashes with:
+        npm error `npm ci` can only install with an existing package-lock.json
+
+    This fixup is deterministic — it catches the error regardless of whether
+    the AI followed the prompt rule. Also fixes `COPY package*.json` to
+    `COPY package.json` so Docker never tries to copy a non-existent lockfile.
+
+    Applied to every file named `Dockerfile` or `Dockerfile.*` in the tree.
+    """
+    import re as _re
+    for root, dirs, files in os.walk(out_dir):
+        dirs[:] = [d for d in dirs if d not in ("node_modules", ".git")]
+        for fname in files:
+            if fname == "Dockerfile" or fname.startswith("Dockerfile."):
+                fpath = os.path.join(root, fname)
+                try:
+                    with open(fpath, encoding=FILE_ENCODING) as f:
+                        original = f.read()
+                except OSError:
+                    continue
+
+                fixed = original
+                # Replace `npm ci` (standalone command, not substring of another word)
+                fixed = _re.sub(r'\bnpm ci\b', 'npm install --no-audit --no-fund', fixed)
+                # Replace `COPY package*.json` — the glob copies package-lock.json
+                # if it exists, but npm install --no-audit --no-fund doesn't need it.
+                fixed = _re.sub(r'COPY\s+package\*\.json', 'COPY package.json', fixed)
+
+                if fixed != original:
+                    with open(fpath, "w", encoding=FILE_ENCODING) as f:
+                        f.write(fixed)
+                    print(_LOG_PREFIX + " [fixup] Replaced npm ci in " + os.path.relpath(fpath, out_dir))
+
+
 def _post_generate_fixups(out_dir):
     """Run automatic fixups on generated code after files are written."""
     _delete_vite_artifacts(out_dir)
@@ -2699,6 +2737,7 @@ def _post_generate_fixups(out_dir):
     _fix_ui_component_exports(out_dir)
     _ensure_package_dependencies(out_dir)
     _normalize_component_dirs(out_dir)
+    _fix_npm_ci_in_dockerfiles(out_dir)
 
 
 # -----------------------------------------------------------------------
