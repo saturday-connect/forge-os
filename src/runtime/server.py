@@ -477,6 +477,19 @@ def sync_registry_from_disk(index_data):
 # AI invocation
 # ---------------------------------------------------------------------------
 
+# Prepended to every prompt sent to agy.
+# agy is an agentic tool — without this directive it browses the filesystem,
+# writes files to disk, and outputs action narration instead of content.
+_AGY_OUTPUT_DIRECTIVE = (
+    "IMPORTANT - TEXT OUTPUT MODE:\n"
+    "You are running in non-interactive text-output mode. Your response must be "
+    "plain text written directly to stdout. Do NOT use any tools. Do NOT read files "
+    "from the filesystem. Do NOT write files to disk. Do NOT search directories. "
+    "Do NOT execute commands. Simply output the requested content as formatted text, "
+    "using the === FILENAME === block markers exactly as the prompt specifies.\n"
+    "Begin your response immediately after this line.\n\n"
+)
+
 # CLI diagnostic lines that must never appear in generated document content.
 # Matched against each line; a line is dropped if it starts with or contains
 # any of these substrings.
@@ -501,8 +514,12 @@ def invoke_ai(prompt, tool, model_id):
         tmp_path = t.name
     try:
         if tool == TOOL_ANTIGRAVITY:
-            # agy -p "prompt" — non-interactive print mode, auto-approve tool permissions
-            cmd = [TOOL_ANTIGRAVITY, ANTIGRAVITY_ARG_SKIP_PERMISSIONS, ANTIGRAVITY_ARG_PRINT, prompt]
+            # Constrain agy to text-output mode: directive forces stdout-only response,
+            # --add-dir scopes workspace to FORGE_DIR, prevents scanning ~/Projects etc.
+            agy_prompt = _AGY_OUTPUT_DIRECTIVE + prompt
+            cmd = [TOOL_ANTIGRAVITY, ANTIGRAVITY_ARG_SKIP_PERMISSIONS,
+                   "--add-dir", FORGE_DIR,
+                   ANTIGRAVITY_ARG_PRINT, agy_prompt]
         elif tool == TOOL_GEMINI:
             cmd = [TOOL_GEMINI, GEMINI_ARG_SKIP_TRUST]
             if model_id:
@@ -2822,7 +2839,10 @@ class ForgeHandler(BaseHTTPRequestHandler):
                         tmp_path = t.name
 
                     if tool == TOOL_ANTIGRAVITY:
-                        cmd = [TOOL_ANTIGRAVITY, ANTIGRAVITY_ARG_SKIP_PERMISSIONS, ANTIGRAVITY_ARG_PRINT, prompt]
+                        agy_prompt = _AGY_OUTPUT_DIRECTIVE + prompt
+                        cmd = [TOOL_ANTIGRAVITY, ANTIGRAVITY_ARG_SKIP_PERMISSIONS,
+                               "--add-dir", FORGE_DIR,
+                               ANTIGRAVITY_ARG_PRINT, agy_prompt]
                     elif tool == TOOL_GEMINI:
                         cmd = [TOOL_GEMINI, GEMINI_ARG_SKIP_TRUST] + ([GEMINI_ARG_MODEL, model_id] if model_id else []) + [GEMINI_ARG_PROMPT, prompt]
                     elif tool == TOOL_CLAUDE:

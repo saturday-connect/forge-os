@@ -116,8 +116,19 @@ def invoke_ai(prompt, tool, model_id):
     with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".txt", encoding=FILE_ENCODING) as tmp:
         tmp_path = tmp.name
     try:
+        _AGY_DIRECTIVE = (
+            "IMPORTANT - TEXT OUTPUT MODE:\n"
+            "You are running in non-interactive text-output mode. Your response must be "
+            "plain text written directly to stdout. Do NOT use any tools. Do NOT read files "
+            "from the filesystem. Do NOT write files to disk. Do NOT search directories. "
+            "Do NOT execute commands. Simply output the requested content as formatted text, "
+            "using the === FILENAME === block markers exactly as the prompt specifies.\n"
+            "Begin your response immediately after this line.\n\n"
+        )
         if tool == TOOL_ANTIGRAVITY:
-            cmd = [TOOL_ANTIGRAVITY, ANTIGRAVITY_ARG_SKIP_PERMISSIONS, ANTIGRAVITY_ARG_PRINT, prompt]
+            cmd = [TOOL_ANTIGRAVITY, ANTIGRAVITY_ARG_SKIP_PERMISSIONS,
+                   "--add-dir", FORGE_DIR,
+                   ANTIGRAVITY_ARG_PRINT, _AGY_DIRECTIVE + prompt]
         elif tool == TOOL_GEMINI:
             cmd = [TOOL_GEMINI, GEMINI_ARG_SKIP_TRUST]
             if model_id:
@@ -126,7 +137,9 @@ def invoke_ai(prompt, tool, model_id):
         elif tool == TOOL_CLAUDE:
             cmd = [TOOL_CLAUDE, CLAUDE_ARG_PROMPT, prompt, CLAUDE_ARG_OUTPUT_FORMAT, CLAUDE_OUTPUT_TEXT]
         else:
-            cmd = [TOOL_ANTIGRAVITY, ANTIGRAVITY_ARG_SKIP_PERMISSIONS, ANTIGRAVITY_ARG_PRINT, prompt]
+            cmd = [TOOL_ANTIGRAVITY, ANTIGRAVITY_ARG_SKIP_PERMISSIONS,
+                   "--add-dir", FORGE_DIR,
+                   ANTIGRAVITY_ARG_PRINT, _AGY_DIRECTIVE + prompt]
         with open(tmp_path, "w", encoding=FILE_ENCODING) as out_f:
             result = subprocess.run(cmd, stdout=out_f, stderr=subprocess.PIPE, timeout=GENERATE_TIMEOUT_SECS,
                                     cwd=FORGE_DIR)  # pin cwd — prevents AI CLI scanning ~ or Desktop for context

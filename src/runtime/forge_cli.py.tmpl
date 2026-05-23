@@ -194,6 +194,20 @@ GEMINI_AUTH_CONFIRMATION = "y\n"
 ERROR_GEMINI_AUTH_REQUIRED = "Gemini CLI is waiting for browser authentication. Complete the browser sign-in that Gemini opened, then retry generation."
 ERROR_GEMINI_AUTH_TIMEOUT = "Gemini browser authentication did not complete before the generation timeout. Run `gemini` in Terminal, finish sign-in, then retry generation."
 ERROR_AGY_NOT_FOUND = "Antigravity CLI (agy) not found. Install it from https://agy.sh then retry."
+
+# Prepended to every prompt sent to agy.
+# agy is an agentic tool — without this directive it browses the filesystem,
+# writes files to disk, and outputs action narration instead of content.
+# This forces it into text-output mode: content goes to stdout, no tool use.
+_AGY_OUTPUT_DIRECTIVE = (
+    "IMPORTANT - TEXT OUTPUT MODE:\n"
+    "You are running in non-interactive text-output mode. Your response must be "
+    "plain text written directly to stdout. Do NOT use any tools. Do NOT read files "
+    "from the filesystem. Do NOT write files to disk. Do NOT search directories. "
+    "Do NOT execute commands. Simply output the requested content as formatted text, "
+    "using the === FILENAME === block markers exactly as the prompt specifies.\n"
+    "Begin your response immediately after this line.\n\n"
+)
 ERROR_AI_QUOTA_LIMIT = "The AI request failed because the model quota or rate limit was reached. Wait a few minutes, then retry."
 ERROR_AI_GENERATION_TIMEOUT = "The AI model did not respond before the generation timeout. Check Gemini CLI authentication or quota, then retry."
 ERROR_AI_GENERATION_FAILED = "The AI model returned an error. It may have reached its usage limit. Wait a minute and try again."
@@ -436,10 +450,17 @@ def invoke_model(prompt, output_path):
             log_error(f"Unsupported model '{{model_id}}' for tool '{{tool}}'. Aborting.")
             sys.exit(1)
         if tool == "agy":
-            # Antigravity CLI: agy --dangerously-skip-permissions -p "prompt"
+            # agy is agentic — it browses the filesystem and writes files unless
+            # constrained. We:
+            #   1. Prepend _AGY_OUTPUT_DIRECTIVE to force stdout text-output mode
+            #   2. Scope workspace to FORGE_DIR only via --add-dir
+            #   3. Pin cwd to FORGE_DIR so relative paths resolve correctly
+            agy_prompt = _AGY_OUTPUT_DIRECTIVE + prompt
             with open(tmp_path, 'w', encoding='utf-8') as out_f:
                 subprocess.run(
-                    ["agy", "--dangerously-skip-permissions", "-p", prompt],
+                    ["agy", "--dangerously-skip-permissions",
+                     "--add-dir", FORGE_DIR,
+                     "-p", agy_prompt],
                     stdout=out_f, stderr=subprocess.PIPE,
                     timeout=AI_GENERATION_TIMEOUT_SECS, check=True,
                     cwd=FORGE_DIR,  # pin cwd — prevents agy scanning ~/ or Desktop for context
