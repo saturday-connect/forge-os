@@ -529,7 +529,8 @@ async function ensureOrgConfigPublished(token, orgLogin, config) {
 
 function runForgeCommand(projectRoot, command) {
   return new Promise((resolve, reject) => {
-    const proc = spawn('python3', [forgeBinaryPath(), '--project', projectRoot, command], {
+    const proc = spawn(PYTHON3 || 'python3', [forgeBinaryPath(), '--project', projectRoot, command], {
+      cwd: os.homedir(),  // pin cwd — never inherit Electron launch dir (may be Desktop)
       stdio: 'inherit'
     })
     proc.on('close', code => code === 0 ? resolve() : reject(new Error(`forge ${command} failed (exit ${code})`)))
@@ -1978,6 +1979,7 @@ if (!app.requestSingleInstanceLock()) {
           data_dir: newDir
         }, null, 2), { mode: 0o600 })
         execFileSync(PYTHON3 || 'python3', [forgeBinaryPath(), 'init'], {
+          cwd: os.homedir(),  // pin cwd — prevent forge from scanning Desktop for context
           stdio: 'ignore',
           env: { ...process.env, FORGE_REPO_ROOT: newDir }
         })
@@ -2012,6 +2014,7 @@ if (!app.requestSingleInstanceLock()) {
     }
     try {
       execFileSync(PYTHON3 || 'python3', [forgeBinaryPath(), 'upgrade'], {
+        cwd: os.homedir(),  // pin cwd — prevent forge from scanning Desktop for context
         stdio: 'ignore',
         env: { ...process.env, FORGE_REPO_ROOT: forgeDataDir }
       })
