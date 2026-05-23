@@ -79,6 +79,144 @@ def save_step_status(step, status_val, files=None, error=None):
     with open(BUILD_STATUS_FILE, "w", encoding=FILE_ENCODING) as f:
         json.dump(status, f, indent=2)
 
+def collect_built_step(step, max_chars=6000):
+    """Read actual generated files from a completed build step.
+
+    Downstream steps (integration, tests, infra) call this to understand what
+    was ACTUALLY built in upstream steps — language, framework, file structure,
+    package manifests — so they can generate coherent, matching code.
+
+    Priority order: manifest/config files first (package.json, requirements.txt,
+    go.mod, etc.), then source files. Total output is capped at max_chars to
+    avoid token explosion.
+    """
+    # Resolve step output dir — same logic as run_step()
+    if ACTIVE_PHASE_ID:
+        step_dir = os.path.join(FORGE_DIR, DIR_BUILD, ACTIVE_PHASE_ID, step)
+    else:
+        step_dir = os.path.join(FORGE_DIR, DIR_BUILD, step)
+
+    if not os.path.isdir(step_dir):
+        return ""
+
+    # Files to always read first — stack identification depends on these
+    _MANIFEST_PRIORITY = (
+        "package.json", "requirements.txt", "go.mod", "Cargo.toml", "Gemfile",
+        "pom.xml", "build.gradle", "pyproject.toml",
+        "docker-compose.yml", "Dockerfile",
+        "api-contract.md", ".env.example",
+    )
+    # Directories that are never useful as context
+    _SKIP_DIRS = {"node_modules", ".git", "__pycache__", ".next", "dist", "build", ".venv"}
+    # Extensions worth reading
+    _CODE_EXTS = {".ts", ".tsx", ".js", ".py", ".go", ".rs", ".rb", ".java", ".yaml", ".yml", ".toml", ".md"}
+
+    # Walk and collect all candidate files
+    all_files = {}
+    for root, dirs, fnames in os.walk(step_dir):
+        dirs[:] = [d for d in dirs if d not in _SKIP_DIRS]
+        for fname in fnames:
+            ext = os.path.splitext(fname)[1].lower()
+            if ext in _CODE_EXTS or fname in _MANIFEST_PRIORITY:
+                fpath = os.path.join(root, fname)
+                rel = os.path.relpath(fpath, step_dir)
+                all_files[rel] = fpath
+
+    def _sort_key(rel):
+        base = os.path.basename(rel)
+        for i, pat in enumerate(_MANIFEST_PRIORITY):
+            if base == pat:
+                return (0, i, rel)
+        return (1, 0, rel)
+
+    parts = []
+    total = 0
+    for rel in sorted(all_files, key=_sort_key):
+        if total >= max_chars:
+            break
+        try:
+            with open(all_files[rel], encoding=FILE_ENCODING, errors="replace") as f:
+                content = f.read()
+        except OSError:
+            continue
+        remaining = max_chars - total
+        if len(content) > remaining:
+            content = content[:remaining] + "\n... (truncated)"
+        snippet = "=== " + step + "/" + rel + " ===\n" + content
+        parts.append(snippet)
+        total += len(snippet)
+
+    return "\n\n".join(parts)
+
+
+def _extract_stack_summary(backend_built, frontend_built=""):
+    """Identify language, framework, and test tooling from built step artifacts.
+
+    Returns a concise paragraph the AI must read before generating downstream
+    steps, e.g.:
+      'Backend: Node.js / Next.js (TypeScript). Frontend: React (TypeScript).
+       Test stack: Jest + React Testing Library. DB: PostgreSQL / Prisma.'
+    """
+    lines = []
+
+    def _detect(built_text, label):
+        if not built_text:
+            return
+        t = built_text.lower()
+        lang = "unknown"
+        fw = ""
+        if '"next"' in t or "'next'" in t or "next.js" in t:
+            lang, fw = "Node.js", "Next.js"
+        elif "express" in t or '"express"' in t:
+            lang, fw = "Node.js", "Express"
+        elif "fastify" in t:
+            lang, fw = "Node.js", "Fastify"
+        elif "nestjs" in t or '"@nestjs' in t:
+            lang, fw = "Node.js", "NestJS"
+        elif "fastapi" in t or "uvicorn" in t:
+            lang, fw = "Python", "FastAPI"
+        elif "django" in t:
+            lang, fw = "Python", "Django"
+        elif "flask" in t:
+            lang, fw = "Python", "Flask"
+        elif "gin-gonic" in t or "github.com/gin" in t:
+            lang, fw = "Go", "Gin"
+        elif "module main" in t or "go.mod" in t:
+            lang, fw = "Go", ""
+        elif "rails" in t:
+            lang, fw = "Ruby", "Rails"
+        elif "spring" in t:
+            lang, fw = "Java", "Spring Boot"
+        elif "actix" in t or "tokio" in t:
+            lang, fw = "Rust", "Actix"
+
+        ts = " (TypeScript)" if ("typescript" in t or '"tsx"' in t or ".tsx" in t or "tsconfig" in t) else ""
+        desc = lang + (" / " + fw if fw else "") + ts
+        lines.append(label + ": " + desc)
+
+        # DB hints
+        if "prisma" in t:
+            lines.append("  ORM: Prisma")
+        elif "sqlalchemy" in t:
+            lines.append("  ORM: SQLAlchemy")
+        elif "typeorm" in t:
+            lines.append("  ORM: TypeORM")
+        elif "sequelize" in t:
+            lines.append("  ORM: Sequelize")
+
+        # Test tooling hints
+        if "jest" in t:
+            lines.append("  Test runner: Jest")
+        elif "vitest" in t:
+            lines.append("  Test runner: Vitest")
+        elif "pytest" in t:
+            lines.append("  Test runner: pytest")
+
+    _detect(backend_built, "Backend")
+    _detect(frontend_built, "Frontend")
+    return "\n".join(lines) if lines else "Stack: not yet detected — read the built code below."
+
+
 def collect_docs(meta):
     docs = []
     for dir_name in meta.get("source_dirs", []):
@@ -820,13 +958,26 @@ def build_frontend_prompt(persona, docs, api_contract):
     ]
     return "\n\n".join(parts)
 
-def build_integration_prompt(persona, docs, api_contract):
+def build_integration_prompt(persona, docs, api_contract, backend_built=""):
     contract_block = _contract_block(api_contract, "BACKEND API CONTRACT")
+    stack_summary = _extract_stack_summary(backend_built)
     parts = [persona]
     if _phase_context_block():
         parts.append(_phase_context_block())
     parts += [
-        _section("PRIMARY DIRECTIVE — READ THIS FIRST"),
+        _section("STEP ZERO — IDENTIFY THE STACK FROM THE BUILT BACKEND CODE"),
+        (
+            "Before writing a single line, read the BUILT BACKEND CODE section at the bottom of this prompt.\n"
+            "The integration layer MUST be written in the SAME language and framework as the backend.\n"
+            "If the backend is Node.js/TypeScript — integration is TypeScript.\n"
+            "If the backend is Python/FastAPI — integration is Python.\n"
+            "If the backend is Go — integration is Go.\n"
+            "NEVER generate Python integration code for a Node.js backend, or vice versa.\n\n"
+            "Detected stack (verify against the built code below):\n"
+            + stack_summary
+        ),
+
+        _section("PRIMARY DIRECTIVE"),
         (
             "You are generating production-grade integration code that must work correctly "
             "on the FIRST attempt inside a Docker Linux container with ZERO post-generation fixes.\n\n"
@@ -835,11 +986,19 @@ def build_integration_prompt(persona, docs, api_contract):
             "Every rule below exists because ignoring it causes a runtime failure or a security breach."
         ),
 
-        _section("MANDATORY REQUIRED FILES — GENERATE ALL OF THESE"),
+        _section("MANDATORY REQUIRED FILES — MATCH THE BACKEND STACK"),
         (
-            "A missing file is a build failure. Generate ALL that apply to the spec:\n\n"
-            "  app/integrations/__init__.py      — package init\n"
-            "  app/integrations/<service>.py     — one file per third-party service\n"
+            "A missing file is a build failure. Generate ALL that apply to the spec.\n"
+            "File paths and structure MUST match the backend's language and framework:\n\n"
+            "  Node.js/TypeScript backend:\n"
+            "    src/integrations/<service>.ts     — one file per third-party service\n"
+            "    src/routes/webhooks.ts            — inbound webhook router (signature-verified)\n"
+            "    package.json additions            — every new SDK package\n"
+            "    .env.example additions            — every new credential needed\n"
+            "    tests/<service>.test.ts           — at minimum a smoke test per integration\n\n"
+            "  Python backend:\n"
+            "    app/integrations/__init__.py      — package init\n"
+            "    app/integrations/<service>.py     — one file per third-party service\n"
             "  app/routers/webhooks.py           — inbound webhook router (signature-verified)\n"
             "  requirements.txt additions        — every new SDK package, pinned\n"
             "  .env.example additions            — every new credential needed\n"
@@ -940,51 +1099,79 @@ def build_integration_prompt(persona, docs, api_contract):
             "so a retry uses the same key rather than generating a new one."
         ),
 
-        _section("RULE 6 — REQUIREMENTS.TXT: EVERY SDK MUST BE DECLARED"),
+        _section("RULE 6 — DEPENDENCY MANIFEST: EVERY SDK MUST BE DECLARED"),
         (
-            "Every SDK imported in any integration file MUST be in requirements.txt.\n"
-            "Common packages to add when they appear in imports:\n"
-            "  stripe>=8.0.0\n"
-            "  slack_sdk>=3.27.0\n"
-            "  sendgrid>=6.11.0\n"
-            "  twilio>=9.0.0\n"
-            "  boto3>=1.34.0\n"
-            "  google-cloud-storage>=2.15.0\n"
-            "  tenacity>=8.2.0        — for retry logic\n"
-            "  httpx>=0.27.0          — for any direct HTTP calls\n\n"
-            "RULE: walk every `import X` and `from X import Y` in every integration file. "
-            "If X is not stdlib, it MUST be in requirements.txt."
+            "Every SDK imported in any integration file MUST be declared in the dependency manifest "
+            "that matches the backend language:\n\n"
+            "  Node.js  → package.json (dependencies, not devDependencies)\n"
+            "  Python   → requirements.txt with pinned minimum versions\n"
+            "  Go       → go.mod (run go get <pkg>@version)\n\n"
+            "Common SDKs to add when they appear in imports (use the correct package for your language):\n"
+            "  Stripe     → stripe (Node) / stripe>=8.0.0 (Python)\n"
+            "  Slack      → @slack/web-api (Node) / slack_sdk>=3.27.0 (Python)\n"
+            "  SendGrid   → @sendgrid/mail (Node) / sendgrid>=6.11.0 (Python)\n"
+            "  Twilio     → twilio (Node) / twilio>=9.0.0 (Python)\n"
+            "  AWS        → @aws-sdk/client-s3 (Node) / boto3>=1.34.0 (Python)\n\n"
+            "RULE: walk every import in every integration file. "
+            "If it is not stdlib/built-in, it MUST be in the manifest."
         ),
 
         _section("RULE 7 — EVERY IMPORT MUST RESOLVE"),
         (
             "Before finalising output, for every file you generate:\n\n"
-            "1. Every `from app.X import Y` — does app/X.py exist? Does it export Y?\n"
-            "2. Every `from .X import Y` (relative) — is X in the same package? Does it export Y?\n"
-            "3. Every third-party import — is the package in requirements.txt?\n"
-            "4. All integration functions used in routers — are they imported at the top of the router file?\n\n"
-            "An unresolved import crashes the FastAPI app on startup with ImportError. "
+            "1. Every local import — does the referenced file exist in the generated output?\n"
+            "2. Every relative import — is the module in the same package/directory?\n"
+            "3. Every third-party import — is the package declared in the dependency manifest?\n"
+            "4. All integration functions used in routes/routers — are they imported at the top of the router file?\n\n"
+            "An unresolved import crashes the server on startup. "
             "There is no graceful degradation — the entire server fails to start."
         ),
 
         COMMON_FORMAT_RULE,
         contract_block,
+    ]
+    if backend_built:
+        parts += [
+            _section("BUILT BACKEND CODE — READ THIS TO MATCH THE STACK"),
+            (
+                "This is the ACTUAL generated backend code. "
+                "Your integration MUST use the same language, framework, file structure, "
+                "and import patterns shown here. Do NOT deviate.\n\n"
+                + backend_built
+            ),
+        ]
+    parts += [
         _section("SPECIFICATION DOCUMENTS"),
         docs,
     ]
     return "\n\n".join(parts)
 
-def build_tests_prompt(persona, docs, api_contract):
+def build_tests_prompt(persona, docs, api_contract, backend_built="", frontend_built=""):
     contract_block = _contract_block(api_contract, "BACKEND API CONTRACT — TEST THESE EXACT ENDPOINTS")
+    stack_summary = _extract_stack_summary(backend_built, frontend_built)
     parts = [persona]
     if _phase_context_block():
         parts.append(_phase_context_block())
     parts += [
-        _section("PRIMARY DIRECTIVE — READ THIS FIRST"),
+        _section("STEP ZERO — IDENTIFY THE STACK FROM THE BUILT CODE"),
         (
-            "You are generating a production-grade test suite that must run `pytest` to exit 0 "
-            "and `npm test` to pass on the FIRST attempt inside a Docker Linux container, "
-            "with ZERO post-generation fixes.\n\n"
+            "Before writing a single line, read the BUILT BACKEND CODE and BUILT FRONTEND CODE sections "
+            "at the bottom of this prompt.\n"
+            "Your test suite MUST use the test frameworks that match the actual built stack:\n\n"
+            "  Node.js/TypeScript backend → Jest or Vitest (NOT pytest)\n"
+            "  Python backend             → pytest with pytest-asyncio (NOT Jest)\n"
+            "  Go backend                 → testing package + testify (NOT pytest or Jest)\n"
+            "  React/Next.js frontend     → Testing Library + Vitest or Jest\n\n"
+            "NEVER generate pytest tests for a Node.js backend.\n"
+            "NEVER generate Jest tests for a Python backend.\n\n"
+            "Detected stack (verify against the built code below):\n"
+            + stack_summary
+        ),
+
+        _section("PRIMARY DIRECTIVE"),
+        (
+            "You are generating a production-grade test suite that must pass on the FIRST attempt "
+            "inside a Docker Linux container with ZERO post-generation fixes.\n\n"
             "The definition of success: `make test` in CI exits 0 with coverage reported.\n\n"
             "Every rule below exists because ignoring it causes test collection failure or "
             "silent test skips that hide real bugs."
@@ -1090,20 +1277,19 @@ def build_tests_prompt(persona, docs, api_contract):
             "  cd backend && pytest  ← ensures `from app.X` resolves correctly"
         ),
 
-        _section("RULE 6 — REQUIREMENTS-DEV.TXT: ALL TEST DEPS MUST BE DECLARED"),
+        _section("RULE 6 — TEST DEPENDENCY MANIFEST: ALL TEST DEPS MUST BE DECLARED"),
         (
-            "Generate a separate requirements-dev.txt for test-only packages.\n"
-            "The CI pipeline runs `pip install -r requirements-dev.txt` before running tests.\n\n"
-            "MANDATORY entries:\n"
-            "  pytest>=8.0.0\n"
-            "  pytest-asyncio>=0.23.0\n"
-            "  httpx>=0.27.0           — for AsyncClient (NOT requests)\n"
-            "  anyio>=4.3.0\n"
-            "  faker>=24.0.0           — if generating test data\n"
-            "  pytest-cov>=5.0.0       — for coverage reporting\n"
-            "  factory-boy>=3.3.0      — if using model factories\n\n"
-            "requirements-dev.txt should also include `-r requirements.txt` at the top "
-            "so the test environment has all production packages too."
+            "Declare test-only dependencies separately from production dependencies.\n"
+            "Match the backend language:\n\n"
+            "  Node.js → package.json devDependencies (jest, vitest, @testing-library/react, etc.)\n"
+            "  Python  → requirements-dev.txt (separate file, include `-r requirements.txt` at top)\n"
+            "  Go      → go.mod (testify, gomock — no separate file needed)\n\n"
+            "Python MANDATORY dev deps:\n"
+            "  pytest>=8.0.0, pytest-asyncio>=0.23.0, httpx>=0.27.0, anyio>=4.3.0,\n"
+            "  faker>=24.0.0, pytest-cov>=5.0.0\n\n"
+            "Node.js MANDATORY dev deps:\n"
+            "  jest or vitest, @testing-library/react (if frontend), supertest (if API tests),\n"
+            "  @types/jest, ts-jest or vitest config"
         ),
 
         _section("RULE 7 — PLAYWRIGHT E2E: COMPLETE SETUP IF SPECIFIED"),
@@ -1112,7 +1298,6 @@ def build_tests_prompt(persona, docs, api_contract):
             "Partial Playwright setup is worse than none — it causes CI to hang.\n\n"
             "REQUIRED files:\n"
             "  playwright.config.ts      — base URL, browser targets, test dir\n"
-            "  tests/e2e/               — all E2E test files\n"
             "  tests/e2e/<flow>.spec.ts — one file per user journey\n\n"
             "playwright.config.ts MINIMUM:\n"
             "  export default defineConfig({\n"
@@ -1124,24 +1309,43 @@ def build_tests_prompt(persona, docs, api_contract):
             "      reuseExistingServer: !process.env.CI,\n"
             "    },\n"
             "  });\n\n"
-            "Add to package.json devDependencies:\n"
-            "  '@playwright/test': '^1.44.0'"
+            "Add to package.json devDependencies: '@playwright/test': '^1.44.0'"
         ),
 
         _section("RULE 8 — EVERY IMPORT MUST RESOLVE IN TEST FILES"),
         (
             "Test files have the same import correctness requirement as production code.\n\n"
             "Before finalising each test file:\n"
-            "  1. Every `from app.X import Y` — does the backend generate app/X.py with Y exported?\n"
-            "  2. Every pytest fixture used — is it defined in conftest.py or imported?\n"
-            "  3. Every factory class — is it defined in the same or an imported file?\n"
-            "  4. Every package imported — is it in requirements-dev.txt?\n\n"
-            "A missing import causes `ERROR collecting tests/test_X.py` — "
-            "no tests run at all, CI fails silently."
+            "  1. Every local import — does the referenced module exist in the built backend/frontend?\n"
+            "  2. Every test fixture/helper — is it defined in conftest.py (Python) or a shared setup file (Node)?\n"
+            "  3. Every package imported — is it in the test dependency manifest?\n"
+            "  4. Import paths must match the ACTUAL file structure in the built code, not assumed paths.\n\n"
+            "A missing import causes complete test collection failure — no tests run, CI fails silently."
         ),
 
         COMMON_FORMAT_RULE,
         contract_block,
+    ]
+    if backend_built:
+        parts += [
+            _section("BUILT BACKEND CODE — MATCH YOUR TESTS TO THIS STRUCTURE"),
+            (
+                "This is the ACTUAL generated backend. "
+                "Your tests MUST import from these exact paths, use these exact function/class names, "
+                "and use the test framework that matches this stack.\n\n"
+                + backend_built
+            ),
+        ]
+    if frontend_built:
+        parts += [
+            _section("BUILT FRONTEND CODE — MATCH YOUR E2E / COMPONENT TESTS TO THIS"),
+            (
+                "This is the ACTUAL generated frontend. "
+                "Component and E2E tests must reference these exact component names and routes.\n\n"
+                + frontend_built
+            ),
+        ]
+    parts += [
         _section("SPECIFICATION DOCUMENTS"),
         docs,
     ]
@@ -1190,7 +1394,7 @@ def _infra_layout_block():
     return _section("REPOSITORY LAYOUT — READ BEFORE GENERATING ANYTHING") + "\n" + "\n".join(lines)
 
 
-def build_infra_prompt(persona, docs, api_contract):
+def build_infra_prompt(persona, docs, api_contract, backend_built="", frontend_built=""):
     contract_block = _contract_block(api_contract, "API CONTRACT (use to derive all required env vars and service dependencies)")
     parts = [persona]
     if _phase_context_block():
@@ -1449,18 +1653,45 @@ def build_infra_prompt(persona, docs, api_contract):
         ),
         COMMON_FORMAT_RULE,
         contract_block,
+    ]
+    if backend_built:
+        parts += [
+            _section("BUILT BACKEND CODE — USE THIS TO DERIVE EXACT DOCKER CONTEXT AND ENV VARS"),
+            (
+                "This is the ACTUAL generated backend. Read package.json / requirements.txt / go.mod "
+                "to identify the language, framework, and all required environment variables. "
+                "Your Dockerfiles and docker-compose must match this exactly.\n\n"
+                + backend_built
+            ),
+        ]
+    if frontend_built:
+        parts += [
+            _section("BUILT FRONTEND CODE — USE THIS TO DERIVE FRONTEND DOCKER CONTEXT AND BUILD ARGS"),
+            (
+                "This is the ACTUAL generated frontend. Read package.json for the build command "
+                "and identify the correct Node.js version and build output directory.\n\n"
+                + frontend_built
+            ),
+        ]
+    parts += [
         _section("SPECIFICATION DOCUMENTS (read all of these to derive the infra)"),
         docs,
     ]
     return "\n\n".join(parts)
 
-def build_prompt_for_step(step, persona, docs, api_contract):
+def build_prompt_for_step(step, persona, docs, api_contract, built_context=None):
+    built_context = built_context or {}
     _prompt_builders = {
         "backend": lambda: build_backend_prompt(persona, docs),
         "frontend": lambda: build_frontend_prompt(persona, docs, api_contract),
-        "integration": lambda: build_integration_prompt(persona, docs, api_contract),
-        "tests": lambda: build_tests_prompt(persona, docs, api_contract),
-        "infra": lambda: build_infra_prompt(persona, docs, api_contract),
+        "integration": lambda: build_integration_prompt(persona, docs, api_contract,
+                                                        backend_built=built_context.get("backend", "")),
+        "tests": lambda: build_tests_prompt(persona, docs, api_contract,
+                                            backend_built=built_context.get("backend", ""),
+                                            frontend_built=built_context.get("frontend", "")),
+        "infra": lambda: build_infra_prompt(persona, docs, api_contract,
+                                            backend_built=built_context.get("backend", ""),
+                                            frontend_built=built_context.get("frontend", "")),
     }
     builder = _prompt_builders.get(step)
     if builder:
@@ -2498,8 +2729,26 @@ def run_step(step):
     if step in _STEPS_NEEDING_CONTRACT and not api_contract:
         print(_LOG_PREFIX + " WARNING: api-contract.md not found — run backend step first for fully connected output.")
 
+    # Collect actual generated output from upstream steps so downstream steps
+    # (integration, tests, infra) can match the real language and framework.
+    _NEEDS_BACKEND = ("integration", "tests", "infra")
+    _NEEDS_FRONTEND = ("tests", "infra")
+    built_context = {}
+    if step in _NEEDS_BACKEND:
+        backend_built = collect_built_step("backend")
+        if backend_built:
+            built_context["backend"] = backend_built
+            print(_LOG_PREFIX + " Loaded backend built context (" + str(len(backend_built)) + " chars)")
+        else:
+            print(_LOG_PREFIX + " WARNING: no built backend found — run backend step first for stack-coherent output.")
+    if step in _NEEDS_FRONTEND:
+        frontend_built = collect_built_step("frontend")
+        if frontend_built:
+            built_context["frontend"] = frontend_built
+            print(_LOG_PREFIX + " Loaded frontend built context (" + str(len(frontend_built)) + " chars)")
+
     persona = load_agent(meta["agent"])
-    prompt = build_prompt_for_step(step, persona, docs, api_contract)
+    prompt = build_prompt_for_step(step, persona, docs, api_contract, built_context)
 
     tool = os.environ.get("FORGE_TOOL", DEFAULT_TOOL)
     model_id = os.environ.get("FORGE_MODEL", "")
