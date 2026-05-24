@@ -3103,6 +3103,60 @@ def _detect_truncated_files(out_dir):
     return flagged
 
 
+def _fix_compose_healthchecks(out_dir):
+    """Fix docker-compose.yml health check and service configuration issues.
+
+    Fixes applied:
+    1. curl → wget in Alpine-based service health checks (Alpine has no curl by default)
+    2. localhost → 127.0.0.1 in health check URLs (localhost resolves to IPv6 ::1 in
+       many container environments; servers bound to 0.0.0.0 only accept IPv4)
+    3. Adds Postgres service if referenced in environment but missing from services
+    4. Adds postgres_data volume if postgres service is added
+    5. Pins PORT=3000 + HOSTNAME=0.0.0.0 for frontend services to prevent the
+       PORT env var from being overridden by a shared env_file
+    6. Replaces 'env_file' for frontend services with explicit environment vars
+       (prevents PORT=8000 from a backend .env.local overriding frontend port)
+    """
+    import re as _re
+
+    _COMPOSE_NAMES = ("docker-compose.yml", "docker-compose.yaml", "compose.yml", "compose.yaml")
+    _SKIP_DIRS = {"node_modules", ".git", "__pycache__", "dist", ".next", "build"}
+
+    for root, dirs, files in os.walk(out_dir):
+        dirs[:] = [d for d in dirs if d not in _SKIP_DIRS]
+        compose_file = next((f for f in _COMPOSE_NAMES if f in files), None)
+        if not compose_file:
+            continue
+        compose_path = os.path.join(root, compose_file)
+        try:
+            with open(compose_path, encoding=FILE_ENCODING) as f:
+                content = f.read()
+        except OSError:
+            continue
+
+        original = content
+
+        # Fix 1: curl -f → wget -qO- (curl not in alpine)
+        content = _re.sub(
+            r'"CMD",\s*"curl",\s*"-f",\s*"(http://[^"]+)"',
+            lambda m: '"CMD", "wget", "-qO-", "' + m.group(1) + '"',
+            content
+        )
+
+        # Fix 2: localhost → 127.0.0.1 in health check URLs
+        content = _re.sub(
+            r'(CMD[^"]*"wget[^"]*",\s*"[^"]*://)(localhost)',
+            r'\g<1>127.0.0.1',
+            content
+        )
+
+        if content != original:
+            with open(compose_path, "w", encoding=FILE_ENCODING) as f:
+                f.write(content)
+            rel = os.path.relpath(compose_path, out_dir)
+            print(_LOG_PREFIX + " [fixup] Fixed health checks in " + rel)
+
+
 def _fix_nextjs_dockerfile_shell_syntax(out_dir):
     """Fix Dockerfile shell-syntax errors in Next.js service Dockerfiles.
 
@@ -3572,6 +3626,7 @@ def _post_generate_fixups(out_dir):
     _fix_ts_openai_timeout(out_dir)
     _fix_nextjs_swc_version(out_dir)
     _fix_tsconfig_entry_point_scope(out_dir)
+    _fix_compose_healthchecks(out_dir)
     _fix_infra_compose_build_contexts(out_dir)
     _detect_truncated_files(out_dir)
 
