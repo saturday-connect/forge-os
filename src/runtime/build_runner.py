@@ -3103,6 +3103,101 @@ def _detect_truncated_files(out_dir):
     return flagged
 
 
+def _fix_nextjs_dockerfile_shell_syntax(out_dir):
+    """Fix Dockerfile shell-syntax errors in Next.js service Dockerfiles.
+
+    Root cause: AI generators sometimes emit single-quoted strings in Dockerfile
+    CMD and ENV directives. Single quotes are not valid JSON-array syntax for CMD,
+    and ENV values with single quotes are literal — the shell never interprets them.
+        CMD ['node', 'server.js']      <- WRONG: single quotes → not exec form
+        ENV HOSTNAME '0.0.0.0'         <- legacy form, works but inconsistent
+    Fix: replace single-quoted CMD/ENV forms with double-quoted exec form.
+
+    Also adds 'RUN mkdir -p /app/public' before npm run build in Next.js builder
+    stages that reference /app/public in the runner COPY directive but don't
+    create the directory. Without this, Docker fails at runner COPY with
+    '"/app/public": not found'.
+    """
+    import re as _re
+
+    _SKIP_DIRS = {"node_modules", ".git", "dist", ".next", "build"}
+
+    for root, dirs, files in os.walk(out_dir):
+        dirs[:] = [d for d in dirs if d not in _SKIP_DIRS]
+        for fname in ("Dockerfile", "dockerfile"):
+            if fname not in files:
+                continue
+            fpath = os.path.join(root, fname)
+            try:
+                with open(fpath, encoding=FILE_ENCODING) as f:
+                    content = f.read()
+            except OSError:
+                continue
+
+            # Only touch Dockerfiles that look like Next.js (standalone output)
+            if ".next/standalone" not in content:
+                continue
+
+            changed = False
+            original = content
+
+            # Fix single-quoted CMD: CMD ['node', 'server.js'] → CMD ["node", "server.js"]
+            def _fix_cmd(m):
+                inner = m.group(1).replace("'", '"')
+                return "CMD [" + inner + "]"
+            content = _re.sub(r"CMD \[([^\]]+)\]", _fix_cmd, content)
+
+            # Fix single-quoted ENV HOSTNAME '...' → ENV HOSTNAME="..."
+            content = _re.sub(
+                r"ENV (HOSTNAME|PORT) '([^']*)'",
+                lambda m: 'ENV ' + m.group(1) + '="' + m.group(2) + '"',
+                content
+            )
+
+            # Ensure mkdir -p /app/public before npm run build if COPY --from=builder /app/public is present
+            if (
+                "COPY --from=builder /app/public" in content
+                and "mkdir -p /app/public" not in content
+            ):
+                content = content.replace(
+                    "RUN npm run build",
+                    "RUN mkdir -p /app/public\nRUN npm run build",
+                    1
+                )
+
+            if content != original:
+                with open(fpath, "w", encoding=FILE_ENCODING) as f:
+                    f.write(content)
+                rel = os.path.relpath(fpath, out_dir)
+                print(_LOG_PREFIX + " [fixup] Fixed Dockerfile shell syntax in " + rel)
+
+
+def _ensure_nextjs_public_dir(out_dir):
+    """Create public/ directory in Next.js projects that are missing it.
+
+    Root cause: AI generators frequently omit the public/ directory from the
+    generated file tree. The Next.js build itself succeeds, but the runner
+    Dockerfile stage tries to COPY --from=builder /app/public which fails
+    with 'not found' if the directory was never created.
+
+    Fix: create public/.gitkeep in any directory that has a next.config.js/mjs
+    but no public/ subdirectory.
+    """
+    _SKIP_DIRS = {"node_modules", ".git", "dist", ".next", "build"}
+    _NEXT_CONFIGS = {"next.config.js", "next.config.mjs", "next.config.ts"}
+
+    for root, dirs, files in os.walk(out_dir):
+        dirs[:] = [d for d in dirs if d not in _SKIP_DIRS]
+        if not any(f in files for f in _NEXT_CONFIGS):
+            continue
+        public_dir = os.path.join(root, "public")
+        if not os.path.isdir(public_dir):
+            os.makedirs(public_dir, exist_ok=True)
+            open(os.path.join(public_dir, ".gitkeep"), "w").close()
+            rel = os.path.relpath(public_dir, out_dir)
+            print(_LOG_PREFIX + " [fixup] Created missing " + rel + "/ directory")
+
+
 def _fix_nextjs_config_build_flags(out_dir):
     """Ensure Next.js config has ignoreBuildErrors and ignoreDuringBuilds set.
 
@@ -3470,6 +3565,8 @@ def _post_generate_fixups(out_dir):
     _fix_npm_ci_in_dockerfiles(out_dir)
     _fix_openssl_in_alpine_dockerfiles(out_dir)
     _ensure_dockerignore(out_dir)
+    _ensure_nextjs_public_dir(out_dir)
+    _fix_nextjs_dockerfile_shell_syntax(out_dir)
     _fix_nextjs_config_build_flags(out_dir)
     _fix_dynamic_export_order(out_dir)
     _fix_ts_openai_timeout(out_dir)
