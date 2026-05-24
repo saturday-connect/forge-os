@@ -3599,6 +3599,195 @@ class ForgeHandler(BaseHTTPRequestHandler):
                 self._json_response(200, resp)
                 return
 
+            if action in ("env_config", "env_save"):
+                # ── Shared: locate compose dir ──────────────────────────────
+                cfg = _detect_local_run(REPO_ROOT, FORGE_DIR)
+                _compose_base = cfg.get("scan_root") or REPO_ROOT
+                compose_abs = (
+                    os.path.join(_compose_base, cfg["compose_file"])
+                    if cfg.get("available") and cfg.get("compose_file")
+                    else None
+                )
+                compose_dir = os.path.dirname(compose_abs) if compose_abs else None
+                phase_dir = (
+                    os.path.dirname(compose_dir)
+                    if compose_dir and os.path.basename(compose_dir) == "infra"
+                    else compose_dir
+                )
+                env_local_path = os.path.join(compose_dir, ".env.local") if compose_dir else None
+
+                # ── Helpers ─────────────────────────────────────────────────
+                def _parse_env_file(path):
+                    """Return list of (comment, key, value). comment is the
+                    immediately preceding # line (stripped), or ''."""
+                    entries = []
+                    last_comment = ""
+                    try:
+                        for raw in open(path, encoding="utf-8").read().splitlines():
+                            s = raw.strip()
+                            if s.startswith("#"):
+                                last_comment = s.lstrip("#").strip()
+                            elif "=" in s and not s.startswith("#"):
+                                k, _, v = s.partition("=")
+                                entries.append((last_comment, k.strip(), v.strip()))
+                                last_comment = ""
+                            else:
+                                last_comment = ""
+                    except OSError:
+                        pass
+                    return entries
+
+                _PH_SIGNALS = [
+                    "placeholder", "your-", "your_", "sk-placeholder",
+                    "change-in-production", "changeme", "change-me",
+                    "local-dev-secret", "insert-here", "replace-me",
+                    "replace_me", "example.com", "add-your",
+                    "your-key", "your-secret", "your-token",
+                ]
+                _AUTO_SIGNALS = [
+                    "localhost", "127.0.0.1", "@postgres:", "@redis:",
+                    "postgresql://postgres:postgres@", "redis://redis:",
+                ]
+                _AUTO_KEYS = {
+                    "NODE_ENV", "PORT", "HOSTNAME", "NEXT_TELEMETRY_DISABLED",
+                    "REDIS_URL", "DATABASE_URL",
+                }
+                _SECRET_HINTS = {
+                    "KEY", "SECRET", "TOKEN", "PASSWORD", "PASS",
+                    "CREDENTIAL", "PRIVATE", "CERT",
+                }
+
+                def _is_placeholder(key, val):
+                    if key in _AUTO_KEYS:
+                        return False
+                    v = (val or "").lower()
+                    if any(s in v for s in _AUTO_SIGNALS):
+                        return False
+                    if not v or any(s in v for s in _PH_SIGNALS):
+                        return True
+                    return False
+
+                def _is_secret(key):
+                    return any(h in key.upper() for h in _SECRET_HINTS)
+
+                # ── env_config ──────────────────────────────────────────────
+                if action == "env_config":
+                    if not compose_dir:
+                        self._json_response(200, {
+                            "vars": [], "placeholder_count": 0,
+                            "env_local_path": "",
+                        })
+                        return
+
+                    # Current values from .env.local
+                    current_vals = {}
+                    for _, k, v in _parse_env_file(env_local_path or ""):
+                        current_vals[k] = v
+
+                    # Gather candidate service dirs to find .env.example files
+                    candidate_dirs = [compose_dir]
+                    if phase_dir and phase_dir != compose_dir:
+                        try:
+                            for entry in os.listdir(phase_dir):
+                                fp = os.path.join(phase_dir, entry)
+                                if os.path.isdir(fp):
+                                    candidate_dirs.append(fp)
+                        except OSError:
+                            pass
+
+                    seen_keys: set = set()
+                    vars_list = []
+
+                    for svc_dir in candidate_dirs:
+                        for fname in (".env.example", ".env.local.example"):
+                            ef = os.path.join(svc_dir, fname)
+                            for comment, key, ex_val in _parse_env_file(ef):
+                                if key in seen_keys:
+                                    continue
+                                seen_keys.add(key)
+                                cur = current_vals.get(key, ex_val)
+                                vars_list.append({
+                                    "key": key,
+                                    "value": cur,
+                                    "is_placeholder": _is_placeholder(key, cur),
+                                    "description": comment,
+                                    "is_secret": _is_secret(key),
+                                })
+
+                    # Include any placeholder vars in .env.local not in any .env.example
+                    for k, v in current_vals.items():
+                        if k not in seen_keys and _is_placeholder(k, v):
+                            vars_list.append({
+                                "key": k,
+                                "value": v,
+                                "is_placeholder": True,
+                                "description": "",
+                                "is_secret": _is_secret(k),
+                            })
+
+                    ph_count = sum(1 for x in vars_list if x["is_placeholder"])
+                    self._json_response(200, {
+                        "vars": vars_list,
+                        "placeholder_count": ph_count,
+                        "env_local_path": env_local_path or "",
+                    })
+                    return
+
+                # ── env_save ────────────────────────────────────────────────
+                if action == "env_save":
+                    if not env_local_path:
+                        self._json_response(400, {"error": "No compose project found"})
+                        return
+                    new_vals = data.get("vars", {}) if data else {}
+                    if not isinstance(new_vals, dict):
+                        self._json_response(400, {"error": "vars must be an object"})
+                        return
+
+                    # Read existing file preserving comments + ordering
+                    existing_lines = []
+                    existing_keys: set = set()
+                    try:
+                        existing_lines = open(
+                            env_local_path, encoding="utf-8"
+                        ).read().splitlines()
+                        for ln in existing_lines:
+                            s = ln.strip()
+                            if "=" in s and not s.startswith("#"):
+                                existing_keys.add(s.partition("=")[0].strip())
+                    except OSError:
+                        pass
+
+                    # Rewrite lines: update existing keys in place
+                    updated_keys: set = set()
+                    out_lines = []
+                    for ln in existing_lines:
+                        s = ln.strip()
+                        if "=" in s and not s.startswith("#"):
+                            k = s.partition("=")[0].strip()
+                            if k in new_vals:
+                                out_lines.append(f"{k}={new_vals[k]}")
+                                updated_keys.add(k)
+                                continue
+                        out_lines.append(ln)
+
+                    # Append new keys not previously in file
+                    for k, v in new_vals.items():
+                        if k not in updated_keys and k not in existing_keys:
+                            out_lines.append(f"{k}={v}")
+
+                    try:
+                        os.makedirs(os.path.dirname(env_local_path), exist_ok=True)
+                        with open(env_local_path, "w", encoding="utf-8") as fh:
+                            fh.write("\n".join(out_lines))
+                            if out_lines and not out_lines[-1].endswith("\n"):
+                                fh.write("\n")
+                        self._json_response(200, {"ok": True, "saved": len(new_vals)})
+                    except OSError as exc:
+                        self._json_response(500, {
+                            "error": f"Could not write {env_local_path}: {exc}"
+                        })
+                    return
+
             if action == "start":
                 # Prevent double-start
                 with _local_run_lock:

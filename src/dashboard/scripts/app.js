@@ -2411,6 +2411,12 @@ function renderLocalRun() {
     : isStopping ? `<span class="badge-local-run badge-local-run--starting">Stopping…</span>`
     : `<span class="badge-local-run">Stopped</span>`;
 
+  const hasPlaceholderWarning = envWarns.length > 0 || (detect.placeholder_count || 0) > 0;
+  const cfgEnvBtn = `<button class="btn btn-ghost btn-sm" onclick="openEnvConfigModal(false)" title="Configure environment variables">
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/><path d="M4.93 4.93a10 10 0 0 0 0 14.14"/></svg>
+    Env
+    ${hasPlaceholderWarning ? `<span class="env-cfg-dot-warn"></span>` : ''}
+  </button>`;
   const ctaBtn = (isRunning || isStarting || isStopping)
     ? `<button class="btn btn-sm" style="background:#ef4444;color:#fff;border-color:#ef4444;" onclick="stopLocalRun()">Stop</button>`
     : blockingErrors.length
@@ -2491,8 +2497,9 @@ function renderLocalRun() {
             </div>
           </div>
         </div>
-        <div style="display:flex;align-items:center;gap:10px;">
+        <div style="display:flex;align-items:center;gap:8px;">
           ${statusBadge}
+          ${cfgEnvBtn}
           ${ctaBtn}
         </div>
       </div>
@@ -2523,7 +2530,170 @@ function renderLocalRun() {
   }
 }
 
+// ── Environment config modal ──────────────────────────────────────────────────
+let _envModalVars = [];
+let _envModalEnvLocalPath = '';
+
+async function openEnvConfigModal(startAfter = false) {
+  try {
+    const r = await apiFetch('/api/local-run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'env_config' }),
+    });
+    const d = await r.json();
+    if (!r.ok) { showToast(d.error || 'Failed to load env config', 'error'); return; }
+    _envModalVars = d.vars || [];
+    _envModalEnvLocalPath = d.env_local_path || '';
+    _renderEnvConfigModal(startAfter);
+  } catch (e) {
+    showToast('Failed to load environment config', 'error');
+  }
+}
+
+function _renderEnvConfigModal(startAfter) {
+  document.getElementById('env-cfg-overlay')?.remove();
+
+  const phVars   = _envModalVars.filter(v => v.is_placeholder);
+  const okVars   = _envModalVars.filter(v => !v.is_placeholder);
+  const hasPlaceholders = phVars.length > 0;
+
+  function _varRow(v) {
+    const inputType = v.is_secret ? 'password' : 'text';
+    const badge = v.is_placeholder
+      ? `<span class="env-cfg-badge env-cfg-badge--needs">needs value</span>`
+      : `<span class="env-cfg-badge env-cfg-badge--ok">configured</span>`;
+    return `
+      <div class="env-cfg-row ${v.is_placeholder ? 'env-cfg-row--ph' : ''}">
+        <div class="env-cfg-row-header">
+          <code class="env-cfg-key">${escapeHtml(v.key)}</code>
+          ${badge}
+        </div>
+        ${v.description ? `<div class="env-cfg-desc">${escapeHtml(v.description)}</div>` : ''}
+        <input
+          class="input env-cfg-input"
+          type="${inputType}"
+          data-key="${escapeHtml(v.key)}"
+          value="${escapeHtml(v.value || '')}"
+          placeholder="${v.is_placeholder ? 'Enter value…' : ''}"
+          autocomplete="off"
+          spellcheck="false"
+        />
+      </div>`;
+  }
+
+  const overlay = document.createElement('div');
+  overlay.id = 'env-cfg-overlay';
+  overlay.className = 'dialog-overlay';
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+
+  overlay.innerHTML = `
+    <div class="env-cfg-modal">
+      <div class="env-cfg-header">
+        <div>
+          <div class="env-cfg-title">Environment Setup</div>
+          <div class="env-cfg-subtitle">
+            ${hasPlaceholders
+              ? `${phVars.length} variable${phVars.length !== 1 ? 's' : ''} need${phVars.length === 1 ? 's' : ''} your credentials before running`
+              : 'All variables are configured'}
+          </div>
+        </div>
+        <button class="btn-icon" onclick="document.getElementById('env-cfg-overlay').remove()" title="Close">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+
+      <div class="env-cfg-body">
+        ${hasPlaceholders ? `
+          <div class="env-cfg-section-label">Required — enter your credentials</div>
+          ${phVars.map(_varRow).join('')}
+        ` : ''}
+
+        ${okVars.length ? `
+          <details class="env-cfg-configured-details" ${hasPlaceholders ? '' : 'open'}>
+            <summary class="env-cfg-section-label" style="cursor:pointer;user-select:none;list-style:none;display:flex;align-items:center;gap:6px;">
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="transition:transform .15s"><polyline points="9 18 15 12 9 6"/></svg>
+              Configured (${okVars.length})
+            </summary>
+            ${okVars.map(_varRow).join('')}
+          </details>
+        ` : ''}
+
+        ${_envModalVars.length === 0 ? `
+          <div style="color:var(--text-3);font-size:12px;padding:20px 0;text-align:center;">
+            No .env.example found — add variables manually below.
+          </div>
+        ` : ''}
+      </div>
+
+      <div class="env-cfg-path" title="${escapeHtml(_envModalEnvLocalPath)}">
+        Writes to: <code>${escapeHtml(_envModalEnvLocalPath.split('/').slice(-3).join('/') || _envModalEnvLocalPath)}</code>
+      </div>
+
+      <div class="env-cfg-footer">
+        <button class="btn btn-ghost btn-sm" onclick="document.getElementById('env-cfg-overlay').remove()">Cancel</button>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-sm" onclick="_saveEnvConfig(false)">Save</button>
+          ${startAfter ? `<button class="btn btn-primary btn-sm" onclick="_saveEnvConfig(true)">Save &amp; Run</button>` : ''}
+        </div>
+      </div>
+    </div>`;
+
+  document.body.appendChild(overlay);
+
+  // rotate arrow on details toggle
+  overlay.querySelector('.env-cfg-configured-details')?.addEventListener('toggle', e => {
+    const arrow = e.target.querySelector('summary svg');
+    if (arrow) arrow.style.transform = e.target.open ? 'rotate(90deg)' : '';
+  });
+}
+
+async function _saveEnvConfig(startAfter) {
+  const inputs = document.querySelectorAll('#env-cfg-overlay .env-cfg-input');
+  const vars = {};
+  inputs.forEach(inp => {
+    const key = inp.dataset.key;
+    const val = inp.value.trim();
+    if (key && val) vars[key] = val;
+  });
+
+  try {
+    const r = await apiFetch('/api/local-run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'env_save', vars }),
+    });
+    const d = await r.json();
+    if (!r.ok) { showToast(d.error || 'Failed to save', 'error'); return; }
+    showToast('Environment saved', 'success');
+    document.getElementById('env-cfg-overlay')?.remove();
+    await fetchLocalRun();
+    if (startAfter) _doStartLocalRun();
+  } catch (e) {
+    showToast('Save failed: ' + e.message, 'error');
+  }
+}
+
 async function startLocalRun() {
+  // Check placeholder count first — if any, show config modal instead of starting directly
+  try {
+    const r = await apiFetch('/api/local-run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'env_config' }),
+    });
+    const d = await r.json();
+    if (r.ok && (d.placeholder_count || 0) > 0) {
+      _envModalVars = d.vars || [];
+      _envModalEnvLocalPath = d.env_local_path || '';
+      _renderEnvConfigModal(true);
+      return;
+    }
+  } catch (_) { /* proceed without modal */ }
+  _doStartLocalRun();
+}
+
+async function _doStartLocalRun() {
   try {
     const r = await apiFetch('/api/local-run', {
       method: 'POST',
