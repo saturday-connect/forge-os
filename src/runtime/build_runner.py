@@ -392,6 +392,30 @@ def build_backend_prompt(persona, docs):
             "Use EXACTLY what the spec names. Never substitute."
         ),
 
+        _section("STEP ONE — READ DOMAIN AND DESIGN CONTEXT BEFORE WRITING ANY MODELS OR ENDPOINTS"),
+        (
+            "The specification documents include domain, design, and delivery context. Read these FIRST:\n\n"
+            "domain-model.md (03-analysis/):\n"
+            "  - Use the EXACT entity names, attributes, and relationships defined here for every DB table,\n"
+            "    ORM model, and Pydantic/TypeScript schema. Do NOT invent entity names.\n"
+            "  - Relationships (one-to-many, many-to-many) map directly to FK constraints and join tables.\n\n"
+            "user-journeys.md (03-analysis/):\n"
+            "  - Every user journey maps to a set of API endpoints. Ensure every journey step has a\n"
+            "    corresponding endpoint. Do not generate endpoints that no journey requires.\n\n"
+            "process-flows.md (03-analysis/):\n"
+            "  - Business process flows define the logic inside endpoints (validation order, state\n"
+            "    transitions, side effects). Implement them exactly — do not simplify.\n\n"
+            "screen-specs.md + page-inventory.md (02-design/):\n"
+            "  - Each screen and page implies a set of API calls. Read these to ensure your API\n"
+            "    contract covers every data requirement the frontend will make.\n\n"
+            "user-stories.md (05-delivery/):\n"
+            "  - Each user story is an acceptance criterion. Every story MUST be fulfillable by the\n"
+            "    endpoints you generate. Map stories to endpoints in api-contract.md.\n\n"
+            "observability.md + monitoring.md (06-engineering/, 08-operations/):\n"
+            "  - Instrument every endpoint with structured logging (request ID, duration, status).\n"
+            "  - Expose a /metrics endpoint if the spec names Prometheus."
+        ),
+
         _section("FIRST OUTPUT BLOCK — MANDATORY"),
         (
             "Your VERY FIRST output block must ALWAYS be:\n\n"
@@ -639,6 +663,46 @@ def build_frontend_prompt(persona, docs, api_contract):
             "The definition of success is: `docker compose up --build` starts all containers with exit code 0.\n\n"
             "Every rule below exists because ignoring it causes a Docker build failure. "
             "Treat every rule as a hard constraint, not a suggestion."
+        ),
+
+        _section("RULE 0 — READ DESIGN DOCS AND IMPLEMENT EXACTLY WHAT THEY DESCRIBE"),
+        (
+            "The specification documents include complete design specs. Read each one before writing a single file:\n\n"
+            "page-inventory.md (02-design/):\n"
+            "  - This is the AUTHORITATIVE list of pages to build. Generate a Next.js route for EVERY\n"
+            "    page listed. Do not add pages that are not listed. Do not skip any that are.\n"
+            "  - Map each page to a file: src/app/<route>/page.tsx\n\n"
+            "screen-specs.md (02-design/):\n"
+            "  - Each screen spec defines the layout, sections, and components for that page.\n"
+            "    Implement it exactly. Do not substitute a simpler layout.\n"
+            "  - If screen-specs.md defines a dashboard with a sidebar + main panel + stats cards —\n"
+            "    generate exactly that. Not a single column. Not a generic placeholder.\n\n"
+            "user-flows.md (02-design/):\n"
+            "  - Each user flow defines navigation paths and state transitions.\n"
+            "    Wire every flow into the router and state store. A flow that is not wired is broken.\n"
+            "  - Auth flows (login → redirect → dashboard) must be implemented with middleware/guards.\n\n"
+            "information-architecture.md (02-design/):\n"
+            "  - Use this as the routing structure. The nav items, route hierarchy, and page groupings\n"
+            "    defined here must match src/app/ directory structure exactly.\n\n"
+            "design-tokens.md + design-system.md (02-design/):\n"
+            "  - Use the EXACT color values, font families, font sizes, spacing scale, and border radius\n"
+            "    defined here. Do not use Tailwind defaults if the tokens override them.\n"
+            "  - Configure tailwind.config.js (or CSS variables) to match these tokens.\n\n"
+            "component-map.md (02-design/):\n"
+            "  - Use the defined component hierarchy. If component-map.md defines a <DataTable> that\n"
+            "    contains <DataTableRow> and <DataTableCell> — generate those exact component names.\n\n"
+            "accessibility-guidelines.md (02-design/):\n"
+            "  - Add aria-label, role, and semantic HTML as specified. This is not optional.\n"
+            "  - Every interactive element must be keyboard-navigable.\n\n"
+            "responsive-behavior.md (02-design/):\n"
+            "  - Implement the breakpoints and layout changes specified. Mobile layout must differ\n"
+            "    from desktop where the spec says so.\n\n"
+            "error-handling.md (06-engineering/):\n"
+            "  - Every data-fetching component must implement loading, error, and empty states\n"
+            "    as specified. A component that shows nothing on error is incomplete.\n\n"
+            "user-journeys.md (03-analysis/):\n"
+            "  - Each journey maps to a set of pages and transitions. Verify every journey can be\n"
+            "    completed end-to-end with the routes and state you generate."
         ),
 
         _section("MANDATORY REQUIRED FILES — YOU MUST GENERATE ALL OF THESE"),
@@ -1029,6 +1093,26 @@ def build_integration_prompt(persona, docs, api_contract, backend_built=""):
             "  tests/test_integrations.py        — at minimum a smoke test per integration"
         ),
 
+        _section("STEP ONE — READ DESIGN AND PROCESS CONTEXT BEFORE WRITING INTEGRATIONS"),
+        (
+            "The specification documents include user flows and business process context. Read these first:\n\n"
+            "user-flows.md (02-design/):\n"
+            "  - Each user flow identifies which UI interactions trigger third-party service calls.\n"
+            "    Map every flow step that involves an external service to an integration handler.\n"
+            "  - Example: 'User completes checkout' → Stripe PaymentIntent creation + webhook handler.\n\n"
+            "process-flows.md (03-analysis/):\n"
+            "  - Business process flows define the sequence and conditions for integration calls.\n"
+            "    Implement the exact sequence: do not reorder steps or skip conditional branches.\n"
+            "  - Example: 'Send email only after payment confirmed' → Stripe webhook triggers SendGrid,\n"
+            "    NOT SendGrid called at payment initiation.\n\n"
+            "dependency-analysis.md (03-analysis/):\n"
+            "  - Lists every external service dependency and its role. Use this to ensure no integration\n"
+            "    is missed and no integration is generated for a service not in the dependency list.\n\n"
+            "integration-spec.md (06-engineering/):\n"
+            "  - The primary spec for integration behaviour. Cross-reference with user-flows.md and\n"
+            "    process-flows.md — all three must be consistent in your output."
+        ),
+
         _section("RULE 1 — USE ONLY NAMED SDKS FROM THE SPEC"),
         (
             "Read every integration spec document. For each third-party service, use its OFFICIAL SDK:\n\n"
@@ -1210,6 +1294,28 @@ def build_tests_prompt(persona, docs, api_contract, backend_built="", frontend_b
             "  pytest.ini (or pyproject.toml) — test config including asyncio_mode\n"
             "  requirements-dev.txt           — test-only packages (pytest, httpx, faker, etc.)\n"
             "  playwright.config.ts           — if E2E tests are specified in the quality spec"
+        ),
+
+        _section("STEP ONE — READ REQUIREMENTS AND DESIGN DOCS BEFORE WRITING TESTS"),
+        (
+            "Tests must be traced to requirements and user behaviour — not invented generically.\n\n"
+            "user-stories.md (05-delivery/):\n"
+            "  - Every user story is an acceptance criterion. Write at least one test per user story.\n"
+            "  - Name tests after the story: test_user_can_<action>_<context>.\n"
+            "  - A test suite with no user story coverage is incomplete regardless of line count.\n\n"
+            "acceptance-tests.md (07-quality/):\n"
+            "  - These are the pre-defined acceptance scenarios. Implement ALL of them as tests.\n"
+            "  - Do not paraphrase or simplify — implement the exact scenario described.\n\n"
+            "user-journeys.md (03-analysis/):\n"
+            "  - Each journey is an E2E test scenario. Generate one Playwright/E2E spec per journey.\n"
+            "  - Journey: 'User signs up → verifies email → creates first project → invites teammate'\n"
+            "    = one spec file with 4 ordered steps, each asserting the correct state.\n\n"
+            "accessibility-guidelines.md + accessibility-tests.md (02-design/, 07-quality/):\n"
+            "  - Generate axe-core or Playwright accessibility assertion tests for every page.\n"
+            "  - Test keyboard navigation for every interactive flow defined in accessibility-guidelines.md.\n\n"
+            "non-functional-requirements.md (01-requirements/):\n"
+            "  - Performance NFRs (e.g. 'API response < 200ms at p95') must have corresponding\n"
+            "    performance tests. Do not skip NFR-driven tests."
         ),
 
         _section("RULE 1 — USE ONLY THE TEST FRAMEWORKS NAMED IN THE QUALITY SPEC"),
@@ -1434,6 +1540,30 @@ def build_infra_prompt(persona, docs, api_contract, backend_built="", frontend_b
             "  - The test framework and what a test run needs (DB, env vars, etc.)\n\n"
             "Then generate a complete, self-contained infrastructure that automates EVERYTHING "
             "except the initial one-time secret values a human must set in GitHub."
+        ),
+
+        _section("STEP ONE — READ OPERATIONS AND RELEASE DOCS BEFORE WRITING ANY WORKFLOW"),
+        (
+            "The specification documents include operations runbooks, release plans, and rollout strategy.\n"
+            "Read these before generating any CI/CD workflow or infrastructure config:\n\n"
+            "monitoring.md (08-operations/):\n"
+            "  - Lists every metric, alert, and dashboard required. Configure these in your infra:\n"
+            "    Prometheus scrape targets, Grafana dashboards, alert rules, PagerDuty/OpsGenie hooks.\n"
+            "  - If monitoring.md names a specific monitoring stack (Datadog, Grafana, CloudWatch) — use it.\n\n"
+            "rollback-plan.md (08-operations/):\n"
+            "  - Every deployment workflow MUST include a rollback step.\n"
+            "  - Implement the rollback strategy exactly as described: blue/green swap, previous image tag\n"
+            "    redeployment, database migration rollback commands — whatever the spec defines.\n\n"
+            "go-live-plan.md + rollout-strategy.md (09-release/):\n"
+            "  - Use the go-live plan to structure deployment workflow stages (staging → canary → production).\n"
+            "  - If rollout-strategy.md specifies canary or blue/green — implement it. Not a simple replace.\n"
+            "  - Gate progression between stages on the health checks defined in the go-live plan.\n\n"
+            "dependency-analysis.md (03-analysis/):\n"
+            "  - The service dependency graph defines docker-compose service start order (depends_on)\n"
+            "    and which services need to be healthy before others start.\n\n"
+            "performance-tests.md (07-quality/):\n"
+            "  - Add a load-test job to CI if performance-tests.md defines k6/Locust/Gatling targets.\n"
+            "  - Fail the pipeline if p95 latency exceeds the threshold defined in the spec."
         ),
         _section("MANDATORY OUTPUT FILES"),
         (
