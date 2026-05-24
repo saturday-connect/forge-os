@@ -10,7 +10,9 @@
         "03-analysis",
         "04-architecture",
         "05-delivery",
-        "06-engineering"
+        "06-engineering",
+        "07-quality",
+        "08-operations"
       ],
       "source_files": [],
       "output_dir": "15-build/backend"
@@ -22,12 +24,13 @@
         "01-requirements",
         "02-design",
         "03-analysis",
-        "05-delivery"
+        "05-delivery",
+        "06-engineering"
       ],
       "source_files": [
         "04-architecture/system-architecture.md",
-        "06-engineering/frontend-spec.md",
-        "06-engineering/coding-guidelines.md"
+        "04-architecture/api-design.md",
+        "04-architecture/security-design.md"
       ],
       "output_dir": "15-build/frontend"
     },
@@ -36,13 +39,16 @@
       "agent": "integration-engineer",
       "source_dirs": [
         "01-requirements",
+        "02-design",
         "03-analysis",
         "05-delivery",
         "06-engineering"
       ],
       "source_files": [
         "04-architecture/system-architecture.md",
-        "04-architecture/api-design.md"
+        "04-architecture/api-design.md",
+        "04-architecture/security-design.md",
+        "04-architecture/data-model.md"
       ],
       "output_dir": "15-build/integration"
     },
@@ -50,6 +56,8 @@
       "label": "Test Suite",
       "agent": "qa-coder",
       "source_dirs": [
+        "01-requirements",
+        "02-design",
         "04-architecture",
         "05-delivery",
         "07-quality"
@@ -66,11 +74,13 @@
       "label": "Infrastructure",
       "agent": "devops-coder",
       "source_dirs": [
+        "03-analysis",
         "04-architecture",
         "05-delivery",
         "06-engineering",
         "07-quality",
-        "08-operations"
+        "08-operations",
+        "09-release"
       ],
       "source_files": [
         "01-requirements/prd.md",
