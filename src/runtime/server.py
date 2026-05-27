@@ -1474,7 +1474,10 @@ def _detect_local_run(repo_root, forge_dir=None):
                     pass
         if _phase_dir:
             for _ic in ["infra/docker-compose.yml", "infra/docker-compose.yaml",
-                        "docker-compose.yml", "docker-compose.yaml"]:
+                        "docker-compose.yml", "docker-compose.yaml",
+                        # AI sometimes prefixes files with the step dir name even
+                        # though output_dir is already infra/ — handle double-nesting
+                        "infra/infra/docker-compose.yml", "infra/infra/docker-compose.yaml"]:
                 _full = os.path.join(_phase_dir, _ic)
                 if os.path.exists(_full):
                     compose_path = _full
@@ -1486,7 +1489,8 @@ def _detect_local_run(repo_root, forge_dir=None):
     if not compose_path:
         for rel in ["docker-compose.yml", "docker-compose.yaml",
                     "compose.yml", "compose.yaml",
-                    "infra/docker-compose.yml", "infra/docker-compose.yaml"]:
+                    "infra/docker-compose.yml", "infra/docker-compose.yaml",
+                    "infra/infra/docker-compose.yml", "infra/infra/docker-compose.yaml"]:
             full = os.path.join(repo_root, rel)
             if os.path.exists(full):
                 compose_path = full
