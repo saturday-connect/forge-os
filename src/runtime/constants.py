@@ -85,6 +85,7 @@ GEMINI_ARG_SKIP_TRUST = "--skip-trust"
 GEMINI_ARG_MODEL = "-m"
 GEMINI_ARG_PROMPT = "-p"
 CLAUDE_ARG_PROMPT = "-p"
+CLAUDE_ARG_MODEL = "--model"
 CLAUDE_ARG_OUTPUT_FORMAT = "--output-format"
 CLAUDE_OUTPUT_TEXT = "text"
 

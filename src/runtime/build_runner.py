@@ -18,6 +18,7 @@ from constants import (
     GEMINI_ARG_PROMPT,
     GEMINI_ARG_SKIP_TRUST,
     CLAUDE_ARG_PROMPT,
+    CLAUDE_ARG_MODEL,
     CLAUDE_ARG_OUTPUT_FORMAT,
     CLAUDE_OUTPUT_TEXT,
     GENERATE_TIMEOUT_SECS,
@@ -274,6 +275,8 @@ def invoke_ai(prompt, tool, model_id):
             cmd += [GEMINI_ARG_PROMPT, prompt]
         elif tool == TOOL_CLAUDE:
             cmd = [TOOL_CLAUDE, CLAUDE_ARG_PROMPT, prompt, CLAUDE_ARG_OUTPUT_FORMAT, CLAUDE_OUTPUT_TEXT]
+            if model_id:
+                cmd += [CLAUDE_ARG_MODEL, model_id]
         else:
             cmd = [TOOL_ANTIGRAVITY, ANTIGRAVITY_ARG_SKIP_PERMISSIONS,
                    "--add-dir", FORGE_DIR,
