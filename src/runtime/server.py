@@ -199,6 +199,7 @@ _active_generate_proc = None        # current Popen for the running forge-genera
 _build_lock       = threading.Lock()  # guards _active_build_pid + _build_cancel
 _active_build_pid = None              # PID of the current blocking git/curl subprocess
 _build_cancel     = threading.Event() # set() to request cancellation of do_build
+_build_system_lock = threading.Lock() # prevents concurrent build-system step runs
 
 _local_run_lock = threading.Lock()    # guards _local_run_proc + _local_run_stop
 _local_run_proc = None                # Popen handle for docker compose / manual service
@@ -4635,6 +4636,12 @@ class ForgeHandler(BaseHTTPRequestHandler):
                 self._json_response(400, {"error": "Unknown step: " + step})
                 return
 
+            # Reject concurrent build-system requests — multiple simultaneous AI
+            # subprocesses share the same Claude account and hit rate limits.
+            if not _build_system_lock.acquire(blocking=False):
+                self._json_response(409, {"error": "A build step is already running. Wait for it to complete before starting another."})
+                return
+
             def run_build_system():
                 set_processing(STATUS_RUNNING, step)
                 try:
@@ -4660,6 +4667,7 @@ class ForgeHandler(BaseHTTPRequestHandler):
                         set_processing(STATUS_RUNNING, s)
                         subprocess.run([sys.executable, build_runner, s], cwd=REPO_ROOT, env=env)
                 finally:
+                    _build_system_lock.release()
                     set_processing(STATUS_IDLE)
 
             t = threading.Thread(target=run_build_system, daemon=True)
