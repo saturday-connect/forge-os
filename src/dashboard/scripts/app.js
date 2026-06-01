@@ -2124,48 +2124,61 @@ function renderBuildSteps() {
   }
   const isRunning = (state.processing && state.processing.status === 'running');
 
+  // Icon-only SVG buttons (no lucide dependency in dashboard)
+  const _iconCode = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>`;
+
   grid.innerHTML = Object.entries(BUILD_STEPS_META).map(([key, meta]) => {
     const st = buildStepsState[key] || { status: 'idle', files: [] };
     const fileCount = (st.files || []).length;
     const isThisRunning = isRunning && (state.processing.stage === key || state.processing.stage === 'all');
-    const hasLog = isThisRunning || ['complete', 'error'].includes(st.status);
     const canRun = !isRunning;
+    const hasProgress = isThisRunning || ['complete', 'error'].includes(st.status);
 
-    let badge, leftText, rightBtns;
+    // Badge — clickable to open progress panel when applicable
+    const badgeClick = hasProgress ? `onclick="showBuildLog('${key}')" style="cursor:pointer;" title="View progress"` : '';
+    let badge, subline, actionBtns;
 
     if (isThisRunning) {
-      badge = `<span class="badge" style="background:var(--blue-light,#dbeafe);color:var(--blue);gap:4px;">
-        <span style="display:inline-block;width:7px;height:7px;border:1.5px solid var(--blue);border-top-color:transparent;border-radius:50%;animation:spin 0.7s linear infinite;"></span>Building</span>`;
-      leftText = `<span style="font-size:11px;color:var(--text-3);">In progress</span>`;
-      rightBtns = `<button class="btn btn-ghost btn-sm" onclick="showBuildLog('${key}')">Progress</button>`;
+      badge = `<span class="badge" ${badgeClick} style="background:var(--blue-light,#dbeafe);color:var(--blue);gap:5px;cursor:pointer;">
+        <span style="display:inline-block;width:7px;height:7px;border:1.5px solid var(--blue);border-top-color:transparent;border-radius:50%;animation:spin 0.7s linear infinite;flex-shrink:0;"></span>Building</span>`;
+      subline = `<span style="font-size:11px;color:var(--text-3);">In progress — click badge for details</span>`;
+      actionBtns = '';
+
     } else if (st.status === 'complete') {
-      badge = `<span class="badge badge-success">Complete</span>`;
-      leftText = `<span style="font-size:11px;color:var(--text-3);">${fileCount} file${fileCount!==1?'s':''} generated</span>`;
-      rightBtns = `<button class="btn btn-ghost btn-sm" onclick="showBuildLog('${key}')">Progress</button>
-        <button class="btn btn-secondary btn-sm" onclick="openBuildCodePanel('${key}')">View Code</button>`;
+      badge = `<span class="badge badge-success" ${badgeClick}>${fileCount} file${fileCount!==1?'s':''}</span>`;
+      subline = `<span style="font-size:11px;color:var(--text-3);">Generated successfully</span>`;
+      // Icon-only View Code + text Rebuild
+      actionBtns = `
+        <button onclick="openBuildCodePanel('${key}')" title="View Code"
+          style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border:1px solid var(--border);border-radius:6px;background:none;color:var(--text-2);cursor:pointer;">
+          ${_iconCode}
+        </button>
+        <button class="btn btn-secondary btn-sm" onclick="runBuildStep('${key}')" ${canRun?'':'disabled'}>Rebuild</button>`;
+
     } else if (st.status === 'error') {
-      badge = `<span class="badge badge-error">Error</span>`;
-      leftText = `<span style="font-size:11px;color:var(--red);max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHtml(st.error||'')}">${escapeHtml((st.error||'Failed').substring(0,36))}</span>`;
-      rightBtns = `<button class="btn btn-ghost btn-sm" onclick="showBuildLog('${key}')">Progress</button>`;
+      badge = `<span class="badge badge-error" ${badgeClick}>Error</span>`;
+      subline = `<span style="font-size:11px;color:var(--red);max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHtml(st.error||'')}">${escapeHtml((st.error||'Failed').substring(0,40))}</span>`;
+      actionBtns = `<button class="btn btn-primary btn-sm" onclick="runBuildStep('${key}')" ${canRun?'':'disabled'}>Retry</button>`;
+
     } else {
       badge = `<span class="badge" style="background:var(--bg-2);color:var(--text-3);">Not started</span>`;
-      leftText = `<span style="font-size:11px;color:var(--text-3);">Ready to build</span>`;
-      rightBtns = '';
+      subline = `<span style="font-size:11px;color:var(--text-3);">${meta.desc}</span>`;
+      actionBtns = '';
     }
 
-    return `<div class="card" style="padding:12px;display:flex;flex-direction:column;gap:8px;${st.status==='error'?'border-color:var(--red);':st.status==='complete'?'border-color:var(--green);':''}">
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;">
+    const primaryBtn = (st.status !== 'complete' && st.status !== 'error')
+      ? `<button class="btn btn-primary btn-sm" onclick="runBuildStep('${key}')" ${canRun?'':'disabled'}>Build</button>`
+      : '';
+
+    return `<div class="card" style="padding:14px;display:flex;flex-direction:column;gap:10px;${st.status==='error'?'border-color:var(--red);':st.status==='complete'?'border-color:var(--green);':''}">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
         <span style="font-size:12px;font-weight:600;color:var(--text-1);">${meta.label}</span>
         ${badge}
       </div>
-      <div style="font-size:11px;color:var(--text-3);">${meta.desc}</div>
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:4px;">
-        ${leftText}
-        <div style="display:flex;align-items:center;gap:4px;flex-shrink:0;">
-          ${rightBtns}
-          <button class="btn btn-primary btn-sm" onclick="runBuildStep('${key}')" ${canRun?'':'disabled'}>
-            ${st.status==='complete'?'Rebuild':'Build'}
-          </button>
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;">
+        ${subline}
+        <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
+          ${actionBtns}${primaryBtn}
         </div>
       </div>
     </div>`;
