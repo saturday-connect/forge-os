@@ -2109,6 +2109,11 @@ async function fetchBuildSteps() {
       buildStepsState = data.steps || {};
       buildStepsActivePhaseId = data.active_phase_id || '';
       renderBuildSteps();
+      // Auto-show progress panel if a step is running and panel is not visible
+      if (!_bld.visible) {
+        const running = Object.entries(buildStepsState).find(([,v]) => v.status === 'running');
+        if (running) showBuildLog(running[0]);
+      }
     }
   } catch (e) {}
 }
@@ -2249,25 +2254,55 @@ function closeBuildLog() {
 function _startBuildLogPoll() {
   _stopBuildLogPoll();
   _pollBuildLog();
-  _bld.pollTimer = setInterval(_pollBuildLog, 2000);
+  _bld.pollTimer = setInterval(_pollBuildLog, 2500);
 }
 function _stopBuildLogPoll() {
   if (_bld.pollTimer) { clearInterval(_bld.pollTimer); _bld.pollTimer = null; }
 }
 
 async function _pollBuildLog() {
-  if (!_bld.step) return;
+  if (!_bld.visible) return;
   try {
-    const res = await apiFetch('/api/build-log?step=' + _bld.step);
-    if (!res.ok) return;
-    const data = await res.json();
-    _bld.content = data.content || '';
-    _bld.running = data.running;
-    _updateBldProgress();
-    if (!data.running) {
-      _stopBuildLogPoll();
-      const next = Object.entries(buildStepsState).find(([,v]) => v.status === 'running');
-      if (next) { _bld.step = next[0]; _bld.running = true; _bld.startTime = Date.now(); _startBuildLogPoll(); }
+    // Always fetch the live build-system state so we track the correct running step,
+    // not just the one the user last clicked.
+    const sysRes = await apiFetch('/api/build-system');
+    if (sysRes.ok) {
+      const sysData = await sysRes.json();
+      buildStepsState = sysData.steps || {};
+      renderBuildSteps();
+
+      const runningEntry = Object.entries(buildStepsState).find(([,v]) => v.status === 'running');
+
+      if (runningEntry && runningEntry[0] !== _bld.step) {
+        // A different step just became active — switch to it
+        _bld.step = runningEntry[0];
+        _bld.content = '';
+        _bld.running = true;
+        _bld.startTime = Date.now();
+        _renderBuildProgress();  // full re-render with new step label
+        return;
+      }
+
+      if (!runningEntry && _bld.running) {
+        // Nothing running anymore — show final state then auto-close
+        _bld.running = false;
+        _updateBldProgress();
+        _stopBuildLogPoll();
+        // Auto-dismiss after 4 s so user can see the completed state
+        setTimeout(() => { if (!_bld.running) closeBuildLog(); }, 4000);
+        return;
+      }
+    }
+
+    // Fetch log content for the current step
+    if (_bld.step) {
+      const logRes = await apiFetch('/api/build-log?step=' + _bld.step);
+      if (logRes.ok) {
+        const logData = await logRes.json();
+        _bld.content = logData.content || '';
+        _bld.running = logData.running;
+        _updateBldProgress();
+      }
     }
   } catch(e) {}
 }
@@ -2325,7 +2360,7 @@ function _renderBuildProgress() {
   const remStr = p.isDone ? 'Complete' : p.isError ? 'Failed'
     : p.remaining > 30 ? `~${_fmtSecs(p.remaining)} left` : _bld.running ? 'Almost done…' : '';
 
-  c.innerHTML = `<div class="card" style="margin-top:12px;padding:16px 18px;">
+  c.innerHTML = `<div class="card" style="margin-top:12px;margin-bottom:20px;padding:16px 18px;">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
       <div style="display:flex;align-items:center;gap:10px;">
         ${icon}
@@ -2337,7 +2372,6 @@ function _renderBuildProgress() {
       <div style="display:flex;align-items:center;gap:10px;">
         <span id="bld-el" style="font-size:11px;color:var(--text-3);font-variant-numeric:tabular-nums;">${elStr}</span>
         <span id="bld-pct" style="font-size:12px;font-weight:700;color:var(--text-2);min-width:34px;text-align:right;">${p.pct}%</span>
-        <button onclick="closeBuildLog()" style="background:none;border:none;color:var(--text-3);font-size:16px;cursor:pointer;padding:0 4px;line-height:1;" title="Dismiss">✕</button>
       </div>
     </div>
     <div style="height:6px;background:var(--bg-2,#f1f5f9);border-radius:3px;overflow:hidden;margin-bottom:14px;">
