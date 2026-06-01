@@ -2770,11 +2770,30 @@ class ForgeHandler(BaseHTTPRequestHandler):
                 ai_proc = None
                 tmp_path = None
                 try:
+                    # Load per-step phase_id from build-system.json so phase-scoped
+                    # output dirs (15-build/<phase_id>/<step>/) are resolved correctly.
+                    # Falls back to flat 15-build/<step>/ for non-phase builds.
+                    _bsys_path = os.path.join(FORGE_DIR, "runs", "build-system.json")
+                    _bsys_data: dict = {}
+                    try:
+                        with open(_bsys_path) as _bf:
+                            _bsys_data = json.load(_bf)
+                    except (OSError, json.JSONDecodeError):
+                        pass
+
+                    def _step_src(sk):
+                        ph = (_bsys_data.get(sk) or {}).get("phase_id") or ""
+                        if ph:
+                            candidate = os.path.join(FORGE_DIR, "15-build", ph, sk)
+                            if os.path.isdir(candidate):
+                                return candidate
+                        return os.path.join(FORGE_DIR, "15-build", sk)
+
                     code_step_map = {"backend":"backend","frontend":"frontend",
                                      "integration":"integration","tests":"tests","infra":"infra"}
                     copied_dirs = []
                     for step_key, dest_name in code_step_map.items():
-                        src = os.path.join(FORGE_DIR, "15-build", step_key)
+                        src = _step_src(step_key)
                         if os.path.isdir(src) and list(os.scandir(src)):
                             _shutil.copytree(src, os.path.join(REPO_ROOT, dest_name), dirs_exist_ok=True)
                             copied_dirs.append(dest_name)
@@ -3277,9 +3296,28 @@ class ForgeHandler(BaseHTTPRequestHandler):
                         "tests":       "Test suite — unit, integration, and end-to-end tests",
                         "infra":       "Infrastructure — Docker, CI/CD pipelines, deployment config",
                     }
+
+                    # Resolve phase-scoped output path per step.
+                    # build_runner writes to 15-build/<phase_id>/<step>/ when a phase is
+                    # active. Fall back to 15-build/<step>/ for non-phase builds.
+                    _bsys_state: dict = {}
+                    try:
+                        with open(os.path.join(FORGE_DIR, "runs", "build-system.json")) as _bf:
+                            _bsys_state = json.load(_bf)
+                    except (OSError, json.JSONDecodeError):
+                        pass
+
+                    def _push_step_src(sk):
+                        ph = (_bsys_state.get(sk) or {}).get("phase_id") or ""
+                        if ph:
+                            candidate = os.path.join(FORGE_DIR, "15-build", ph, sk)
+                            if os.path.isdir(candidate):
+                                return candidate
+                        return os.path.join(FORGE_DIR, "15-build", sk)
+
                     copied_dirs = []
                     for step_key in _STEP_COMMIT_ORDER:
-                        src = os.path.join(FORGE_DIR, "15-build", step_key)
+                        src = _push_step_src(step_key)
                         if not os.path.isdir(src) or not list(os.scandir(src)):
                             continue
                         dst = os.path.join(REPO_ROOT, step_key)
