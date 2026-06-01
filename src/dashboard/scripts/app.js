@@ -2130,17 +2130,22 @@ function renderBuildSteps() {
     const isThisRunning = isRunning && (state.processing.stage === key || state.processing.stage === 'all');
 
     let statusBadge, footerHtml;
+    const hasLog = ['running', 'complete', 'error'].includes(st.status) || isThisRunning;
+    const logBtn = hasLog
+      ? `<button class="btn btn-ghost btn-sm" onclick="showBuildLog('${key}')" title="View build output" style="padding:2px 7px;">Log</button>`
+      : '';
+
     if (isThisRunning) {
       statusBadge = `<span class="badge" style="background:var(--blue-light,#dbeafe);color:var(--blue);">
         <span class="spinner" style="display:inline-block;width:8px;height:8px;border:1.5px solid var(--blue);border-top-color:transparent;border-radius:50%;animation:spin 0.7s linear infinite;margin-right:4px;vertical-align:middle;"></span>Building</span>`;
-      footerHtml = `<span style="font-size:11px;color:var(--text-3);">Running...</span>`;
+      footerHtml = `<span style="font-size:11px;color:var(--text-3);">Running...</span>${logBtn}`;
     } else if (st.status === 'complete') {
       statusBadge = `<span class="badge badge-success">Complete</span>`;
       footerHtml = `<span style="font-size:11px;color:var(--text-3);">${fileCount} file${fileCount !== 1 ? 's' : ''} generated</span>
-        <button class="btn btn-secondary btn-sm" onclick="openBuildCodePanel('${key}')">View Code</button>`;
+        ${logBtn}<button class="btn btn-secondary btn-sm" onclick="openBuildCodePanel('${key}')">View Code</button>`;
     } else if (st.status === 'error') {
       statusBadge = `<span class="badge badge-error" title="${escapeHtml(st.error || '')}">Error</span>`;
-      footerHtml = `<span style="font-size:11px;color:var(--red);max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHtml(st.error || '')}">${escapeHtml((st.error || 'Failed').substring(0, 40))}</span>`;
+      footerHtml = `<span style="font-size:11px;color:var(--red);max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHtml(st.error || '')}">${escapeHtml((st.error || 'Failed').substring(0, 40))}</span>${logBtn}`;
     } else {
       statusBadge = `<span class="badge" style="background:var(--bg-2);color:var(--text-3);">Not started</span>`;
       footerHtml = `<span style="font-size:11px;color:var(--text-3);">Ready to build</span>`;
@@ -2194,8 +2199,13 @@ let _bld = { visible: false, step: null, content: '', running: false,
               autoScroll: true, pollTimer: null, elapsedTimer: null, startTime: null };
 
 function showBuildLog(step) {
-  _bld.step = step; _bld.content = ''; _bld.running = true;
-  _bld.visible = true; _bld.autoScroll = true; _bld.startTime = Date.now();
+  _bld.step = step; _bld.content = ''; _bld.autoScroll = true; _bld.visible = true;
+  // Determine if this step is currently running so we show the right state immediately
+  const st = (buildStepsState[step] || {}).status;
+  const isRunning = (state.processing && state.processing.status === 'running' &&
+    (state.processing.stage === step || state.processing.stage === 'all'));
+  _bld.running = isRunning || st === 'running';
+  _bld.startTime = _bld.running ? Date.now() : null;
   _renderBuildLog();
   _startBuildLogPoll();
 }
