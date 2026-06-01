@@ -4081,6 +4081,65 @@ _STEP_REQUIRES = {
 }
 
 
+_MAX_GENERATION_ATTEMPTS = 3   # total tries before giving up
+
+
+def _validate_output_integrity(parsed):
+    """Validate structural completeness of AI-generated files before writing.
+
+    Never write structurally broken output to disk — validate first and retry
+    if invalid. This is the production-grade equivalent of Vercel/GitHub Actions
+    retrying a failed build step rather than persisting corrupt artifacts.
+
+    Checks:
+      .ts/.tsx/.js/.jsx — brace balance ({} must be equal)
+      .py               — ast.parse() must succeed
+      .json             — json.loads() must succeed
+
+    Returns: (is_valid: bool, error: str | None)
+    """
+    import ast as _ast, json as _json
+
+    for rel_path, content in parsed.items():
+        if not content.strip():
+            continue
+        ext = os.path.splitext(rel_path)[1].lower()
+
+        if ext in (".ts", ".tsx", ".js", ".jsx"):
+            open_b = content.count("{")
+            close_b = content.count("}")
+            if open_b != close_b:
+                return False, (
+                    rel_path + ": unbalanced braces ("
+                    + str(open_b) + " open, " + str(close_b) + " close) — "
+                    "AI output was truncated mid-file"
+                )
+            # For component files: last non-blank line should close the function
+            last = content.rstrip().splitlines()[-1].strip() if content.strip() else ""
+            if ext in (".tsx", ".jsx") and last not in ("}", "};", ");", ">"):
+                return False, (
+                    rel_path + ": file ends with '" + last[:40] + "' — "
+                    "expected closing brace; AI output likely cut off"
+                )
+
+        elif ext == ".py":
+            try:
+                _ast.parse(content)
+            except SyntaxError as _e:
+                return False, (
+                    rel_path + ": Python syntax error at line "
+                    + str(_e.lineno) + " — " + (_e.msg or "unknown")
+                )
+
+        elif ext == ".json" and not rel_path.endswith("package-lock.json"):
+            try:
+                _json.loads(content)
+            except _json.JSONDecodeError as _e:
+                return False, rel_path + ": invalid JSON — " + str(_e)
+
+    return True, None
+
+
 def run_step(step):
     meta = STEPS.get(step)
     if not meta:
@@ -4135,18 +4194,63 @@ def run_step(step):
 
     tool = os.environ.get("FORGE_TOOL", DEFAULT_TOOL)
     model_id = os.environ.get("FORGE_MODEL", "")
-    print(_LOG_PREFIX + " Invoking AI (" + tool + " " + (model_id or "default") + ")...")
 
-    output, error = invoke_ai(prompt, tool, model_id)
-    if error or not output:
-        msg = error or "AI returned empty output"
-        save_step_status(step, STATUS_ERROR, error=msg)
-        print(_LOG_PREFIX + " Error: " + msg)
-        return False
+    # ── Invoke → Validate → Retry loop ──────────────────────────────────────
+    # Never write structurally broken output to disk. If the AI truncates its
+    # output (common when hitting output-token limits), validate and retry
+    # automatically up to _MAX_GENERATION_ATTEMPTS times before failing.
+    # Inspired by CI/CD systems (Vercel, GitHub Actions) that retry transient
+    # generation failures rather than persisting broken artifacts.
+    parsed = None
+    last_error = None
+    for attempt in range(1, _MAX_GENERATION_ATTEMPTS + 1):
+        if attempt > 1:
+            print(
+                _LOG_PREFIX + " [retry " + str(attempt) + "/" + str(_MAX_GENERATION_ATTEMPTS) + "]"
+                " Previous output failed validation: " + (last_error or "unknown")
+                + " — retrying AI generation..."
+            )
 
-    parsed = parse_files(output)
-    if not parsed:
-        parsed = {"output.md": output}
+        print(_LOG_PREFIX + " Invoking AI (" + tool + " " + (model_id or "default") + ")..."
+              + (" [attempt " + str(attempt) + "]" if attempt > 1 else ""))
+
+        output, error = invoke_ai(prompt, tool, model_id)
+        if error or not output:
+            last_error = error or "AI returned empty output"
+            if attempt < _MAX_GENERATION_ATTEMPTS:
+                print(_LOG_PREFIX + " AI call failed: " + last_error + " — will retry")
+                continue
+            save_step_status(step, STATUS_ERROR, error=last_error)
+            print(_LOG_PREFIX + " Error: " + last_error)
+            return False
+
+        candidate = parse_files(output) or {"output.md": output}
+
+        # Validate structural integrity before accepting this output
+        is_valid, integrity_err = _validate_output_integrity(candidate)
+        if not is_valid:
+            last_error = integrity_err
+            if attempt < _MAX_GENERATION_ATTEMPTS:
+                print(_LOG_PREFIX + " [validate] Output rejected: " + (integrity_err or "unknown"))
+                continue
+            # All attempts exhausted — fail with a clear, actionable message
+            msg = (
+                "AI output was structurally incomplete after "
+                + str(_MAX_GENERATION_ATTEMPTS) + " attempts. "
+                "Last error: " + (integrity_err or "unknown") + ". "
+                "Retry this step — if it fails again, the model may be hitting its "
+                "output-token limit. Consider splitting the step or using a model "
+                "with a higher output limit."
+            )
+            save_step_status(step, STATUS_ERROR, error=msg)
+            print(_LOG_PREFIX + " [validate] FAILED after " + str(_MAX_GENERATION_ATTEMPTS) + " attempts: " + msg)
+            return False
+
+        parsed = candidate
+        if attempt > 1:
+            print(_LOG_PREFIX + " [validate] Output passed on attempt " + str(attempt) + " — proceeding.")
+        break
+    # ────────────────────────────────────────────────────────────────────────
 
     # Phase-scoped output: 15-build/<phase-id>/<step>/ when a phase is active
     if ACTIVE_PHASE_ID:
