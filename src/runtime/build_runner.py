@@ -4031,6 +4031,148 @@ def _fix_tsconfig_entry_point_scope(out_dir):
         )
 
 
+def _fix_tailwind_custom_tokens(out_dir):
+    """Ensure tailwind.config.js defines every custom token used in source files.
+
+    Root cause: AI generates TSX/CSS using custom Tailwind classes like
+    `bg-brand-surface`, `text-brand-primary`, `rounded-large`, `h-4.5` etc.,
+    but frequently omits the corresponding entries in tailwind.config.js.
+    Tailwind v3 treats unknown classes as fatal errors during `npm run build`.
+
+    This fixup:
+    1. Locates tailwind.config.js in the output directory
+    2. Scans all .tsx/.ts/.css source files for brand-*, semantic-*, and
+       other known custom token patterns
+    3. Injects missing definitions into theme.extend using known-good defaults
+       so the build succeeds without requiring a full regeneration
+    """
+    import re as _re, json as _json
+
+    # Locate tailwind.config.js
+    tw_path = None
+    for root, dirs, files in os.walk(out_dir):
+        dirs[:] = [d for d in dirs if d not in ("node_modules", ".git", ".next")]
+        if "tailwind.config.js" in files:
+            tw_path = os.path.join(root, "tailwind.config.js")
+            break
+    if not tw_path:
+        return
+
+    try:
+        with open(tw_path, encoding=FILE_ENCODING) as f:
+            original = f.read()
+    except OSError:
+        return
+
+    # Defaults for every token the AI commonly generates but forgets to define
+    _BRAND_DEFAULTS = {
+        "surface":   "#f8fafc",
+        "primary":   "#0f172a",
+        "secondary": "#64748b",
+        "accent":    "#4f46e5",
+    }
+    _SEMANTIC_DEFAULTS = {
+        "error":   "#ef4444",
+        "success": "#22c55e",
+        "info":    "#3b82f6",
+        "warning": "#f59e0b",
+        "panel":   "#f1f5f9",
+        "group":   "#e2e8f0",
+    }
+    _SPACING_DEFAULTS = {"4.5": "1.125rem", "13": "3.25rem", "15": "3.75rem"}
+    _RADIUS_DEFAULTS  = {"large": "0.75rem", "standard": "0.5rem"}
+
+    # Scan source files for used tokens
+    used_brand    = set()
+    used_semantic = set()
+    used_spacing  = set()
+    used_radius   = set()
+    scan_exts = (".tsx", ".ts", ".jsx", ".js", ".css")
+    for root, dirs, files in os.walk(out_dir):
+        dirs[:] = [d for d in dirs if d not in ("node_modules", ".git", ".next", "dist")]
+        for fname in files:
+            if not any(fname.endswith(e) for e in scan_exts):
+                continue
+            fpath = os.path.join(root, fname)
+            try:
+                src = open(fpath, encoding=FILE_ENCODING, errors="replace").read()
+            except OSError:
+                continue
+            used_brand.update(_re.findall(r'brand-([a-z]+)', src))
+            used_semantic.update(_re.findall(r'semantic-([a-z]+)', src))
+            used_spacing.update(_re.findall(r'[hw]-\[([\d.]+)rem\]|[hw]-(4\.5|13|15)\b', src))
+            used_radius.update(_re.findall(r'rounded-(large|standard)\b', src))
+
+    # Flatten spacing set (findall returns tuples for multi-group)
+    flat_spacing = set()
+    for item in used_spacing:
+        if isinstance(item, tuple):
+            flat_spacing.update(t for t in item if t)
+        elif item:
+            flat_spacing.add(item)
+    used_spacing = flat_spacing
+
+    # Determine what's missing from the config
+    need_brand    = {k: v for k, v in _BRAND_DEFAULTS.items()
+                     if k in used_brand and f"brand" not in original.split(k)[0][-30:] or
+                     k in used_brand and f'"{k}"' not in original and f"'{k}'" not in original}
+    need_semantic = {k: v for k, v in _SEMANTIC_DEFAULTS.items()
+                     if k in used_semantic and f'"{k}"' not in original and f"'{k}'" not in original}
+    need_spacing  = {k: v for k, v in _SPACING_DEFAULTS.items()
+                     if k in used_spacing and f'"{k}"' not in original and f"'{k}'" not in original}
+    need_radius   = {k: v for k, v in _RADIUS_DEFAULTS.items()
+                     if k in used_radius and f'"{k}"' not in original and f"'{k}'" not in original}
+
+    # Simpler, more reliable check: just look for the key names anywhere in the file
+    def _missing(used_set, defaults, config_text):
+        return {k: v for k, v in defaults.items()
+                if k in used_set and k not in config_text}
+
+    need_brand    = _missing(used_brand,    _BRAND_DEFAULTS,    original)
+    need_semantic = _missing(used_semantic, _SEMANTIC_DEFAULTS, original)
+    need_spacing  = _missing(used_spacing,  _SPACING_DEFAULTS,  original)
+    need_radius   = _missing(used_radius,   _RADIUS_DEFAULTS,   original)
+
+    if not any([need_brand, need_semantic, need_spacing, need_radius]):
+        return  # nothing to inject
+
+    # Build inject blocks
+    inject_lines = []
+    if need_brand:
+        entries = ",\n          ".join(f'"{k}": "{v}"' for k, v in sorted(need_brand.items()))
+        inject_lines.append(f'        brand: {{\n          {entries}\n        }},')
+    if need_semantic:
+        entries = ",\n          ".join(f'"{k}": "{v}"' for k, v in sorted(need_semantic.items()))
+        inject_lines.append(f'        semantic: {{\n          {entries}\n        }},')
+    if need_spacing:
+        entries = ",\n          ".join(f'"{k}": "{v}"' for k, v in sorted(need_spacing.items()))
+        inject_lines.append(f'        spacing: {{\n          {entries}\n        }},')
+    if need_radius:
+        entries = ",\n          ".join(f'"{k}": "{v}"' for k, v in sorted(need_radius.items()))
+        inject_lines.append(f'        borderRadius: {{\n          {entries}\n        }},')
+
+    inject_block = "\n".join(inject_lines)
+
+    # Insert after `extend: {`
+    fixed = _re.sub(
+        r'(extend\s*:\s*\{)',
+        r'\1\n' + inject_block,
+        original,
+        count=1,
+    )
+
+    if fixed == original:
+        return  # regex didn't match — don't corrupt the file
+
+    with open(tw_path, "w", encoding=FILE_ENCODING) as f:
+        f.write(fixed)
+
+    added = list(need_brand.keys()) + list(need_semantic.keys()) + \
+            list(need_spacing.keys()) + list(need_radius.keys())
+    print(_LOG_PREFIX + " [fixup] tailwind.config.js: injected missing tokens: "
+          + ", ".join(sorted(added)))
+
+
 def _post_generate_fixups(out_dir):
     """Run automatic fixups on generated code after files are written."""
     _delete_vite_artifacts(out_dir)
@@ -4052,6 +4194,7 @@ def _post_generate_fixups(out_dir):
     _fix_tsconfig_entry_point_scope(out_dir)
     _fix_compose_healthchecks(out_dir)
     _fix_infra_compose_build_contexts(out_dir)
+    _fix_tailwind_custom_tokens(out_dir)
     _detect_truncated_files(out_dir)
 
 
