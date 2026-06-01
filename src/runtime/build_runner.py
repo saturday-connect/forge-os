@@ -4117,5 +4117,37 @@ if __name__ == "__main__":
     if len(sys.argv) < 2:
         print("Usage: build_runner.py <step>")
         sys.exit(1)
-    success = run_step(sys.argv[1])
+
+    # Cross-process mutex via lockfile — prevents concurrent AI calls from
+    # the same account when multiple build_runner processes are spawned
+    # (e.g., old server code without the in-process lock, or rapid button clicks).
+    _lock_path = os.path.join(FORGE_DIR, "runs", "build-runner.lock")
+    _lock_fd = None
+    try:
+        import fcntl as _fcntl
+        _lock_fd = open(_lock_path, "w")
+        try:
+            _fcntl.flock(_lock_fd, _fcntl.LOCK_EX | _fcntl.LOCK_NB)
+        except OSError:
+            _lock_fd.close()
+            print(_LOG_PREFIX + " [lock] Another build step is already running — exiting.")
+            sys.exit(1)
+    except ImportError:
+        pass  # fcntl not available (Windows); skip lockfile
+
+    try:
+        success = run_step(sys.argv[1])
+    finally:
+        if _lock_fd is not None:
+            try:
+                import fcntl as _fcntl
+                _fcntl.flock(_lock_fd, _fcntl.LOCK_UN)
+            except Exception:
+                pass
+            _lock_fd.close()
+            try:
+                os.remove(_lock_path)
+            except OSError:
+                pass
+
     sys.exit(0 if success else 1)
