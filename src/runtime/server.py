@@ -4660,11 +4660,6 @@ class ForgeHandler(BaseHTTPRequestHandler):
                         "AEOS_REPO_ROOT": REPO_ROOT,
                         FORGE_PHASE_ID_ENV:   phase_id,
                         FORGE_PHASE_NAME_ENV: phase_name,
-                        # Force Claude Code CLI to use direct Anthropic OAuth only.
-                        # Prevents auto-detection of stale AWS Bedrock / GCP Vertex
-                        # credentials which cause silent hangs when the session is expired.
-                        "CLAUDE_CODE_USE_BEDROCK": "0",
-                        "CLAUDE_CODE_USE_VERTEX": "0",
                     }
                     steps_to_run = step_keys if step == "all" else [step]
                     build_runner = os.path.join(FORGE_DIR, "scripts", "build_runner.py")
