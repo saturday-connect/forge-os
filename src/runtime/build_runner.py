@@ -4094,13 +4094,28 @@ def _validate_output_integrity(parsed):
     retrying a failed build step rather than persisting corrupt artifacts.
 
     Checks:
-      .ts/.tsx/.js/.jsx — brace balance ({} must be equal)
+      .ts/.tsx/.js/.jsx — brace imbalance exceeds threshold (>= 3)
       .py               — ast.parse() must succeed
       .json             — json.loads() must succeed
+
+    Why threshold=3 for braces:
+      Raw brace counting produces false positives for valid code that contains
+      braces inside strings, regex patterns, or template literals. Small
+      imbalances of 1-2 are common in legitimate source and must not trigger
+      retries. An imbalance of 3+ reliably indicates the AI stopped generating
+      mid-file (e.g. the workspace/page.tsx truncation had an imbalance of 4).
+
+    Why NO "last line" check:
+      Valid React/TS files frequently end with export statements
+      (e.g. `export { Button };`, `Button.displayName = 'Button';`,
+      `export default memo(Component);`) — none of which are closing braces.
+      A "must end with }" rule produces constant false positives.
 
     Returns: (is_valid: bool, error: str | None)
     """
     import ast as _ast, json as _json
+
+    _BRACE_IMBALANCE_THRESHOLD = 3  # imbalance below this is tolerated
 
     for rel_path, content in parsed.items():
         if not content.strip():
@@ -4108,20 +4123,14 @@ def _validate_output_integrity(parsed):
         ext = os.path.splitext(rel_path)[1].lower()
 
         if ext in (".ts", ".tsx", ".js", ".jsx"):
-            open_b = content.count("{")
+            open_b  = content.count("{")
             close_b = content.count("}")
-            if open_b != close_b:
+            imbalance = open_b - close_b
+            if imbalance >= _BRACE_IMBALANCE_THRESHOLD:
                 return False, (
-                    rel_path + ": unbalanced braces ("
-                    + str(open_b) + " open, " + str(close_b) + " close) — "
-                    "AI output was truncated mid-file"
-                )
-            # For component files: last non-blank line should close the function
-            last = content.rstrip().splitlines()[-1].strip() if content.strip() else ""
-            if ext in (".tsx", ".jsx") and last not in ("}", "};", ");", ">"):
-                return False, (
-                    rel_path + ": file ends with '" + last[:40] + "' — "
-                    "expected closing brace; AI output likely cut off"
+                    rel_path + ": " + str(imbalance) + " unclosed brace(s) ("
+                    + str(open_b) + " open vs " + str(close_b) + " close) — "
+                    "AI output was likely truncated mid-file"
                 )
 
         elif ext == ".py":
