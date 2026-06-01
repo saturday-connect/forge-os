@@ -251,6 +251,46 @@ def load_agent(agent_name):
             return f.read()
     return "# Agent: " + agent_name + "\nGenerate code based on the provided specifications."
 
+def _check_claude_rate_limit(model_id):
+    """Probe the API with a minimal request before the full build call.
+    Returns an error string if rate-limited or auth-failed, None if OK.
+    The Claude CLI silently retries on 429 and looks like an indefinite hang;
+    this surfaces the real error immediately in the build log."""
+    import json as _json, ssl as _ssl, subprocess as _sp, urllib.request as _req, urllib.error as _uerr
+    try:
+        _r = _sp.run(["security", "find-generic-password", "-s", "Claude Code-credentials", "-w"],
+                     capture_output=True, text=True, timeout=5)
+        _token = _json.loads(_r.stdout.strip()).get("claudeAiOauth", {}).get("accessToken", "")
+        if not _token:
+            return None  # can't check — let the CLI try
+        _ctx = _ssl.create_default_context()
+        try:
+            _ctx.load_verify_locations("/etc/ssl/cert.pem")
+        except Exception:
+            pass
+        _probe = _req.Request(
+            "https://api.anthropic.com/v1/messages",
+            data=_json.dumps({"model": model_id or "claude-sonnet-4-5", "max_tokens": 1,
+                              "messages": [{"role": "user", "content": "x"}]}).encode(),
+            headers={"anthropic-version": "2023-06-01", "content-type": "application/json",
+                     "authorization": "Bearer " + _token},
+            method="POST",
+        )
+        try:
+            with _req.urlopen(_probe, timeout=10, context=_ctx):
+                return None  # 200 — all good
+        except _uerr.HTTPError as _e:
+            if _e.code == 429:
+                _retry = _e.headers.get("retry-after") or _e.headers.get("x-ratelimit-reset-requests")
+                _hint = f" (retry after {_retry}s)" if _retry else " — wait a few minutes and try again"
+                return f"Rate limited (HTTP 429){_hint}. Too many concurrent calls were made. Please wait before retrying."
+            if _e.code in (401, 403):
+                return f"Authentication failed (HTTP {_e.code}). Run `claude /login` to refresh your session."
+            return None  # other HTTP errors — let the CLI handle them
+    except Exception:
+        return None  # probe failed for non-auth reason — let the CLI try
+
+
 def invoke_ai(prompt, tool, model_id):
     with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".txt", encoding=FILE_ENCODING) as tmp:
         tmp_path = tmp.name
@@ -275,6 +315,13 @@ def invoke_ai(prompt, tool, model_id):
                 cmd += [GEMINI_ARG_MODEL, model_id]
             cmd += [GEMINI_ARG_PROMPT, prompt]
         elif tool == TOOL_CLAUDE:
+            # Pre-flight rate-limit check: probe the API with a tiny request before
+            # handing off to the CLI. The CLI silently retries on 429 with exponential
+            # backoff, which looks like an indefinite hang. Failing fast here surfaces
+            # a clear error message in the build log instead.
+            _rl_err = _check_claude_rate_limit(model_id)
+            if _rl_err:
+                return None, _rl_err
             # Pass prompt via stdin (`claude -p -` reads from stdin).
             # Avoids potential arg-length issues with 200KB+ prompts and is
             # more reliable than embedding the prompt inline in the argv array.
