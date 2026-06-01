@@ -2116,6 +2116,12 @@ async function fetchBuildSteps() {
 function renderBuildSteps() {
   const grid = document.getElementById('build-steps-grid');
   if (!grid) return;
+  // Ensure log drawer container exists as a sibling below the grid
+  if (!document.getElementById('build-log-drawer-container')) {
+    const container = document.createElement('div');
+    container.id = 'build-log-drawer-container';
+    grid.parentNode.insertBefore(container, grid.nextSibling);
+  }
   const isRunning = (state.processing && state.processing.status === 'running');
 
   grid.innerHTML = Object.entries(BUILD_STEPS_META).map(([key, meta]) => {
@@ -2172,12 +2178,125 @@ async function runBuildStep(step, phaseId) {
       const data = await res.json();
       showToast(data.error || 'Build failed to start', 'error');
       optimisticRunning = null;
+    } else {
+      // Open the log drawer for the first step that will run
+      const firstStep = (step === 'all') ? 'backend' : step;
+      showBuildLog(firstStep);
     }
   } catch (e) {
     showToast('Build failed to start', 'error');
     optimisticRunning = null;
   }
 }
+
+// ---- Build Log Drawer ------------------------------------------------
+let _bld = { visible: false, step: null, content: '', running: false,
+              autoScroll: true, pollTimer: null, elapsedTimer: null, startTime: null };
+
+function showBuildLog(step) {
+  _bld.step = step; _bld.content = ''; _bld.running = true;
+  _bld.visible = true; _bld.autoScroll = true; _bld.startTime = Date.now();
+  _renderBuildLog();
+  _startBuildLogPoll();
+}
+
+function closeBuildLog() {
+  _bld.visible = false;
+  _stopBuildLogPoll();
+  if (_bld.elapsedTimer) { clearInterval(_bld.elapsedTimer); _bld.elapsedTimer = null; }
+  const c = document.getElementById('build-log-drawer-container');
+  if (c) c.innerHTML = '';
+}
+
+function _startBuildLogPoll() {
+  _stopBuildLogPoll();
+  _pollBuildLog();
+  _bld.pollTimer = setInterval(_pollBuildLog, 2000);
+}
+
+function _stopBuildLogPoll() {
+  if (_bld.pollTimer) { clearInterval(_bld.pollTimer); _bld.pollTimer = null; }
+}
+
+async function _pollBuildLog() {
+  if (!_bld.step) return;
+  try {
+    const res = await apiFetch('/api/build-log?step=' + _bld.step);
+    if (!res.ok) return;
+    const data = await res.json();
+    _bld.content = data.content || '';
+    _bld.running = data.running;
+    _updateBuildLogLines();
+    if (!data.running) _stopBuildLogPoll();
+    // If step finished, check if next step started (Build All flow)
+    if (!data.running) {
+      const runningStep = Object.entries(buildStepsState).find(([,v]) => v.status === 'running');
+      if (runningStep) { _bld.step = runningStep[0]; _bld.running = true; _startBuildLogPoll(); }
+    }
+  } catch (e) {}
+}
+
+function _renderBuildLog() {
+  let c = document.getElementById('build-log-drawer-container');
+  if (!c) return;
+  if (!_bld.visible) { c.innerHTML = ''; return; }
+  const meta = BUILD_STEPS_META[_bld.step] || { label: _bld.step };
+  c.innerHTML = `<div style="margin-top:16px;border:1px solid rgba(255,255,255,0.1);border-radius:10px;overflow:hidden;background:#0d1117;">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 14px;border-bottom:1px solid rgba(255,255,255,0.08);background:#161b22;">
+      <div style="display:flex;align-items:center;gap:8px;">
+        <span id="bld-dot" style="display:inline-block;width:7px;height:7px;border-radius:50%;background:#f59e0b;flex-shrink:0;"></span>
+        <span style="font-size:12px;font-weight:600;color:#e6edf3;font-family:var(--mono,monospace);">${meta.label}</span>
+        <span id="bld-elapsed" style="font-size:11px;color:#6e7681;"></span>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;">
+        <button onclick="bldScrollBottom()" style="background:none;border:1px solid rgba(255,255,255,0.12);color:#6e7681;border-radius:4px;padding:2px 7px;font-size:11px;cursor:pointer;" title="Scroll to bottom">↓ Bottom</button>
+        <button onclick="closeBuildLog()" style="background:none;border:none;color:#6e7681;font-size:15px;cursor:pointer;padding:2px 6px;line-height:1;" title="Dismiss">✕</button>
+      </div>
+    </div>
+    <div id="bld-body" onscroll="onBldScroll()" style="height:260px;overflow-y:auto;padding:10px 14px;font-family:var(--mono,monospace);font-size:11px;line-height:1.65;color:#8b949e;white-space:pre-wrap;word-break:break-all;"></div>
+  </div>`;
+  _updateBuildLogLines();
+  _startElapsedTimer();
+}
+
+function _updateBuildLogLines() {
+  const body = document.getElementById('bld-body');
+  const dot  = document.getElementById('bld-dot');
+  if (!body) return;
+  if (dot) dot.style.background = _bld.running ? '#f59e0b' : '#3fb950';
+  const lines = (_bld.content || '(waiting for output...)').split('\n');
+  body.innerHTML = lines.map(line => {
+    let col = '#8b949e';
+    if (/error|failed|traceback|exception/i.test(line)) col = '#ff7b72';
+    else if (/done\.|complete|written:|generated\./i.test(line))  col = '#3fb950';
+    else if (/invoking ai|running:|loading/i.test(line))          col = '#79c0ff';
+    else if (line.startsWith('[BUILD]'))                           col = '#d2a8ff';
+    return `<div style="color:${col}">${escapeHtml(line)}</div>`;
+  }).join('');
+  if (_bld.autoScroll) body.scrollTop = body.scrollHeight;
+}
+
+function onBldScroll() {
+  const b = document.getElementById('bld-body');
+  if (b) _bld.autoScroll = (b.scrollTop + b.clientHeight >= b.scrollHeight - 24);
+}
+
+function bldScrollBottom() {
+  const b = document.getElementById('bld-body');
+  if (b) { b.scrollTop = b.scrollHeight; _bld.autoScroll = true; }
+}
+
+function _startElapsedTimer() {
+  if (_bld.elapsedTimer) clearInterval(_bld.elapsedTimer);
+  _bld.elapsedTimer = setInterval(() => {
+    const el = document.getElementById('bld-elapsed');
+    if (!el) { clearInterval(_bld.elapsedTimer); return; }
+    if (!_bld.running) { clearInterval(_bld.elapsedTimer); el.textContent = 'done'; return; }
+    const s = Math.floor((Date.now() - _bld.startTime) / 1000);
+    el.textContent = `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`;
+  }, 1000);
+}
+// ----------------------------------------------------------------------
 
 async function openBuildCodePanel(step) {
   buildCodePanelStep = step;

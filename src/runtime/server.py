@@ -2148,6 +2148,32 @@ class ForgeHandler(BaseHTTPRequestHandler):
             self.wfile.write(content.encode("utf-8"))
             return
 
+        if path == "/api/build-log":
+            _bl_step = params.get("step", [""])[0].strip()
+            _step_keys_log = ["backend", "frontend", "integration", "tests", "infra"]
+            if _bl_step not in _step_keys_log:
+                self._json_response(400, {"error": "unknown step"})
+                return
+            _log_path = os.path.join(FORGE_DIR, "runs", f"build-log-{_bl_step}.txt")
+            _log_content = ""
+            if os.path.exists(_log_path):
+                try:
+                    with open(_log_path, encoding="utf-8", errors="replace") as _lf:
+                        _log_content = _lf.read()
+                except OSError:
+                    pass
+            # Cap at last 60 KB to keep payload bounded
+            if len(_log_content) > 61440:
+                _log_content = "...[earlier output truncated]...\n" + _log_content[-61440:]
+            _bl_running = False
+            try:
+                with open(os.path.join(FORGE_DIR, FILE_BUILD_SYSTEM)) as _bf:
+                    _bl_running = json.load(_bf).get(_bl_step, {}).get("status") == STATUS_RUNNING
+            except (OSError, json.JSONDecodeError):
+                pass
+            self._json_response(200, {"content": _log_content, "running": _bl_running, "step": _bl_step})
+            return
+
         if path == "/api/build-system":
             build_status_file = os.path.join(FORGE_DIR, FILE_BUILD_SYSTEM)
             build_status = {}
@@ -4663,9 +4689,24 @@ class ForgeHandler(BaseHTTPRequestHandler):
                     }
                     steps_to_run = step_keys if step == "all" else [step]
                     build_runner = os.path.join(FORGE_DIR, "scripts", "build_runner.py")
+                    # PYTHONUNBUFFERED=1 ensures print() lines reach the log file immediately
+                    _run_env = {**env, "PYTHONUNBUFFERED": "1"}
                     for s in steps_to_run:
                         set_processing(STATUS_RUNNING, s)
-                        subprocess.run([sys.executable, build_runner, s], cwd=REPO_ROOT, env=env)
+                        _log_path = os.path.join(FORGE_DIR, "runs", f"build-log-{s}.txt")
+                        try:
+                            with open(_log_path, "w", encoding="utf-8") as _log_f:
+                                _proc = subprocess.Popen(
+                                    [sys.executable, build_runner, s],
+                                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                    cwd=REPO_ROOT, env=_run_env, text=True, bufsize=1,
+                                )
+                                for _line in _proc.stdout:
+                                    _log_f.write(_line)
+                                    _log_f.flush()
+                                _proc.wait()
+                        except Exception as _exc:
+                            logger.warning("build step %s stream error: %s", s, _exc)
                 finally:
                     _build_system_lock.release()
                     set_processing(STATUS_IDLE)
