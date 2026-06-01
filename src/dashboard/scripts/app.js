@@ -2369,7 +2369,7 @@ function renderLocalRun() {
           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
           <span title="${escapeHtml(scanRoot)}">${escapeHtml(scanDisplay)}</span>
           <button class="btn btn-ghost btn-xs local-preview-copy-btn" style="margin-left:2px;"
-            onclick="navigator.clipboard.writeText(${JSON.stringify(scanRoot)})"
+            onclick="copyToClipboard(${JSON.stringify(scanRoot)}, this)"
             title="Copy full path">${icon('clipboard', 10)}</button>
         </div>` : ''}
         <div class="local-preview-services-grid">
@@ -2387,7 +2387,7 @@ function renderLocalRun() {
               <div class="local-preview-cmd-block">
                 <code>${escapeHtml(fullCmd)}</code>
                 <button class="btn btn-ghost btn-xs local-preview-copy-btn"
-                  onclick="navigator.clipboard.writeText(${JSON.stringify(fullCmd)})"
+                  onclick="copyToClipboard(${JSON.stringify(fullCmd)}, this)"
                   title="Copy command">
                   ${icon('clipboard', 11)}
                 </button>

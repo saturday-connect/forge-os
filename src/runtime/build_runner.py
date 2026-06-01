@@ -471,7 +471,7 @@ def build_backend_prompt(persona, docs):
             "Python/FastAPI:\n"
             "  FROM python:3.12-slim AS builder\n"
             "  COPY requirements.txt ./\n"
-            "  RUN pip install --no-cache-dir -r requirements.txt\n"
+            "  RUN pip install --no-cache-dir -r requirements.txt    ← NO --user flag\n"
             "  FROM python:3.12-slim AS runner\n"
             "  COPY --from=builder /usr/local/lib /usr/local/lib\n"
             "  COPY --from=builder /usr/local/bin /usr/local/bin\n"
@@ -479,6 +479,15 @@ def build_backend_prompt(persona, docs):
             "  RUN useradd --create-home appuser && chown -R appuser /app\n"
             "  USER appuser\n"
             "  CMD ['uvicorn', 'app.main:app', '--host', '0.0.0.0', '--port', '8000']\n\n"
+            "CRITICAL — NEVER use `pip install --user` with a non-root user:\n"
+            "  WRONG:\n"
+            "    RUN pip install --user -r requirements.txt          ← installs to /root/.local/\n"
+            "    COPY --from=builder /root/.local /root/.local\n"
+            "    USER appuser                                        ← appuser cannot read /root/\n"
+            "  Error: can't open file '/root/.local/bin/uvicorn': [Errno 13] Permission denied\n"
+            "  Cause: /root/ has 700 permissions — no other user can traverse it, regardless\n"
+            "         of what chmod you apply to files inside /root/.local/.\n"
+            "  Fix: always install globally (no --user) so packages go to /usr/local/ instead.\n\n"
             "Node.js/TypeScript:\n"
             "  FROM node:20-alpine AS builder\n"
             "  COPY package.json ./\n"
@@ -1667,13 +1676,18 @@ def build_infra_prompt(persona, docs, api_contract, backend_built="", frontend_b
             "  context: ./backend   ← looks for infra/backend/ — does not exist\n"
             "  context: backend     ← same error\n"
             "  context: .           ← builds from infra/ — wrong\n\n"
-            "EVERY service needs a healthcheck:\n"
-            "  healthcheck:\n"
-            "    test: ['CMD', 'curl', '-f', 'http://localhost:8000/health']\n"
-            "    interval: 30s\n"
-            "    timeout: 10s\n"
-            "    retries: 3\n"
-            "    start_period: 40s\n\n"
+            "HEALTHCHECK TOOL — MUST MATCH THE SERVICE'S BASE IMAGE:\n"
+            "  python:3.12-slim (Debian-based) → has curl, does NOT have wget:\n"
+            "    test: ['CMD', 'curl', '-sf', 'http://127.0.0.1:8000/health']\n\n"
+            "  node:18-alpine (Alpine-based) → has wget, does NOT have curl by default:\n"
+            "    test: ['CMD', 'wget', '--no-verbose', '--tries=1', '--spider', 'http://127.0.0.1:3000']\n\n"
+            "  postgres:* → use pg_isready (always available):\n"
+            "    test: ['CMD-SHELL', 'pg_isready -U postgres -d <dbname>']\n\n"
+            "ALL healthcheck URLs MUST use 127.0.0.1, NEVER localhost:\n"
+            "  Reason: Alpine's wget resolves 'localhost' to ::1 (IPv6), but the server\n"
+            "  binds to 0.0.0.0 (IPv4 only). 127.0.0.1 forces IPv4 and works in all images.\n"
+            "  CORRECT: http://127.0.0.1:8000/health\n"
+            "  WRONG:   http://localhost:8000/health\n\n"
             "depends_on must use condition: service_healthy (not just service_started):\n"
             "  depends_on:\n"
             "    backend:\n"
@@ -3244,19 +3258,112 @@ def _detect_truncated_files(out_dir):
     return flagged
 
 
-def _fix_compose_healthchecks(out_dir):
-    """Fix docker-compose.yml health check and service configuration issues.
+def _fix_python_dockerfile_user_install(out_dir):
+    """Fix pip install --user + USER nonroot pattern in Python Dockerfiles.
 
-    Fixes applied:
-    1. curl → wget in Alpine-based service health checks (Alpine has no curl by default)
-    2. localhost → 127.0.0.1 in health check URLs (localhost resolves to IPv6 ::1 in
-       many container environments; servers bound to 0.0.0.0 only accept IPv4)
-    3. Adds Postgres service if referenced in environment but missing from services
-    4. Adds postgres_data volume if postgres service is added
-    5. Pins PORT=3000 + HOSTNAME=0.0.0.0 for frontend services to prevent the
-       PORT env var from being overridden by a shared env_file
-    6. Replaces 'env_file' for frontend services with explicit environment vars
-       (prevents PORT=8000 from a backend .env.local overriding frontend port)
+    Root cause: `pip install --user` installs packages to /root/.local/.
+    When the runner stage switches to a non-root user (USER appuser), that user
+    cannot traverse /root/ — it has 700 permissions by default.
+
+    Error seen at container startup:
+        /usr/local/bin/python3.x: can't open file '/root/.local/bin/uvicorn':
+        [Errno 13] Permission denied
+
+    chmod -R o+rX /root/.local does NOT fix it because /root itself (the parent
+    directory) also has 700, blocking traversal before the permissions on .local
+    are even checked.
+
+    Fix: remove --user from pip install (installs globally to /usr/local/) and
+    rewrite the COPY directive from /root/.local to /usr/local/{lib,bin}.
+    Also removes the PATH override for /root/.local/bin (global install is
+    already on PATH).
+
+    Correct multi-stage Python pattern:
+        FROM python:3.12-slim AS builder
+        RUN pip install --no-cache-dir -r requirements.txt     # global, no --user
+        FROM python:3.12-slim AS runner
+        COPY --from=builder /usr/local/lib /usr/local/lib
+        COPY --from=builder /usr/local/bin /usr/local/bin
+    """
+    import re as _re
+
+    for root, dirs, files in os.walk(out_dir):
+        dirs[:] = [d for d in dirs if d not in ("node_modules", ".git")]
+        for fname in files:
+            if fname != "Dockerfile" and not fname.startswith("Dockerfile."):
+                continue
+            fpath = os.path.join(root, fname)
+            try:
+                with open(fpath, encoding=FILE_ENCODING) as f:
+                    original = f.read()
+            except OSError:
+                continue
+
+            # Only act on Python Dockerfiles
+            if not _re.search(r"FROM\s+python:", original, _re.IGNORECASE):
+                continue
+            if "--user" not in original:
+                continue
+
+            fixed = original
+
+            # Remove --user flag in any pip install invocation
+            # Handles: pip install --user, pip install --no-cache-dir --user, etc.
+            fixed = _re.sub(r"(pip\s+install\b[^\n]*?)--user\s*", r"\1", fixed)
+
+            # Rewrite COPY from /root/.local to global locations
+            fixed = fixed.replace(
+                "COPY --from=builder /root/.local /root/.local",
+                "COPY --from=builder /usr/local/lib /usr/local/lib\n"
+                "COPY --from=builder /usr/local/bin /usr/local/bin",
+            )
+
+            # Remove the PATH override (no longer needed — global install is on PATH)
+            fixed = _re.sub(r"ENV PATH=/root/\.local/bin:\$PATH\s*\n", "", fixed)
+
+            if fixed != original:
+                with open(fpath, "w", encoding=FILE_ENCODING) as f:
+                    f.write(fixed)
+                rel = os.path.relpath(fpath, out_dir)
+                print(
+                    _LOG_PREFIX + " [fixup] Fixed pip --user in " + rel
+                    + " — global install; COPY updated to /usr/local/{lib,bin}"
+                )
+
+
+def _detect_dockerfile_is_alpine(dockerfile_path):
+    """Return True if the Dockerfile's first FROM stage uses an Alpine base image."""
+    import re as _re
+    try:
+        with open(dockerfile_path, encoding=FILE_ENCODING) as f:
+            content = f.read()
+    except OSError:
+        return None
+    # Check the very first FROM line — determines the primary base
+    m = _re.search(r"^FROM\s+(\S+)", content, _re.MULTILINE | _re.IGNORECASE)
+    if not m:
+        return None
+    base = m.group(1).lower()
+    return "alpine" in base
+
+
+def _fix_compose_healthchecks(out_dir):
+    """Fix docker-compose.yml health check issues.
+
+    Per-service fixes, auto-detected from each service's base image:
+
+    Alpine images (node:*-alpine, redis, etc.):
+      - Use wget — curl is not installed by default in Alpine
+      - CORRECT: ["CMD", "wget", "-qO-", "http://127.0.0.1:<port>/path"]
+
+    Non-Alpine / Python-slim images (python:3.12-slim, debian, ubuntu):
+      - Use curl — wget is not installed in python:slim, only curl is
+      - CORRECT: ["CMD", "curl", "-sf", "http://127.0.0.1:<port>/path"]
+
+    All images:
+      - localhost → 127.0.0.1 in healthcheck URLs
+        Reason: Alpine wget resolves 'localhost' to ::1 (IPv6), but servers
+        bind to 0.0.0.0 (IPv4 only). Using 127.0.0.1 forces IPv4.
     """
     import re as _re
 
@@ -3269,6 +3376,7 @@ def _fix_compose_healthchecks(out_dir):
         if not compose_file:
             continue
         compose_path = os.path.join(root, compose_file)
+        compose_dir = root
         try:
             with open(compose_path, encoding=FILE_ENCODING) as f:
                 content = f.read()
@@ -3277,19 +3385,101 @@ def _fix_compose_healthchecks(out_dir):
 
         original = content
 
-        # Fix 1: curl -f → wget -qO- (curl not in alpine)
+        # ── Determine per-service Alpine vs non-Alpine ─────────────────────────
+        # Parse service names and their build contexts / image names from the raw
+        # YAML text.  We use a lightweight regex approach rather than full YAML
+        # parse to avoid depending on PyYAML being installed at fixup time.
+
+        # Collect (service_name, is_alpine) pairs
+        # Pattern: look for `build:` → `context:` or `image:` within service blocks
+        service_is_alpine: dict = {}
+
+        # Find service blocks: service name at 2-space indent, followed by indented content
+        _svc_block_re = _re.compile(
+            r"^  ([a-zA-Z_][a-zA-Z0-9_-]*):\s*\n((?:[ \t]+[^\n]*\n)*)",
+            _re.MULTILINE,
+        )
+        for svc_match in _svc_block_re.finditer(content):
+            svc_name = svc_match.group(1)
+            svc_body = svc_match.group(2)
+
+            # Check image: key
+            img_m = _re.search(r"image:\s*(\S+)", svc_body)
+            if img_m:
+                img = img_m.group(1).lower()
+                service_is_alpine[svc_name] = "alpine" in img
+                continue
+
+            # Check build: context: key — resolve and read the Dockerfile
+            ctx_m = _re.search(r"context:\s*(\S+)", svc_body)
+            if ctx_m:
+                ctx = ctx_m.group(1).strip("'\"")
+                # Look for dockerfile: override
+                df_m = _re.search(r"dockerfile:\s*(\S+)", svc_body)
+                df_name = df_m.group(1).strip("'\"") if df_m else "Dockerfile"
+                dockerfile_path = os.path.normpath(
+                    os.path.join(compose_dir, ctx, df_name)
+                )
+                result = _detect_dockerfile_is_alpine(dockerfile_path)
+                if result is not None:
+                    service_is_alpine[svc_name] = result
+
+        # ── Fix healthcheck tool and localhost references ───────────────────────
+
+        def _fix_healthcheck_line(m):
+            """Replace healthcheck CMD with the correct tool for the service."""
+            # m matches the full healthcheck test block; replace tool + localhost
+            block = m.group(0)
+
+            # Fix localhost → 127.0.0.1 in the URL inside the healthcheck
+            block = _re.sub(r"(https?://)(localhost)(\b)", r"\g<1>127.0.0.1\3", block)
+
+            # Detect current tool
+            uses_wget = '"wget"' in block or "'wget'" in block
+            uses_curl = '"curl"' in block or "'curl'" in block
+
+            # Determine the containing service's image type
+            # Find nearest service name preceding this match
+            pos = m.start()
+            svc_name = None
+            for sm in _svc_block_re.finditer(content):
+                if sm.start() <= pos:
+                    svc_name = sm.group(1)
+                else:
+                    break
+            is_alpine = service_is_alpine.get(svc_name)  # None = unknown
+
+            if is_alpine is False and uses_wget:
+                # Non-Alpine (Python/Debian): wget is wrong, use curl -sf
+                block = _re.sub(
+                    r'"CMD",\s*"wget",\s*"(?:-qO-|-q|--no-verbose[^"]*)",\s*"(http://[^"]+)"',
+                    lambda wm: '"CMD", "curl", "-sf", "' + wm.group(1) + '"',
+                    block,
+                )
+                block = _re.sub(
+                    r'"CMD",\s*"wget",\s*(?:"--no-verbose",\s*"--tries=\d+",\s*"--spider",\s*|"[^"]*",\s*)"(http://[^"]+)"',
+                    lambda wm: '"CMD", "curl", "-sf", "' + wm.group(1) + '"',
+                    block,
+                )
+            elif (is_alpine is True or is_alpine is None) and uses_curl:
+                # Alpine: curl is wrong (not installed), use wget
+                block = _re.sub(
+                    r'"CMD",\s*"curl",\s*"-[sf]+",\s*"(http://[^"]+)"',
+                    lambda cm: '"CMD", "wget", "-qO-", "' + cm.group(1) + '"',
+                    block,
+                )
+
+            return block
+
+        # Apply fix to each healthcheck block
         content = _re.sub(
-            r'"CMD",\s*"curl",\s*"-f",\s*"(http://[^"]+)"',
-            lambda m: '"CMD", "wget", "-qO-", "' + m.group(1) + '"',
-            content
+            r'healthcheck:\s*\n(?:[ \t]+[^\n]+\n)+',
+            _fix_healthcheck_line,
+            content,
         )
 
-        # Fix 2: localhost → 127.0.0.1 in health check URLs
-        content = _re.sub(
-            r'(CMD[^"]*"wget[^"]*",\s*"[^"]*://)(localhost)',
-            r'\g<1>127.0.0.1',
-            content
-        )
+        # Catch any remaining localhost in CMD strings not covered above
+        content = _re.sub(r'(https?://)(localhost)(\b)', r'\g<1>127.0.0.1\3', content)
 
         if content != original:
             with open(compose_path, "w", encoding=FILE_ENCODING) as f:
@@ -3758,6 +3948,7 @@ def _post_generate_fixups(out_dir):
     _ensure_package_dependencies(out_dir)
     _normalize_component_dirs(out_dir)
     _fix_npm_ci_in_dockerfiles(out_dir)
+    _fix_python_dockerfile_user_install(out_dir)
     _fix_openssl_in_alpine_dockerfiles(out_dir)
     _ensure_dockerignore(out_dir)
     _ensure_nextjs_public_dir(out_dir)
@@ -3896,10 +4087,20 @@ def run_step(step):
 
     # Deterministic fixups (correct AI-generated code mistakes)
     _post_generate_fixups(out_dir)
-    # Note: _validate_build() exists for opt-in use but is NOT called automatically.
-    # Running npm install / pip install post-generation triggers macOS TCC permission
-    # prompts (Desktop/Documents/Downloads access) and takes 3-5 min. The prompt
-    # rules are the primary protection against bad generated code.
+
+    # Optional post-generation validation: compile-checks that surface errors the
+    # prompt rules didn't prevent (tsc --noEmit, py_compile, docker compose config).
+    #
+    # Disabled by default because:
+    #   - npm install / pip install trigger macOS TCC permission prompts
+    #     (Desktop/Documents/Downloads access dialogs appear for each step)
+    #   - Full frontend build takes 3-5 min — acceptable in CI, disruptive locally
+    #
+    # Enable by setting FORGE_VALIDATE_BUILD=1 in the environment (or in CI):
+    #   FORGE_VALIDATE_BUILD=1 ./forge build frontend
+    if os.environ.get("FORGE_VALIDATE_BUILD", "").strip() == "1":
+        print(_LOG_PREFIX + " [validate] FORGE_VALIDATE_BUILD=1 — running post-generation validation...")
+        _validate_build(out_dir, step)
 
     return True
 
