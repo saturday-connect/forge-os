@@ -3439,23 +3439,85 @@ def _detect_dockerfile_is_alpine(dockerfile_path):
     return "alpine" in base
 
 
+def _detect_dockerfile_runtime(dockerfile_path):
+    """Return the language runtime guaranteed present in a Dockerfile's base image.
+
+    Healthchecks must use a tool that is GUARANTEED to exist in the final image.
+    The key insight: python:slim ships with NEITHER curl NOR wget — only the
+    python interpreter. node:alpine ships with busybox wget but not curl.
+    Relying on curl/wget being installed is fragile; relying on the language
+    runtime is not.
+
+    Returns one of: 'python', 'node', 'postgres', or None (unknown).
+    Inspects ALL FROM lines (the final runner stage matters most for runtime).
+    """
+    import re as _re
+    try:
+        with open(dockerfile_path, encoding=FILE_ENCODING) as f:
+            content = f.read()
+    except OSError:
+        return None
+    from_lines = _re.findall(r"^FROM\s+(\S+)", content, _re.MULTILINE | _re.IGNORECASE)
+    if not from_lines:
+        return None
+    # The last FROM is the runtime stage in a multi-stage build
+    base = from_lines[-1].lower()
+    if base.startswith("python") or "python:" in base:
+        return "python"
+    if base.startswith("node") or "node:" in base:
+        return "node"
+    if base.startswith("postgres"):
+        return "postgres"
+    return None
+
+
+def _healthcheck_cmd_for_runtime(runtime, is_alpine, url):
+    """Return a docker-compose healthcheck `test` array string using a tool
+    GUARANTEED to be present in the given runtime's base image.
+
+    python      → python urllib (always present in python:* images)
+    node+alpine → wget (busybox, always present in *-alpine images)
+    node+debian → node http module (curl/wget not guaranteed)
+    alpine-only → wget
+    fallback    → wget (-qO-) which is broadly available
+    """
+    if runtime == "python":
+        return ('["CMD", "python", "-c", "import urllib.request; '
+                "urllib.request.urlopen('" + url + "', timeout=3)\"]")
+    if runtime == "node":
+        if is_alpine:
+            return '["CMD", "wget", "-qO-", "' + url + '"]'
+        # Debian-based node: use node itself
+        return ('["CMD", "node", "-e", "require(\\\'http\\\').get(\\\'' + url
+                + "\\\', r => process.exit(r.statusCode < 400 ? 0 : 1))"
+                ".on(\\\'error\\\', () => process.exit(1))\"]")
+    # Generic alpine or unknown → wget is the safest broadly-available default
+    return '["CMD", "wget", "-qO-", "' + url + '"]'
+
+
 def _fix_compose_healthchecks(out_dir):
     """Fix docker-compose.yml health check issues.
 
-    Per-service fixes, auto-detected from each service's base image:
+    CRITICAL INSIGHT: python:slim images ship with NEITHER curl NOR wget.
+    A healthcheck of `curl -sf http://.../health` fails with "curl: not found"
+    even when the app is perfectly healthy — Docker then marks the container
+    unhealthy and any dependent service refuses to start.
 
-    Alpine images (node:*-alpine, redis, etc.):
-      - Use wget — curl is not installed by default in Alpine
-      - CORRECT: ["CMD", "wget", "-qO-", "http://127.0.0.1:<port>/path"]
+    The robust fix is to use the language runtime GUARANTEED to be present in
+    each image rather than assuming a CLI HTTP client is installed:
 
-    Non-Alpine / Python-slim images (python:3.12-slim, debian, ubuntu):
-      - Use curl — wget is not installed in python:slim, only curl is
-      - CORRECT: ["CMD", "curl", "-sf", "http://127.0.0.1:<port>/path"]
+      python:*      → python -c "import urllib.request; urllib.request.urlopen(URL)"
+      node:*-alpine → wget   (busybox wget is always present in Alpine)
+      node:* debian → node -e "require('http').get(URL, ...)"
+      *-alpine      → wget
+      postgres:*    → pg_isready (left untouched; not HTTP)
 
-    All images:
-      - localhost → 127.0.0.1 in healthcheck URLs
-        Reason: Alpine wget resolves 'localhost' to ::1 (IPv6), but servers
-        bind to 0.0.0.0 (IPv4 only). Using 127.0.0.1 forces IPv4.
+    Runtime is detected from each service's `image:` tag or, for build-based
+    services, from the final FROM stage of its Dockerfile.
+
+    All HTTP healthchecks also get localhost → 127.0.0.1 rewriting:
+      Alpine wget resolves 'localhost' to ::1 (IPv6), but servers typically
+      bind to 0.0.0.0 (IPv4 only). 127.0.0.1 forces IPv4.
     """
     import re as _re
 
@@ -3482,9 +3544,10 @@ def _fix_compose_healthchecks(out_dir):
         # YAML text.  We use a lightweight regex approach rather than full YAML
         # parse to avoid depending on PyYAML being installed at fixup time.
 
-        # Collect (service_name, is_alpine) pairs
+        # Collect per-service (is_alpine, runtime) detected from image or Dockerfile.
         # Pattern: look for `build:` → `context:` or `image:` within service blocks
         service_is_alpine: dict = {}
+        service_runtime: dict = {}   # 'python' | 'node' | 'postgres' | None
 
         # Find service blocks: service name at 2-space indent, followed by indented content
         _svc_block_re = _re.compile(
@@ -3500,6 +3563,12 @@ def _fix_compose_healthchecks(out_dir):
             if img_m:
                 img = img_m.group(1).lower()
                 service_is_alpine[svc_name] = "alpine" in img
+                if img.startswith("python") or "python:" in img:
+                    service_runtime[svc_name] = "python"
+                elif img.startswith("node") or "node:" in img:
+                    service_runtime[svc_name] = "node"
+                elif img.startswith("postgres"):
+                    service_runtime[svc_name] = "postgres"
                 continue
 
             # Check build: context: key — resolve and read the Dockerfile
@@ -3515,23 +3584,30 @@ def _fix_compose_healthchecks(out_dir):
                 result = _detect_dockerfile_is_alpine(dockerfile_path)
                 if result is not None:
                     service_is_alpine[svc_name] = result
+                rt = _detect_dockerfile_runtime(dockerfile_path)
+                if rt is not None:
+                    service_runtime[svc_name] = rt
 
-        # ── Fix healthcheck tool and localhost references ───────────────────────
+        # ── Rewrite each HTTP healthcheck with a runtime-guaranteed tool ────────
+        # The core fix: python:slim has NEITHER curl NOR wget. Relying on either
+        # being installed is fragile. Instead, emit a healthcheck using the tool
+        # guaranteed to exist for that service's runtime (python urllib for
+        # python images, busybox wget for alpine, node http for debian-node).
 
         def _fix_healthcheck_line(m):
-            """Replace healthcheck CMD with the correct tool for the service."""
-            # m matches the full healthcheck test block; replace tool + localhost
             block = m.group(0)
 
-            # Fix localhost → 127.0.0.1 in the URL inside the healthcheck
+            # Normalise localhost → 127.0.0.1 everywhere in the block first
             block = _re.sub(r"(https?://)(localhost)(\b)", r"\g<1>127.0.0.1\3", block)
 
-            # Detect current tool
-            uses_wget = '"wget"' in block or "'wget'" in block
-            uses_curl = '"curl"' in block or "'curl'" in block
+            # Only touch HTTP healthchecks. Leave pg_isready / redis-cli / custom
+            # shell checks untouched — they don't depend on curl/wget.
+            url_m = _re.search(r'(https?://[^\s"\']+)', block)
+            if not url_m:
+                return block
+            url = url_m.group(1)
 
-            # Determine the containing service's image type
-            # Find nearest service name preceding this match
+            # Identify the service this healthcheck belongs to (nearest preceding)
             pos = m.start()
             svc_name = None
             for sm in _svc_block_re.finditer(content):
@@ -3539,28 +3615,26 @@ def _fix_compose_healthchecks(out_dir):
                     svc_name = sm.group(1)
                 else:
                     break
-            is_alpine = service_is_alpine.get(svc_name)  # None = unknown
 
-            if is_alpine is False and uses_wget:
-                # Non-Alpine (Python/Debian): wget is wrong, use curl -sf
-                block = _re.sub(
-                    r'"CMD",\s*"wget",\s*"(?:-qO-|-q|--no-verbose[^"]*)",\s*"(http://[^"]+)"',
-                    lambda wm: '"CMD", "curl", "-sf", "' + wm.group(1) + '"',
-                    block,
-                )
-                block = _re.sub(
-                    r'"CMD",\s*"wget",\s*(?:"--no-verbose",\s*"--tries=\d+",\s*"--spider",\s*|"[^"]*",\s*)"(http://[^"]+)"',
-                    lambda wm: '"CMD", "curl", "-sf", "' + wm.group(1) + '"',
-                    block,
-                )
-            elif (is_alpine is True or is_alpine is None) and uses_curl:
-                # Alpine: curl is wrong (not installed), use wget
-                block = _re.sub(
-                    r'"CMD",\s*"curl",\s*"-[sf]+",\s*"(http://[^"]+)"',
-                    lambda cm: '"CMD", "wget", "-qO-", "' + cm.group(1) + '"',
-                    block,
-                )
+            runtime = service_runtime.get(svc_name)
+            is_alpine = service_is_alpine.get(svc_name)
 
+            # If we couldn't determine the runtime, leave the healthcheck as-is
+            # rather than risk emitting a tool that isn't present.
+            if runtime is None:
+                return block
+
+            new_test = _healthcheck_cmd_for_runtime(runtime, is_alpine, url)
+
+            # Replace the existing `test: [...]` array with the new command.
+            # Use a function replacement to avoid backslash-escape interpretation
+            # in the replacement string (the node command contains backslashes).
+            block = _re.sub(
+                r'test:\s*\[[^\]]*\]',
+                lambda _: 'test: ' + new_test,
+                block,
+                count=1,
+            )
             return block
 
         # Apply fix to each healthcheck block
