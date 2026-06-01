@@ -10,7 +10,7 @@ imported by both server.py and build_runner.py.
 # ---------------------------------------------------------------------------
 # Timeouts (seconds)
 # ---------------------------------------------------------------------------
-GENERATE_TIMEOUT_SECS = 600     # AI generation subprocess
+GENERATE_TIMEOUT_SECS = 1800    # AI generation subprocess (30 min — Claude on large steps needs 15-20 min)
 AI_POLL_TIMEOUT_SECS = 300      # background AI process wait
 GIT_TIMEOUT_SECS = 15           # git subprocess calls
 NETWORK_TIMEOUT_SECS = 20       # network/HTTP operations

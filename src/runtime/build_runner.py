@@ -264,6 +264,7 @@ def invoke_ai(prompt, tool, model_id):
             "using the === FILENAME === block markers exactly as the prompt specifies.\n"
             "Begin your response immediately after this line.\n\n"
         )
+        stdin_data = None  # set for tools that read prompt from stdin
         if tool == TOOL_ANTIGRAVITY:
             cmd = [TOOL_ANTIGRAVITY, ANTIGRAVITY_ARG_SKIP_PERMISSIONS,
                    "--add-dir", FORGE_DIR,
@@ -274,15 +275,20 @@ def invoke_ai(prompt, tool, model_id):
                 cmd += [GEMINI_ARG_MODEL, model_id]
             cmd += [GEMINI_ARG_PROMPT, prompt]
         elif tool == TOOL_CLAUDE:
-            cmd = [TOOL_CLAUDE, CLAUDE_ARG_PROMPT, prompt, CLAUDE_ARG_OUTPUT_FORMAT, CLAUDE_OUTPUT_TEXT]
+            # Pass prompt via stdin (`claude -p -` reads from stdin).
+            # Avoids potential arg-length issues with 200KB+ prompts and is
+            # more reliable than embedding the prompt inline in the argv array.
+            cmd = [TOOL_CLAUDE, CLAUDE_ARG_PROMPT, "-", CLAUDE_ARG_OUTPUT_FORMAT, CLAUDE_OUTPUT_TEXT]
             if model_id:
                 cmd += [CLAUDE_ARG_MODEL, model_id]
+            stdin_data = prompt.encode(FILE_ENCODING)
         else:
             cmd = [TOOL_ANTIGRAVITY, ANTIGRAVITY_ARG_SKIP_PERMISSIONS,
                    "--add-dir", FORGE_DIR,
                    ANTIGRAVITY_ARG_PRINT, _AGY_DIRECTIVE + prompt]
         with open(tmp_path, "w", encoding=FILE_ENCODING) as out_f:
-            result = subprocess.run(cmd, stdout=out_f, stderr=subprocess.PIPE, timeout=GENERATE_TIMEOUT_SECS,
+            result = subprocess.run(cmd, input=stdin_data, stdout=out_f, stderr=subprocess.PIPE,
+                                    timeout=GENERATE_TIMEOUT_SECS,
                                     cwd=FORGE_DIR)  # pin cwd — prevents AI CLI scanning ~ or Desktop for context
         if result.returncode != 0:
             err = result.stderr.decode(FILE_ENCODING, errors="replace") if result.stderr else "AI call failed"
@@ -290,7 +296,7 @@ def invoke_ai(prompt, tool, model_id):
         with open(tmp_path, encoding=FILE_ENCODING) as f:
             return f.read(), None
     except subprocess.TimeoutExpired:
-        return None, "AI call timed out after 10 minutes"
+        return None, f"AI call timed out after {GENERATE_TIMEOUT_SECS // 60} minutes"
     except FileNotFoundError:
         return None, "AI tool '" + tool + "' not found in PATH"
     finally:
