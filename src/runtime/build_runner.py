@@ -3305,6 +3305,40 @@ def _detect_truncated_files(out_dir):
                 + " — AI timed out mid-generation. File patched; logic may be incomplete."
             )
 
+    # ── Second pass: structural truncation (no error marker, just abrupt cutoff) ──
+    # Detects TSX/JSX/TS/PY files whose brace/bracket count is unbalanced —
+    # meaning the AI stopped generating mid-file without any error message.
+    # Symptom: SWC reports "Unexpected token" near the return statement because
+    # the file ends with dangling `}}` instead of a complete function body.
+    _STRUCT_EXTS = (".ts", ".tsx", ".js", ".jsx")
+    for root, dirs, files in os.walk(out_dir):
+        dirs[:] = [d for d in dirs if d not in _SKIP_DIRS]
+        for fname in files:
+            if not any(fname.endswith(ext) for ext in _STRUCT_EXTS):
+                continue
+            fpath = os.path.join(root, fname)
+            if fpath in {os.path.join(root, os.path.relpath(f, root)) for f in flagged}:
+                continue  # already handled above
+            try:
+                with open(fpath, encoding=FILE_ENCODING, errors="replace") as f:
+                    content = f.read()
+            except OSError:
+                continue
+            open_count = content.count("{") - content.count("}")
+            if open_count <= 0:
+                continue
+            # Unbalanced braces — file was truncated without an error marker
+            fixed = content.rstrip() + "\n" + ("}" * open_count) + "\n"
+            with open(fpath, "w", encoding=FILE_ENCODING) as f:
+                f.write(fixed)
+            rel = os.path.relpath(fpath, out_dir)
+            flagged.append(rel)
+            print(
+                _LOG_PREFIX + " [fixup] STRUCTURAL TRUNCATION in " + rel
+                + " — " + str(open_count) + " unclosed brace(s) added."
+                + " File is incomplete; consider rebuilding this step."
+            )
+
     if flagged:
         print(
             _LOG_PREFIX + " [WARNING] " + str(len(flagged))
