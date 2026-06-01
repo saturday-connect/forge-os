@@ -2128,41 +2128,45 @@ function renderBuildSteps() {
     const st = buildStepsState[key] || { status: 'idle', files: [] };
     const fileCount = (st.files || []).length;
     const isThisRunning = isRunning && (state.processing.stage === key || state.processing.stage === 'all');
+    const hasLog = isThisRunning || ['complete', 'error'].includes(st.status);
+    const canRun = !isRunning;
 
-    let statusBadge, footerHtml;
-    const hasLog = ['running', 'complete', 'error'].includes(st.status) || isThisRunning;
-    const logBtn = hasLog
-      ? `<button class="btn btn-ghost btn-sm" onclick="showBuildLog('${key}')" title="View build output" style="padding:2px 7px;">Log</button>`
-      : '';
+    let badge, leftText, rightBtns;
 
     if (isThisRunning) {
-      statusBadge = `<span class="badge" style="background:var(--blue-light,#dbeafe);color:var(--blue);">
-        <span class="spinner" style="display:inline-block;width:8px;height:8px;border:1.5px solid var(--blue);border-top-color:transparent;border-radius:50%;animation:spin 0.7s linear infinite;margin-right:4px;vertical-align:middle;"></span>Building</span>`;
-      footerHtml = `<span style="font-size:11px;color:var(--text-3);">Running...</span>${logBtn}`;
+      badge = `<span class="badge" style="background:var(--blue-light,#dbeafe);color:var(--blue);gap:4px;">
+        <span style="display:inline-block;width:7px;height:7px;border:1.5px solid var(--blue);border-top-color:transparent;border-radius:50%;animation:spin 0.7s linear infinite;"></span>Building</span>`;
+      leftText = `<span style="font-size:11px;color:var(--text-3);">In progress</span>`;
+      rightBtns = `<button class="btn btn-ghost btn-sm" onclick="showBuildLog('${key}')">Progress</button>`;
     } else if (st.status === 'complete') {
-      statusBadge = `<span class="badge badge-success">Complete</span>`;
-      footerHtml = `<span style="font-size:11px;color:var(--text-3);">${fileCount} file${fileCount !== 1 ? 's' : ''} generated</span>
-        ${logBtn}<button class="btn btn-secondary btn-sm" onclick="openBuildCodePanel('${key}')">View Code</button>`;
+      badge = `<span class="badge badge-success">Complete</span>`;
+      leftText = `<span style="font-size:11px;color:var(--text-3);">${fileCount} file${fileCount!==1?'s':''} generated</span>`;
+      rightBtns = `<button class="btn btn-ghost btn-sm" onclick="showBuildLog('${key}')">Progress</button>
+        <button class="btn btn-secondary btn-sm" onclick="openBuildCodePanel('${key}')">View Code</button>`;
     } else if (st.status === 'error') {
-      statusBadge = `<span class="badge badge-error" title="${escapeHtml(st.error || '')}">Error</span>`;
-      footerHtml = `<span style="font-size:11px;color:var(--red);max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHtml(st.error || '')}">${escapeHtml((st.error || 'Failed').substring(0, 40))}</span>${logBtn}`;
+      badge = `<span class="badge badge-error">Error</span>`;
+      leftText = `<span style="font-size:11px;color:var(--red);max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHtml(st.error||'')}">${escapeHtml((st.error||'Failed').substring(0,36))}</span>`;
+      rightBtns = `<button class="btn btn-ghost btn-sm" onclick="showBuildLog('${key}')">Progress</button>`;
     } else {
-      statusBadge = `<span class="badge" style="background:var(--bg-2);color:var(--text-3);">Not started</span>`;
-      footerHtml = `<span style="font-size:11px;color:var(--text-3);">Ready to build</span>`;
+      badge = `<span class="badge" style="background:var(--bg-2);color:var(--text-3);">Not started</span>`;
+      leftText = `<span style="font-size:11px;color:var(--text-3);">Ready to build</span>`;
+      rightBtns = '';
     }
 
-    const canRun = !isRunning;
     return `<div class="card" style="padding:12px;display:flex;flex-direction:column;gap:8px;${st.status==='error'?'border-color:var(--red);':st.status==='complete'?'border-color:var(--green);':''}">
-      <div style="display:flex;align-items:center;justify-content:space-between;">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;">
         <span style="font-size:12px;font-weight:600;color:var(--text-1);">${meta.label}</span>
-        ${statusBadge}
+        ${badge}
       </div>
-      <div style="font-size:11px;color:var(--text-3);flex:1;">${meta.desc}</div>
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;flex-wrap:wrap;">
-        ${footerHtml}
-        <button class="btn btn-primary btn-sm" onclick="runBuildStep('${key}')" ${canRun ? '' : 'disabled'} style="margin-left:auto;">
-          ${st.status === 'complete' ? 'Rebuild' : 'Build'}
-        </button>
+      <div style="font-size:11px;color:var(--text-3);">${meta.desc}</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:4px;">
+        ${leftText}
+        <div style="display:flex;align-items:center;gap:4px;flex-shrink:0;">
+          ${rightBtns}
+          <button class="btn btn-primary btn-sm" onclick="runBuildStep('${key}')" ${canRun?'':'disabled'}>
+            ${st.status==='complete'?'Rebuild':'Build'}
+          </button>
+        </div>
       </div>
     </div>`;
   }).join('');
@@ -2194,26 +2198,37 @@ async function runBuildStep(step, phaseId) {
   }
 }
 
-// ---- Build Log Drawer ------------------------------------------------
+// ---- Build Progress Panel --------------------------------------------
+// Vercel/Railway-style: stage indicators + animated progress bar + time estimates.
+// No raw log noise — users need signal, not output.
+
+const _BLD_EST_SECS = { backend: 1080, frontend: 720, integration: 480, tests: 480, infra: 360 };
+const _BLD_STAGES = [
+  { key: 'preparing',  label: 'Preparing',    detect: c => /\[BUILD\] Running:/.test(c) },
+  { key: 'generating', label: 'Generating',   detect: c => /\[BUILD\] Invoking AI/.test(c) },
+  { key: 'writing',    label: 'Writing files',detect: c => /\[BUILD\] Written:/.test(c) },
+  { key: 'done',       label: 'Done',         detect: c => /\[BUILD\] Done\./.test(c) },
+];
+
 let _bld = { visible: false, step: null, content: '', running: false,
-              autoScroll: true, pollTimer: null, elapsedTimer: null, startTime: null };
+             pollTimer: null, tickTimer: null, startTime: null };
 
 function showBuildLog(step) {
-  _bld.step = step; _bld.content = ''; _bld.autoScroll = true; _bld.visible = true;
-  // Determine if this step is currently running so we show the right state immediately
+  _bld.step = step; _bld.content = '';
   const st = (buildStepsState[step] || {}).status;
-  const isRunning = (state.processing && state.processing.status === 'running' &&
-    (state.processing.stage === step || state.processing.stage === 'all'));
-  _bld.running = isRunning || st === 'running';
+  const active = state.processing && state.processing.status === 'running' &&
+    (state.processing.stage === step || state.processing.stage === 'all');
+  _bld.running = active || st === 'running';
   _bld.startTime = _bld.running ? Date.now() : null;
-  _renderBuildLog();
+  _bld.visible = true;
+  _renderBuildProgress();
   _startBuildLogPoll();
 }
 
 function closeBuildLog() {
   _bld.visible = false;
   _stopBuildLogPoll();
-  if (_bld.elapsedTimer) { clearInterval(_bld.elapsedTimer); _bld.elapsedTimer = null; }
+  if (_bld.tickTimer) { clearInterval(_bld.tickTimer); _bld.tickTimer = null; }
   const c = document.getElementById('build-log-drawer-container');
   if (c) c.innerHTML = '';
 }
@@ -2223,7 +2238,6 @@ function _startBuildLogPoll() {
   _pollBuildLog();
   _bld.pollTimer = setInterval(_pollBuildLog, 2000);
 }
-
 function _stopBuildLogPoll() {
   if (_bld.pollTimer) { clearInterval(_bld.pollTimer); _bld.pollTimer = null; }
 }
@@ -2236,75 +2250,112 @@ async function _pollBuildLog() {
     const data = await res.json();
     _bld.content = data.content || '';
     _bld.running = data.running;
-    _updateBuildLogLines();
-    if (!data.running) _stopBuildLogPoll();
-    // If step finished, check if next step started (Build All flow)
+    _updateBldProgress();
     if (!data.running) {
-      const runningStep = Object.entries(buildStepsState).find(([,v]) => v.status === 'running');
-      if (runningStep) { _bld.step = runningStep[0]; _bld.running = true; _startBuildLogPoll(); }
+      _stopBuildLogPoll();
+      const next = Object.entries(buildStepsState).find(([,v]) => v.status === 'running');
+      if (next) { _bld.step = next[0]; _bld.running = true; _bld.startTime = Date.now(); _startBuildLogPoll(); }
     }
-  } catch (e) {}
+  } catch(e) {}
 }
 
-function _renderBuildLog() {
-  let c = document.getElementById('build-log-drawer-container');
+function _bldCalc() {
+  const c = _bld.content || '';
+  const elapsed = _bld.startTime ? Math.floor((Date.now() - _bld.startTime) / 1000) : 0;
+  const est = _BLD_EST_SECS[_bld.step] || 720;
+  const isDone  = /\[BUILD\] Done\./.test(c);
+  const isError = /rate limited|timed out|ai call failed/i.test(c);
+  let si = _bld.running || c.length ? 0 : -1;
+  for (let i = _BLD_STAGES.length - 1; i >= 0; i--) {
+    if (_BLD_STAGES[i].detect(c)) { si = i; break; }
+  }
+  let pct = 0;
+  if (isDone)    pct = 100;
+  else if (si===3) pct = 97;
+  else if (si===2) pct = 86 + Math.min(9, (c.match(/\[BUILD\] Written:/g)||[]).length);
+  else if (si===1) pct = 12 + Math.min(73, Math.round((elapsed / est) * 78));
+  else if (si===0) pct = 6;
+  else if (_bld.running) pct = 3;
+  const remaining = isDone ? 0 : Math.max(0, est - elapsed);
+  return { pct, si, isDone, isError, elapsed, remaining };
+}
+
+function _fmtSecs(s) {
+  if (s <= 0) return '0s';
+  return s < 60 ? s + 's' : Math.ceil(s/60) + ' min';
+}
+
+function _bldStagePills(p) {
+  return _BLD_STAGES.map((s,i) => {
+    const done   = p.isDone || i < p.si;
+    const active = !p.isDone && i === p.si;
+    const col    = done ? '#16a34a' : active ? 'var(--accent,#4f46e5)' : 'var(--text-3,#94a3b8)';
+    const w      = (done||active) ? '600' : '400';
+    const icon   = done ? '✓' : active ? '●' : '○';
+    return `<span style="font-size:11px;color:${col};font-weight:${w};white-space:nowrap;">${icon} ${s.label}</span>`;
+  }).join(`<span style="color:var(--border);font-size:10px;padding:0 3px;">—</span>`);
+}
+
+function _renderBuildProgress() {
+  const c = document.getElementById('build-log-drawer-container');
   if (!c) return;
   if (!_bld.visible) { c.innerHTML = ''; return; }
   const meta = BUILD_STEPS_META[_bld.step] || { label: _bld.step };
-  c.innerHTML = `<div style="margin-top:16px;border:1px solid rgba(255,255,255,0.1);border-radius:10px;overflow:hidden;background:#0d1117;">
-    <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 14px;border-bottom:1px solid rgba(255,255,255,0.08);background:#161b22;">
-      <div style="display:flex;align-items:center;gap:8px;">
-        <span id="bld-dot" style="display:inline-block;width:7px;height:7px;border-radius:50%;background:#f59e0b;flex-shrink:0;"></span>
-        <span style="font-size:12px;font-weight:600;color:#e6edf3;font-family:var(--mono,monospace);">${meta.label}</span>
-        <span id="bld-elapsed" style="font-size:11px;color:#6e7681;"></span>
+  const p = _bldCalc();
+  const barCol = p.isError ? 'var(--red,#ef4444)' : p.isDone ? '#16a34a' : 'var(--accent,#4f46e5)';
+  const icon = (!p.isDone && !p.isError && _bld.running)
+    ? `<span style="display:inline-block;width:14px;height:14px;border:2px solid var(--accent,#4f46e5);border-top-color:transparent;border-radius:50%;animation:spin 0.8s linear infinite;flex-shrink:0;"></span>`
+    : p.isDone  ? `<span style="color:#16a34a;font-size:16px;line-height:1;flex-shrink:0;">✓</span>`
+    : p.isError ? `<span style="color:var(--red);font-size:16px;line-height:1;flex-shrink:0;">✗</span>`
+    : `<span style="display:inline-block;width:14px;height:14px;border:2px solid var(--border);border-radius:50%;flex-shrink:0;"></span>`;
+  const elStr = _bld.startTime ? _fmtSecs(Math.floor((Date.now()-_bld.startTime)/1000)) : '';
+  const remStr = p.isDone ? 'Complete' : p.isError ? 'Failed'
+    : p.remaining > 30 ? `~${_fmtSecs(p.remaining)} left` : _bld.running ? 'Almost done…' : '';
+
+  c.innerHTML = `<div class="card" style="margin-top:12px;padding:16px 18px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+      <div style="display:flex;align-items:center;gap:10px;">
+        ${icon}
+        <div>
+          <div style="font-size:13px;font-weight:600;color:var(--text-1);">${meta.label}</div>
+          <div style="font-size:11px;color:var(--text-3);margin-top:2px;" id="bld-rem">${remStr}</div>
+        </div>
       </div>
-      <div style="display:flex;align-items:center;gap:6px;">
-        <button onclick="bldScrollBottom()" style="background:none;border:1px solid rgba(255,255,255,0.12);color:#6e7681;border-radius:4px;padding:2px 7px;font-size:11px;cursor:pointer;" title="Scroll to bottom">↓ Bottom</button>
-        <button onclick="closeBuildLog()" style="background:none;border:none;color:#6e7681;font-size:15px;cursor:pointer;padding:2px 6px;line-height:1;" title="Dismiss">✕</button>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <span id="bld-el" style="font-size:11px;color:var(--text-3);font-variant-numeric:tabular-nums;">${elStr}</span>
+        <span id="bld-pct" style="font-size:12px;font-weight:700;color:var(--text-2);min-width:34px;text-align:right;">${p.pct}%</span>
+        <button onclick="closeBuildLog()" style="background:none;border:none;color:var(--text-3);font-size:16px;cursor:pointer;padding:0 4px;line-height:1;" title="Dismiss">✕</button>
       </div>
     </div>
-    <div id="bld-body" onscroll="onBldScroll()" style="height:260px;overflow-y:auto;padding:10px 14px;font-family:var(--mono,monospace);font-size:11px;line-height:1.65;color:#8b949e;white-space:pre-wrap;word-break:break-all;"></div>
+    <div style="height:6px;background:var(--bg-2,#f1f5f9);border-radius:3px;overflow:hidden;margin-bottom:14px;">
+      <div id="bld-bar" style="height:100%;width:${p.pct}%;background:${barCol};border-radius:3px;transition:width 0.6s ease;"></div>
+    </div>
+    <div id="bld-stg" style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;">${_bldStagePills(p)}</div>
   </div>`;
-  _updateBuildLogLines();
-  _startElapsedTimer();
-}
 
-function _updateBuildLogLines() {
-  const body = document.getElementById('bld-body');
-  const dot  = document.getElementById('bld-dot');
-  if (!body) return;
-  if (dot) dot.style.background = _bld.running ? '#f59e0b' : '#3fb950';
-  const lines = (_bld.content || '(waiting for output...)').split('\n');
-  body.innerHTML = lines.map(line => {
-    let col = '#8b949e';
-    if (/error|failed|traceback|exception/i.test(line)) col = '#ff7b72';
-    else if (/done\.|complete|written:|generated\./i.test(line))  col = '#3fb950';
-    else if (/invoking ai|running:|loading/i.test(line))          col = '#79c0ff';
-    else if (line.startsWith('[BUILD]'))                           col = '#d2a8ff';
-    return `<div style="color:${col}">${escapeHtml(line)}</div>`;
-  }).join('');
-  if (_bld.autoScroll) body.scrollTop = body.scrollHeight;
-}
-
-function onBldScroll() {
-  const b = document.getElementById('bld-body');
-  if (b) _bld.autoScroll = (b.scrollTop + b.clientHeight >= b.scrollHeight - 24);
-}
-
-function bldScrollBottom() {
-  const b = document.getElementById('bld-body');
-  if (b) { b.scrollTop = b.scrollHeight; _bld.autoScroll = true; }
-}
-
-function _startElapsedTimer() {
-  if (_bld.elapsedTimer) clearInterval(_bld.elapsedTimer);
-  _bld.elapsedTimer = setInterval(() => {
-    const el = document.getElementById('bld-elapsed');
-    if (!el) { clearInterval(_bld.elapsedTimer); return; }
-    if (!_bld.running) { clearInterval(_bld.elapsedTimer); el.textContent = 'done'; return; }
-    const s = Math.floor((Date.now() - _bld.startTime) / 1000);
-    el.textContent = `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`;
+  if (_bld.tickTimer) clearInterval(_bld.tickTimer);
+  _bld.tickTimer = setInterval(() => {
+    const el = document.getElementById('bld-el');
+    if (!el) { clearInterval(_bld.tickTimer); return; }
+    if (_bld.startTime) el.textContent = _fmtSecs(Math.floor((Date.now()-_bld.startTime)/1000));
+    if (_bld.running) _updateBldProgress();
   }, 1000);
+}
+
+function _updateBldProgress() {
+  const bar = document.getElementById('bld-bar');
+  if (!bar) { _renderBuildProgress(); return; }
+  const p = _bldCalc();
+  const barCol = p.isError ? 'var(--red,#ef4444)' : p.isDone ? '#16a34a' : 'var(--accent,#4f46e5)';
+  bar.style.width = p.pct + '%';
+  bar.style.background = barCol;
+  const pctEl = document.getElementById('bld-pct');
+  const remEl = document.getElementById('bld-rem');
+  const stgEl = document.getElementById('bld-stg');
+  if (pctEl) pctEl.textContent = p.pct + '%';
+  if (remEl) remEl.textContent = p.isDone ? 'Complete' : p.isError ? 'Failed'
+    : p.remaining > 30 ? `~${_fmtSecs(p.remaining)} left` : _bld.running ? 'Almost done…' : '';
+  if (stgEl) stgEl.innerHTML = _bldStagePills(p);
 }
 // ----------------------------------------------------------------------
 
