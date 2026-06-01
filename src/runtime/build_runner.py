@@ -70,10 +70,12 @@ def load_build_status():
 def save_step_status(step, status_val, files=None, error=None):
     status = load_build_status()
     existing = status.get(step, {})
+    now = datetime.now().isoformat()
     status[step] = {
         "status": status_val,
         "files": files if files is not None else existing.get("files", []),
-        "generated_at": datetime.now().isoformat() if status_val == STATUS_COMPLETE else existing.get("generated_at", ""),
+        "started_at":    now if status_val == STATUS_RUNNING  else existing.get("started_at", ""),
+        "generated_at":  now if status_val == STATUS_COMPLETE else existing.get("generated_at", ""),
         "error": error,
         "phase_id": ACTIVE_PHASE_ID or None,
     }

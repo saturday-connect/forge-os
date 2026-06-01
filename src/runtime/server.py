@@ -2166,12 +2166,18 @@ class ForgeHandler(BaseHTTPRequestHandler):
             if len(_log_content) > 61440:
                 _log_content = "...[earlier output truncated]...\n" + _log_content[-61440:]
             _bl_running = False
+            _bl_started_at = ""
             try:
                 with open(os.path.join(FORGE_DIR, FILE_BUILD_SYSTEM)) as _bf:
-                    _bl_running = json.load(_bf).get(_bl_step, {}).get("status") == STATUS_RUNNING
+                    _bl_st = json.load(_bf).get(_bl_step, {})
+                    _bl_running = _bl_st.get("status") == STATUS_RUNNING
+                    _bl_started_at = _bl_st.get("started_at", "")
             except (OSError, json.JSONDecodeError):
                 pass
-            self._json_response(200, {"content": _log_content, "running": _bl_running, "step": _bl_step})
+            self._json_response(200, {
+                "content": _log_content, "running": _bl_running,
+                "step": _bl_step, "started_at": _bl_started_at,
+            })
             return
 
         if path == "/api/build-system":
@@ -2199,6 +2205,7 @@ class ForgeHandler(BaseHTTPRequestHandler):
                 steps_out[key] = {
                     "status": st.get("status", STATUS_IDLE),
                     "files": st.get("files", []),
+                    "started_at": st.get("started_at", ""),
                     "generated_at": st.get("generated_at", ""),
                     "error": st.get("error"),
                     "phase_id": st.get("phase_id"),

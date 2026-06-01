@@ -2232,13 +2232,25 @@ let _bld = { visible: false, step: null, content: '', running: false,
              pollTimer: null, tickTimer: null, startTime: null };
 
 function showBuildLog(step) {
-  _bld.step = step; _bld.content = '';
-  const st = (buildStepsState[step] || {}).status;
-  const active = state.processing && state.processing.status === 'running' &&
-    (state.processing.stage === step || state.processing.stage === 'all');
-  _bld.running = active || st === 'running';
-  _bld.startTime = _bld.running ? Date.now() : null;
+  // If this step is already being tracked and the panel is visible,
+  // just ensure visibility — never reset the timer or content for a
+  // step that's already in flight. Doing so causes the timer to restart
+  // from zero and progress to jump back to the initial stage percentage.
+  const alreadyTracking = (_bld.visible && _bld.step === step && _bld.running);
+  if (alreadyTracking) return;
+
+  // Switching to a different step or opening fresh — reset only what's needed
+  if (_bld.step !== step) {
+    _bld.content = '';
+    _bld.startTime = null;  // will be set from server's started_at on first poll
+  }
+  _bld.step = step;
   _bld.visible = true;
+  // running state will be confirmed by first poll; set optimistically
+  const st = (buildStepsState[step] || {}).status;
+  _bld.running = st === 'running' ||
+    !!(state.processing && state.processing.status === 'running' &&
+       (state.processing.stage === step || state.processing.stage === 'all'));
   _renderBuildProgress();
   _startBuildLogPoll();
 }
@@ -2263,47 +2275,53 @@ function _stopBuildLogPoll() {
 async function _pollBuildLog() {
   if (!_bld.visible) return;
   try {
-    // Always fetch the live build-system state so we track the correct running step,
-    // not just the one the user last clicked.
+    // ── 1. Get live build-system state ───────────────────────────────────
     const sysRes = await apiFetch('/api/build-system');
-    if (sysRes.ok) {
-      const sysData = await sysRes.json();
-      buildStepsState = sysData.steps || {};
-      renderBuildSteps();
+    if (!sysRes.ok) return;
+    const sysData = await sysRes.json();
+    buildStepsState = sysData.steps || {};
+    renderBuildSteps();
 
-      const runningEntry = Object.entries(buildStepsState).find(([,v]) => v.status === 'running');
+    const runningEntry = Object.entries(buildStepsState).find(([,v]) => v.status === 'running');
 
-      if (runningEntry && runningEntry[0] !== _bld.step) {
-        // A different step just became active — switch to it
-        _bld.step = runningEntry[0];
-        _bld.content = '';
-        _bld.running = true;
-        _bld.startTime = Date.now();
-        _renderBuildProgress();  // full re-render with new step label
-        return;
-      }
+    // ── 2. Step switch: a different step became active ───────────────────
+    if (runningEntry && runningEntry[0] !== _bld.step) {
+      _bld.step       = runningEntry[0];
+      _bld.content    = '';
+      _bld.running    = true;
+      _bld.startTime  = null;   // will be set from started_at below
+      _renderBuildProgress();
+    }
 
-      if (!runningEntry && _bld.running) {
-        // Nothing running anymore — show final state then auto-close
-        _bld.running = false;
-        _updateBldProgress();
-        _stopBuildLogPoll();
-        // Auto-dismiss after 4 s so user can see the completed state
-        setTimeout(() => { if (!_bld.running) closeBuildLog(); }, 4000);
-        return;
+    // ── 3. Nothing running any more — show final state then auto-close ───
+    if (!runningEntry && _bld.running) {
+      _bld.running = false;
+      _updateBldProgress();
+      _stopBuildLogPoll();
+      setTimeout(() => { if (!_bld.running) closeBuildLog(); }, 4000);
+      return;
+    }
+
+    // ── 4. Fetch log + started_at for the current step ───────────────────
+    if (!_bld.step) return;
+    const logRes = await apiFetch('/api/build-log?step=' + _bld.step);
+    if (!logRes.ok) return;
+    const logData = await logRes.json();
+
+    // Use the server's started_at as the canonical clock source.
+    // This survives panel close/reopen, page reload, and badge clicks —
+    // the timer always reflects when the build ACTUALLY started, not when
+    // the user last interacted with the panel.
+    if (logData.started_at) {
+      const serverStart = new Date(logData.started_at).getTime();
+      if (!isNaN(serverStart) && (_bld.startTime === null || Math.abs(_bld.startTime - serverStart) > 5000)) {
+        _bld.startTime = serverStart;
       }
     }
 
-    // Fetch log content for the current step
-    if (_bld.step) {
-      const logRes = await apiFetch('/api/build-log?step=' + _bld.step);
-      if (logRes.ok) {
-        const logData = await logRes.json();
-        _bld.content = logData.content || '';
-        _bld.running = logData.running;
-        _updateBldProgress();
-      }
-    }
+    _bld.content = logData.content || '';
+    _bld.running = logData.running;
+    _updateBldProgress();
   } catch(e) {}
 }
 
