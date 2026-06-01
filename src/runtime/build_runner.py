@@ -3573,6 +3573,21 @@ def _fix_compose_healthchecks(out_dir):
         # Catch any remaining localhost in CMD strings not covered above
         content = _re.sub(r'(https?://)(localhost)(\b)', r'\g<1>127.0.0.1\3', content)
 
+        # Pin postgres to version 16 — older versions (13-15) cause data-directory
+        # incompatibility errors when the Docker volume was previously initialised
+        # with 16 (the most common modern default). If the AI picked an older image
+        # the container crashes immediately on startup with:
+        #   "database files are incompatible with server — initialized by version 16"
+        content = _re.sub(r'postgres:(1[0-5]|[1-9])(-alpine)?', 'postgres:16-alpine', content)
+
+        # Use env-var-safe pg_isready in db healthcheck so it works regardless
+        # of what POSTGRES_USER is set to in .env
+        content = _re.sub(
+            r'pg_isready\s+-U\s+\S+(\s+-d\s+\S+)?',
+            'pg_isready -U ${POSTGRES_USER:-postgres}',
+            content,
+        )
+
         if content != original:
             with open(compose_path, "w", encoding=FILE_ENCODING) as f:
                 f.write(content)
