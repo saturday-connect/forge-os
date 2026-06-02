@@ -319,6 +319,49 @@ def sanitize_path(candidate):
         return None
     return "/".join(parts)
 
+def _strip_wrapping_code_fence(content, rel_path):
+    """Remove a markdown code fence that wraps an entire file's body.
+
+    The AI frequently wraps each file's content in a fenced block, e.g.:
+        ```typescript
+        import http from 'http';
+        ...
+        ```
+    Those fence lines (```typescript on line 1, ``` at the end) end up as
+    literal content and are a hard syntax error in every affected source file.
+
+    This strips a fence ONLY when it wraps the WHOLE file (first non-blank line
+    opens a fence AND last non-blank line closes one). That whole-file-wrapped
+    shape is unambiguous — real source never starts with a bare ``` line.
+
+    Markdown files are skipped entirely: fences are legitimate content there
+    (README code samples, api-contract.md schema blocks).
+    """
+    import re as _re
+    ext = os.path.splitext(rel_path)[1].lower()
+    if ext in (".md", ".markdown", ".mdx"):
+        return content
+    lines = content.split("\n")
+    s, e = 0, len(lines)
+    while s < e and not lines[s].strip():
+        s += 1
+    while e > s and not lines[e - 1].strip():
+        e -= 1
+    if s >= e:
+        return content
+    # A real source file never starts with a bare ```lang line. If it does,
+    # the model fence-wrapped the body — strip the opening fence. Strip the
+    # matching closing fence too when it's the last line (the common pair),
+    # but tolerate a missing closing fence (some files only got the opener).
+    opens = _re.match(r'^(```|~~~)[A-Za-z0-9_+.\-]*$', lines[s].strip())
+    if not opens:
+        return content
+    s += 1
+    if e > s and _re.match(r'^(```|~~~)\s*$', lines[e - 1].strip()):
+        e -= 1
+    return "\n".join(lines[s:e]).strip()
+
+
 def parse_files(output_text):
     files = {}
     current_path = None
@@ -327,7 +370,8 @@ def parse_files(output_text):
         stripped = line.strip()
         if stripped.startswith("=== ") and stripped.endswith(" ==="):
             if current_path and not current_path.startswith("SOURCE:"):
-                files[current_path] = "\n".join(current_lines).strip()
+                files[current_path] = _strip_wrapping_code_fence(
+                    "\n".join(current_lines).strip(), current_path)
             candidate = stripped[4:-4].strip()
             if candidate.startswith("SOURCE:"):
                 current_path = None
@@ -339,7 +383,8 @@ def parse_files(output_text):
         elif current_path:
             current_lines.append(line)
     if current_path and not current_path.startswith("SOURCE:"):
-        files[current_path] = "\n".join(current_lines).strip()
+        files[current_path] = _strip_wrapping_code_fence(
+            "\n".join(current_lines).strip(), current_path)
     return files
 
 # -----------------------------------------------------------------------
@@ -4343,12 +4388,17 @@ def _validate_output_integrity(parsed):
             try:
                 _json.loads(content)
             except _json.JSONDecodeError:
-                # Don't retry the whole step — just drop this file and warn.
+                base = os.path.basename(rel_path).lower()
+                # package.json / tsconfig.json are build-critical: without a
+                # valid one the project cannot install or compile. A malformed
+                # critical manifest is worth a regeneration. Everything else
+                # (random/spurious JSON) is dropped rather than burning a retry.
+                if base in ("package.json", "tsconfig.json"):
+                    return True, (rel_path + ": invalid JSON in a build-critical "
+                                  "manifest — regenerating"), []
                 files_to_drop.append(rel_path)
 
     return False, None, files_to_drop
-
-    return True, None
 
 
 def run_step(step):
@@ -4476,6 +4526,28 @@ def run_step(step):
         out_dir = os.path.join(FORGE_DIR, DIR_BUILD, ACTIVE_PHASE_ID, step)
     else:
         out_dir = os.path.join(FORGE_DIR, meta["output_dir"])
+
+    # CLEAN BEFORE WRITE — remove stale files from any prior generation of this
+    # step before writing the new output. Without this, regenerating a step
+    # (especially when the AI picks a different stack than a prior run, e.g.
+    # TypeScript this time vs Python last time) leaves a corrupt HYBRID: the new
+    # source files land on top of stale files from the old stack (old Dockerfile,
+    # old requirements.txt / package.json, old entry points) and nothing runs.
+    #
+    # Done only AFTER generation has produced validated output, so a failed
+    # generation never destroys the previous good output.
+    if os.path.isdir(out_dir):
+        import shutil as _shutil
+        for _entry in os.listdir(out_dir):
+            _p = os.path.join(out_dir, _entry)
+            try:
+                if os.path.isdir(_p) and not os.path.islink(_p):
+                    _shutil.rmtree(_p)
+                else:
+                    os.remove(_p)
+            except OSError as _e:
+                print(_LOG_PREFIX + " [clean] could not remove " + _entry + ": " + str(_e))
+        print(_LOG_PREFIX + " [clean] Cleared stale output in " + step + "/ before writing fresh files")
     os.makedirs(out_dir, exist_ok=True)
 
     file_list = []
