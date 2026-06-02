@@ -70,20 +70,42 @@ def load_build_status():
             pass
     return {}
 
-def save_step_status(step, status_val, files=None, error=None):
-    status = load_build_status()
-    existing = status.get(step, {})
-    now = datetime.now().isoformat()
-    status[step] = {
-        "status": status_val,
-        "files": files if files is not None else existing.get("files", []),
-        "started_at":    now if status_val == STATUS_RUNNING  else existing.get("started_at", ""),
-        "generated_at":  now if status_val == STATUS_COMPLETE else existing.get("generated_at", ""),
-        "error": error,
-        "phase_id": ACTIVE_PHASE_ID or None,
-    }
-    with open(BUILD_STATUS_FILE, "w", encoding=FILE_ENCODING) as f:
-        json.dump(status, f, indent=2)
+def save_step_status(step, status_val, files=None, error=None, input_hash=None):
+    # Serialize the read-modify-write across processes: under the parallel DAG
+    # scheduler, multiple build_runner processes update DIFFERENT steps in the
+    # same build-system.json concurrently. Without a lock they can clobber each
+    # other's updates (lost-update race). An exclusive flock on a sidecar lock
+    # file plus an atomic temp-file replace makes each update safe and complete.
+    _lock_path = BUILD_STATUS_FILE + ".lock"
+    _lk = None
+    try:
+        _lk = open(_lock_path, "w")
+        try:
+            import fcntl as _fcntl
+            _fcntl.flock(_lk, _fcntl.LOCK_EX)
+        except ImportError:
+            pass  # Windows: no flock; single-process fallback
+        status = load_build_status()
+        existing = status.get(step, {})
+        now = datetime.now().isoformat()
+        status[step] = {
+            "status": status_val,
+            "files": files if files is not None else existing.get("files", []),
+            "started_at":    now if status_val == STATUS_RUNNING  else existing.get("started_at", ""),
+            "generated_at":  now if status_val == STATUS_COMPLETE else existing.get("generated_at", ""),
+            "error": error,
+            "phase_id": ACTIVE_PHASE_ID or None,
+            # input_hash fingerprints the exact prompt (spec + stack + upstream
+            # code) that produced this output — for skip-unchanged builds.
+            "input_hash": input_hash if input_hash is not None else existing.get("input_hash", ""),
+        }
+        _tmp = BUILD_STATUS_FILE + ".tmp"
+        with open(_tmp, "w", encoding=FILE_ENCODING) as f:
+            json.dump(status, f, indent=2)
+        os.replace(_tmp, BUILD_STATUS_FILE)
+    finally:
+        if _lk is not None:
+            _lk.close()
 
 def collect_built_step(step, max_chars=6000):
     """Read actual generated files from a completed build step.
@@ -4583,6 +4605,39 @@ def run_step(step):
     tool = os.environ.get("FORGE_TOOL", DEFAULT_TOOL)
     model_id = os.environ.get("FORGE_MODEL", "")
 
+    # Resolve the output dir now so both the cache check and the writer use it.
+    if ACTIVE_PHASE_ID:
+        out_dir = os.path.join(FORGE_DIR, DIR_BUILD, ACTIVE_PHASE_ID, step)
+    else:
+        out_dir = os.path.join(FORGE_DIR, meta["output_dir"])
+
+    # ── SKIP-UNCHANGED (incremental build) ──────────────────────────────────
+    # Fingerprint the exact inputs that determine the output: the full prompt
+    # (which already folds in the spec docs, locked stack, api-contract, and
+    # upstream built code) plus the tool+model. If this fingerprint matches the
+    # last successful build of this step AND that output still exists on disk,
+    # regeneration is wasted work — skip it. This is the Turborepo/Nx/Bazel
+    # "cache hit" pattern: the fastest build is the one you don't run.
+    # Set FORGE_FORCE_REBUILD=1 to bypass and always regenerate.
+    import hashlib as _hashlib
+    input_hash = _hashlib.sha256(
+        (tool + "\0" + (model_id or "") + "\0" + prompt).encode(FILE_ENCODING)
+    ).hexdigest()
+    _force = os.environ.get("FORGE_FORCE_REBUILD", "").strip() == "1"
+    _prev = load_build_status().get(step, {})
+    _out_has_files = os.path.isdir(out_dir) and any(
+        os.path.isfile(os.path.join(r, f))
+        for r, _d, fs in os.walk(out_dir) for f in fs
+    )
+    if (not _force and _prev.get("status") == STATUS_COMPLETE
+            and _prev.get("input_hash") == input_hash and _out_has_files):
+        print(_LOG_PREFIX + " [cache] " + step
+              + ": inputs unchanged since last build — skipping regeneration (cache hit)")
+        # Re-affirm completion (keeps files/hash, refreshes nothing else)
+        save_step_status(step, STATUS_COMPLETE,
+                         files=_prev.get("files", []), input_hash=input_hash)
+        return True
+
     # ── Invoke → Validate → Retry loop ──────────────────────────────────────
     # Never write structurally broken output to disk. If the AI truncates its
     # output (common when hitting output-token limits), validate and retry
@@ -4668,11 +4723,7 @@ def run_step(step):
         break
     # ────────────────────────────────────────────────────────────────────────
 
-    # Phase-scoped output: 15-build/<phase-id>/<step>/ when a phase is active
-    if ACTIVE_PHASE_ID:
-        out_dir = os.path.join(FORGE_DIR, DIR_BUILD, ACTIVE_PHASE_ID, step)
-    else:
-        out_dir = os.path.join(FORGE_DIR, meta["output_dir"])
+    # out_dir was resolved above (before the cache check).
 
     # CLEAN BEFORE WRITE — remove stale files from any prior generation of this
     # step before writing the new output. Without this, regenerating a step
@@ -4724,7 +4775,7 @@ def run_step(step):
         file_list.append(rel_path)
         print(_LOG_PREFIX + " Written: " + rel_path)
 
-    save_step_status(step, STATUS_COMPLETE, files=file_list)
+    save_step_status(step, STATUS_COMPLETE, files=file_list, input_hash=input_hash)
     print(_LOG_PREFIX + " Done. " + str(len(file_list)) + " files generated.")
 
     # Deterministic fixups (correct AI-generated code mistakes)
@@ -4754,19 +4805,26 @@ if __name__ == "__main__":
     # Cross-process mutex via lockfile — prevents concurrent AI calls from
     # the same account when multiple build_runner processes are spawned
     # (e.g., old server code without the in-process lock, or rapid button clicks).
+    #
+    # EXCEPTION: when the server's parallel DAG scheduler is orchestrating the
+    # build (FORGE_ORCHESTRATED=1), it manages concurrency itself with a fixed
+    # cap. The single-holder lock would wrongly block those intended-parallel
+    # steps, so we skip it in that case.
+    _orchestrated = os.environ.get("FORGE_ORCHESTRATED", "").strip() == "1"
     _lock_path = os.path.join(FORGE_DIR, "runs", "build-runner.lock")
     _lock_fd = None
-    try:
-        import fcntl as _fcntl
-        _lock_fd = open(_lock_path, "w")
+    if not _orchestrated:
         try:
-            _fcntl.flock(_lock_fd, _fcntl.LOCK_EX | _fcntl.LOCK_NB)
-        except OSError:
-            _lock_fd.close()
-            print(_LOG_PREFIX + " [lock] Another build step is already running — exiting.")
-            sys.exit(1)
-    except ImportError:
-        pass  # fcntl not available (Windows); skip lockfile
+            import fcntl as _fcntl
+            _lock_fd = open(_lock_path, "w")
+            try:
+                _fcntl.flock(_lock_fd, _fcntl.LOCK_EX | _fcntl.LOCK_NB)
+            except OSError:
+                _lock_fd.close()
+                print(_LOG_PREFIX + " [lock] Another build step is already running — exiting.")
+                sys.exit(1)
+        except ImportError:
+            pass  # fcntl not available (Windows); skip lockfile
 
     try:
         success = run_step(sys.argv[1])

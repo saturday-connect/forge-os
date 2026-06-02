@@ -4694,26 +4694,88 @@ class ForgeHandler(BaseHTTPRequestHandler):
                         FORGE_PHASE_ID_ENV:   phase_id,
                         FORGE_PHASE_NAME_ENV: phase_name,
                     }
-                    steps_to_run = step_keys if step == "all" else [step]
                     build_runner = os.path.join(FORGE_DIR, "scripts", "build_runner.py")
-                    # PYTHONUNBUFFERED=1 ensures print() lines reach the log file immediately
-                    _run_env = {**env, "PYTHONUNBUFFERED": "1"}
-                    for s in steps_to_run:
+                    _base_env = {**env, "PYTHONUNBUFFERED": "1"}
+
+                    def _run_one(s, extra_env=None):
+                        """Run one build_runner step, streaming stdout to its log
+                        file. Returns the process exit code (0 = success)."""
                         set_processing(STATUS_RUNNING, s)
                         _log_path = os.path.join(FORGE_DIR, "runs", f"build-log-{s}.txt")
+                        _renv = {**_base_env, **(extra_env or {})}
                         try:
                             with open(_log_path, "w", encoding="utf-8") as _log_f:
                                 _proc = subprocess.Popen(
                                     [sys.executable, build_runner, s],
                                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                    cwd=REPO_ROOT, env=_run_env, text=True, bufsize=1,
+                                    cwd=REPO_ROOT, env=_renv, text=True, bufsize=1,
                                 )
                                 for _line in _proc.stdout:
                                     _log_f.write(_line)
                                     _log_f.flush()
                                 _proc.wait()
+                                return _proc.returncode
                         except Exception as _exc:
                             logger.warning("build step %s stream error: %s", s, _exc)
+                            return 1
+
+                    if step != "all":
+                        _run_one(step)
+                    else:
+                        # ── Parallel DAG scheduler ───────────────────────────
+                        # Run independent steps concurrently (capped), respecting
+                        # the dependency graph. Coherence note: frontend depends on
+                        # backend here (not in the hard-prereq map) so it consumes
+                        # backend's FRESH api-contract rather than a stale one.
+                        #   wave 1: backend
+                        #   wave 2: frontend + integration  (need backend)
+                        #   wave 3: tests + infra           (need backend+frontend)
+                        import concurrent.futures as _cf
+                        _SCHED_DEPS = {
+                            "backend":     [],
+                            "frontend":    ["backend"],
+                            "integration": ["backend"],
+                            "tests":       ["backend", "frontend"],
+                            "infra":       ["backend", "frontend"],
+                        }
+                        try:
+                            _max_c = int(os.environ.get("FORGE_BUILD_CONCURRENCY", "2"))
+                        except ValueError:
+                            _max_c = 2
+                        _max_c = max(1, min(_max_c, 4))
+                        _orch = {"FORGE_ORCHESTRATED": "1"}  # build_runner skips its own lock
+                        _done, _failed = set(), set()
+                        _remaining = list(step_keys)
+                        logger.info("build-all: parallel DAG, concurrency=%d", _max_c)
+                        with _cf.ThreadPoolExecutor(max_workers=_max_c) as _ex:
+                            _running = {}   # future -> step
+                            while _remaining or _running:
+                                _scheduled_any = False
+                                for s in list(_remaining):
+                                    deps = _SCHED_DEPS.get(s, [])
+                                    if any(d in _failed for d in deps):
+                                        # upstream failed — skip (leave prior status)
+                                        _remaining.remove(s)
+                                        _failed.add(s)
+                                        logger.info("build-all: %s blocked (upstream failed)", s)
+                                        _scheduled_any = True
+                                        continue
+                                    if all(d in _done for d in deps) and len(_running) < _max_c:
+                                        _remaining.remove(s)
+                                        _running[_ex.submit(_run_one, s, _orch)] = s
+                                        _scheduled_any = True
+                                if not _running:
+                                    if not _scheduled_any:
+                                        break  # nothing runnable (deadlock guard)
+                                    continue
+                                _fin, _ = _cf.wait(_running, return_when=_cf.FIRST_COMPLETED)
+                                for _f in _fin:
+                                    _s = _running.pop(_f)
+                                    if _f.result() == 0:
+                                        _done.add(_s)
+                                    else:
+                                        _failed.add(_s)
+                                        logger.info("build-all: %s failed (rc!=0)", _s)
                 finally:
                     _build_system_lock.release()
                     set_processing(STATUS_IDLE)
