@@ -9,8 +9,11 @@ from constants import (
     BUILD_STEP_DIRS,
     DIR_AGENTS,
     DIR_BUILD,
+    DIR_ARCHITECTURE,
+    DIR_ENGINEERING,
     FILE_API_CONTRACT,
     FILE_BUILD_SYSTEM,
+    FILE_STACK,
     FILE_ENCODING,
     FORGE_PHASE_ID_ENV,
     FORGE_PHASE_NAME_ENV,
@@ -1914,6 +1917,126 @@ def build_infra_prompt(persona, docs, api_contract, backend_built="", frontend_b
     ]
     return "\n\n".join(parts)
 
+STACK_FILE = os.path.join(FORGE_DIR, FILE_STACK)
+
+
+def _detect_stack_from_specs():
+    """Infer the intended technology stack from the architecture + engineering
+    specs by keyword frequency. The spec is the source of truth; this resolves
+    the ambiguity that lets the model drift between stacks across runs.
+
+    Returns a dict describing backend/frontend/database choices.
+    """
+    text = ""
+    for dir_name in (DIR_ARCHITECTURE, DIR_ENGINEERING):
+        dir_path = os.path.join(FORGE_DIR, dir_name)
+        if not os.path.isdir(dir_path):
+            continue
+        for fname in sorted(os.listdir(dir_path)):
+            if fname.endswith(MARKDOWN_EXTENSION):
+                try:
+                    with open(os.path.join(dir_path, fname), encoding=FILE_ENCODING, errors="replace") as f:
+                        text += "\n" + f.read().lower()
+                except OSError:
+                    pass
+
+    def _count(*words):
+        return sum(text.count(w) for w in words)
+
+    # ── Backend language/framework ──────────────────────────────────────────
+    node_score = _count("node.js", "nodejs", "express", "nestjs", "fastify")
+    py_score   = _count("fastapi", "flask", "django", "uvicorn", "gunicorn", "pydantic")
+    if node_score >= py_score and node_score > 0:
+        if "nestjs" in text:     be_fw = "NestJS"
+        elif "fastify" in text:  be_fw = "Fastify"
+        else:                    be_fw = "Express"
+        backend = {"language": "TypeScript", "runtime": "Node.js", "framework": be_fw,
+                   "package_manager": "npm", "test_framework": "Jest"}
+    else:
+        if "django" in text:     be_fw = "Django"
+        elif "flask" in text:    be_fw = "Flask"
+        else:                    be_fw = "FastAPI"
+        backend = {"language": "Python", "runtime": "Python 3.12", "framework": be_fw,
+                   "package_manager": "pip", "test_framework": "pytest"}
+
+    # ── Frontend framework ──────────────────────────────────────────────────
+    if "next.js" in text or "nextjs" in text:
+        fe_fw = "Next.js (React)"
+    elif _count("vue") > _count("react"):
+        fe_fw = "Vue"
+    elif "angular" in text:
+        fe_fw = "Angular"
+    else:
+        fe_fw = "React"
+    frontend = {"language": "TypeScript", "framework": fe_fw,
+                "package_manager": "npm", "test_framework": "Jest"}
+
+    # ── Database ────────────────────────────────────────────────────────────
+    if _count("postgres", "postgresql") >= max(_count("mysql"), _count("mongodb", "mongo")):
+        database = "PostgreSQL"
+    elif _count("mongodb", "mongo") > _count("mysql"):
+        database = "MongoDB"
+    else:
+        database = "MySQL"
+
+    return {"backend": backend, "frontend": frontend, "database": database,
+            "detected_from": "specs"}
+
+
+def resolve_stack():
+    """Load the locked stack from stack.json, or detect it from the specs and
+    persist it on first use. Deleting stack.json forces re-detection; editing it
+    overrides the choice. Either way, every build step reads the SAME stack."""
+    if os.path.exists(STACK_FILE):
+        try:
+            with open(STACK_FILE, encoding=FILE_ENCODING) as f:
+                data = json.load(f)
+            if isinstance(data, dict) and data.get("backend"):
+                return data
+        except (OSError, json.JSONDecodeError):
+            pass
+    stack = _detect_stack_from_specs()
+    try:
+        os.makedirs(os.path.dirname(STACK_FILE), exist_ok=True)
+        payload = dict(stack)
+        payload["_comment"] = ("Locked technology stack. Every build step generates "
+                               "against this. Edit to override; delete to re-detect from specs.")
+        with open(STACK_FILE, "w", encoding=FILE_ENCODING) as f:
+            json.dump(payload, f, indent=2)
+        print(_LOG_PREFIX + " [stack] Locked stack: "
+              + stack["backend"]["language"] + "/" + stack["backend"]["framework"]
+              + " backend, " + stack["frontend"]["framework"] + " frontend, "
+              + stack["database"])
+    except OSError as _e:
+        print(_LOG_PREFIX + " [stack] could not persist stack.json: " + str(_e))
+    return stack
+
+
+def _stack_constraint_block(stack):
+    """A hard, prompt-leading constraint that locks the stack for every step.
+    Supersedes any 'identify the stack' guidance later in the prompt."""
+    be = stack["backend"]
+    fe = stack["frontend"]
+    return (
+        _section("LOCKED TECHNOLOGY STACK — NON-NEGOTIABLE") + "\n"
+        "This product has a FIXED, pre-decided technology stack. You MUST generate "
+        "code using EXACTLY this stack. Do NOT substitute a different language, "
+        "framework, or package manager — even if you believe another choice is "
+        "better. This instruction SUPERSEDES any text below that asks you to choose "
+        "or identify a stack.\n\n"
+        f"  Backend:   {be['language']} on {be['runtime']}, {be['framework']} "
+        f"({be['package_manager']}, {be['test_framework']} tests)\n"
+        f"  Frontend:  {fe['language']}, {fe['framework']} "
+        f"({fe['package_manager']}, {fe['test_framework']} tests)\n"
+        f"  Database:  {stack['database']}\n\n"
+        "Every file, import, dependency manifest, Dockerfile, and config you "
+        "produce MUST be consistent with this stack. Mixing languages (e.g. a "
+        "Python file in a Node project, or vice versa) is a CRITICAL ERROR. The "
+        "manifest must match the language: package.json for Node, requirements.txt "
+        "for Python — never both.\n"
+    )
+
+
 def build_prompt_for_step(step, persona, docs, api_contract, built_context=None):
     built_context = built_context or {}
     _prompt_builders = {
@@ -1928,10 +2051,14 @@ def build_prompt_for_step(step, persona, docs, api_contract, built_context=None)
                                             backend_built=built_context.get("backend", ""),
                                             frontend_built=built_context.get("frontend", "")),
     }
+    # Prepend the LOCKED STACK constraint to every step's prompt so all steps
+    # generate against the same pinned languages/frameworks — no cross-run drift.
+    stack_block = _stack_constraint_block(resolve_stack())
+
     builder = _prompt_builders.get(step)
     if builder:
-        return builder()
-    return persona + "\n\n---\n\n## Specification Documents\n\n" + docs
+        return stack_block + "\n\n" + builder()
+    return stack_block + "\n\n" + persona + "\n\n---\n\n## Specification Documents\n\n" + docs
 
 # -----------------------------------------------------------------------
 # Post-generation fixups

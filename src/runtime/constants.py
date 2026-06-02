@@ -198,6 +198,7 @@ FILE_PROJECT_STATE = "project-state.json"
 FILE_REVIEWS = "reviews.json"
 FILE_STATUS = "runs/status.json"
 FILE_BUILD_SYSTEM = "runs/build-system.json"
+FILE_STACK = "runs/stack.json"          # locked technology stack (pinned once, enforced every step)
 FILE_BUILD_REVIEW = "runs/build-review.json"
 FILE_BUILD_IN_PROGRESS = "runs/build-in-progress.json"
 FILE_DISTILL_RESULT = "runs/distill-result.json"
