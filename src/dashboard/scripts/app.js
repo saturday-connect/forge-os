@@ -2301,7 +2301,13 @@ async function previewBuildCost() {
   }
 }
 
+function closeBuildPreview() {
+  const el = document.getElementById('build-preview-overlay');
+  if (el) el.remove();
+}
+
 function _showBuildPreviewModal(d) {
+  closeBuildPreview();
   const totalIn = d.projected_input_tokens || 0;
   const totalOut = d.projected_output_tokens || 0;
   const saved = d.cached_input_tokens_saved || 0;
@@ -2311,43 +2317,50 @@ function _showBuildPreviewModal(d) {
     const info = (d.steps || {})[s] || {};
     const hit = info.cache_hit;
     const tk = info.tokens_in_est || 0;
-    return `<tr>
-      <td style="padding:5px 8px;font-size:12px;color:var(--text-1);">${_BLD_STEP_LABELS[s]}</td>
-      <td style="padding:5px 8px;font-size:11px;color:var(--text-3);">${escapeHtml(info.model||'—')}</td>
-      <td style="padding:5px 8px;font-size:11px;text-align:right;color:var(--text-2);">${hit?'—':'~'+_fmtTokens(tk)}</td>
-      <td style="padding:5px 8px;font-size:11px;text-align:right;">${hit?'<span style="color:var(--green);">cached</span>':'<span style="color:var(--accent,#4f46e5);">will run</span>'}</td>
+    const status = hit
+      ? '<span class="badge badge-success">cached</span>'
+      : '<span class="badge" style="background:var(--bg-3);color:var(--text-2);">will run</span>';
+    return `<tr style="border-bottom:1px solid var(--border);">
+      <td style="padding:8px 6px;font-size:12px;color:var(--text-1);">${_BLD_STEP_LABELS[s]}</td>
+      <td style="padding:8px 6px;font-size:11px;color:var(--text-3);font-family:var(--mono);">${escapeHtml(info.model||'—')}</td>
+      <td style="padding:8px 6px;font-size:12px;text-align:right;color:var(--text-2);font-variant-numeric:tabular-nums;">${hit?'—':'~'+_fmtTokens(tk)}</td>
+      <td style="padding:8px 6px;text-align:right;">${status}</td>
     </tr>`;
   }).join('');
-  const html = `
-    <div style="position:fixed;inset:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:9999;" onclick="if(event.target===this)this.remove()">
-      <div class="card" style="width:520px;max-width:92vw;padding:20px;">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
-          <span style="font-size:15px;font-weight:700;color:var(--text-1);">Build cost preview</span>
-          <button onclick="this.closest('div[style*=fixed]').remove()" style="background:none;border:none;color:var(--text-3);font-size:18px;cursor:pointer;">✕</button>
-        </div>
-        <table style="width:100%;border-collapse:collapse;margin-bottom:14px;">
-          <thead><tr style="border-bottom:1px solid var(--border);">
-            <th style="text-align:left;padding:5px 8px;font-size:10px;color:var(--text-3);text-transform:uppercase;">Step</th>
-            <th style="text-align:left;padding:5px 8px;font-size:10px;color:var(--text-3);text-transform:uppercase;">Model</th>
-            <th style="text-align:right;padding:5px 8px;font-size:10px;color:var(--text-3);text-transform:uppercase;">Input</th>
-            <th style="text-align:right;padding:5px 8px;font-size:10px;color:var(--text-3);text-transform:uppercase;">Status</th>
-          </tr></thead>
-          <tbody>${rows}</tbody>
-        </table>
-        <div style="background:var(--bg-2,#f1f5f9);border-radius:8px;padding:12px;font-size:12px;color:var(--text-2);line-height:1.7;">
-          <div><b>${willRun.length}</b> of 5 steps will regenerate${cached.length?`, <b style="color:var(--green);">${cached.length}</b> cached (skipped)`:''}</div>
-          <div>Projected: <b>~${_fmtTokens(totalIn)}</b> input + <b>~${_fmtTokens(totalOut)}</b> output ≈ <b>${_fmtTokens(totalIn+totalOut)}</b> tokens</div>
-          ${saved?`<div style="color:var(--green);">Cache saves ~${_fmtTokens(saved)} input tokens this run</div>`:''}
-        </div>
-        <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:16px;">
-          <button class="btn btn-ghost btn-sm" onclick="this.closest('div[style*=fixed]').remove()">Close</button>
-          <button class="btn btn-primary btn-sm" onclick="this.closest('div[style*=fixed]').remove();runBuildStep('all')">Run Build (~${_fmtTokens(totalIn+totalOut)} tok)</button>
-        </div>
+
+  const overlay = document.createElement('div');
+  overlay.id = 'build-preview-overlay';
+  overlay.className = 'dialog-overlay';
+  overlay.onclick = (e) => { if (e.target === overlay) closeBuildPreview(); };
+  overlay.innerHTML = `
+    <div class="dialog" style="width:540px;max-width:92vw;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+        <h3 style="margin:0;">Build cost preview</h3>
+        <button class="btn btn-ghost btn-xs" onclick="closeBuildPreview()" aria-label="Close">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div style="font-size:11px;color:var(--text-3);margin-bottom:14px;">Estimated cost and what will regenerate, before you run.</div>
+      <table style="width:100%;border-collapse:collapse;margin-bottom:16px;">
+        <thead><tr style="border-bottom:1px solid var(--border);">
+          <th style="text-align:left;padding:4px 6px;font-size:10px;font-weight:600;color:var(--text-3);text-transform:uppercase;letter-spacing:0.05em;">Step</th>
+          <th style="text-align:left;padding:4px 6px;font-size:10px;font-weight:600;color:var(--text-3);text-transform:uppercase;letter-spacing:0.05em;">Model</th>
+          <th style="text-align:right;padding:4px 6px;font-size:10px;font-weight:600;color:var(--text-3);text-transform:uppercase;letter-spacing:0.05em;">Input</th>
+          <th style="text-align:right;padding:4px 6px;font-size:10px;font-weight:600;color:var(--text-3);text-transform:uppercase;letter-spacing:0.05em;">Status</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+      <div style="background:var(--bg-2);border:1px solid var(--border);border-radius:10px;padding:14px;font-size:12px;color:var(--text-2);line-height:1.8;">
+        <div><b style="color:var(--text-1);">${willRun.length}</b> of 5 steps will regenerate${cached.length?`, <b style="color:var(--green);">${cached.length}</b> cached (skipped)`:''}</div>
+        <div>Projected <b style="color:var(--text-1);">~${_fmtTokens(totalIn)}</b> input + <b style="color:var(--text-1);">~${_fmtTokens(totalOut)}</b> output &nbsp;≈&nbsp; <b style="color:var(--text-1);">${_fmtTokens(totalIn+totalOut)}</b> tokens</div>
+        ${saved?`<div style="color:var(--green);">Cache saves ~${_fmtTokens(saved)} input tokens this run</div>`:''}
+      </div>
+      <div class="dialog-actions">
+        <button class="btn btn-ghost btn-sm" onclick="closeBuildPreview()">Close</button>
+        <button class="btn btn-primary btn-sm" onclick="closeBuildPreview();runBuildStep('all')">Run Build · ~${_fmtTokens(totalIn+totalOut)} tok</button>
       </div>
     </div>`;
-  const wrap = document.createElement('div');
-  wrap.innerHTML = html;
-  document.body.appendChild(wrap.firstElementChild);
+  document.body.appendChild(overlay);
 }
 
 async function runBuildStep(step, phaseId) {
