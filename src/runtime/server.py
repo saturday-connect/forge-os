@@ -1883,6 +1883,7 @@ def compute_full_state():
         "git": proj.get("git", {}),
         "tool": proj.get("tool", DEFAULT_TOOL),
         "model": proj.get("model", DEFAULT_TOOL),
+        "build_step_models": proj.get("build_step_models", {}),
         "project_name": proj.get("project_name", ""),
         "skip_org_context": proj.get("skip_org_context", False),
         "orgContext": _build_org_context_meta(),
@@ -2216,6 +2217,51 @@ class ForgeHandler(BaseHTTPRequestHandler):
                              for k in steps_out)
             self._json_response(200, {"steps": steps_out, "active_phase_id": _active_pid,
                                       "total_tokens": _total_tok})
+            return
+
+        if path == "/api/build-preview":
+            # Pre-flight cost estimate: for each step, run build_runner --preview
+            # (no generation) to estimate input tokens + whether it's a cache hit,
+            # using the per-step tool/model. Lets the UI show projected cost and
+            # which steps will actually regenerate BEFORE committing to a build.
+            _pvproj = load_project_state()
+            _pv_phase = _pvproj.get("active_phase_id", "") or ""
+            _pv_phase_name = next((p["name"] for p in _pvproj.get("phases", [])
+                                   if p["id"] == _pv_phase), "")
+            _g_tool  = _pvproj.get("tool", DEFAULT_TOOL)
+            _g_model = _pvproj.get("model", "")
+            _ov_all  = _pvproj.get("build_step_models", {}) or {}
+            _runner  = os.path.join(FORGE_DIR, "scripts", "build_runner.py")
+            _steps = ["backend", "frontend", "integration", "tests", "infra"]
+            _out = {}
+            for _s in _steps:
+                _ov = _ov_all.get(_s, {}) or {}
+                _t = _ov.get("tool") or _g_tool
+                _m = _ov.get("model") or _g_model
+                _penv = {**os.environ, "FORGE_TOOL": _t, "FORGE_MODEL": _m,
+                         "FORGE_REPO_ROOT": REPO_ROOT, "FORGE_DATA_DIR": FORGE_DIR,
+                         FORGE_PHASE_ID_ENV: _pv_phase, FORGE_PHASE_NAME_ENV: _pv_phase_name}
+                try:
+                    _r = subprocess.run([sys.executable, _runner, _s, "--preview"],
+                                        cwd=REPO_ROOT, env=_penv, capture_output=True,
+                                        text=True, timeout=30)
+                    _info = json.loads(_r.stdout.strip().splitlines()[-1])
+                except Exception as _e:
+                    logger.debug("preview %s failed: %s", _s, _e)
+                    _info = {"step": _s, "tool": _t, "model": _m,
+                             "tokens_in_est": 0, "cache_hit": False, "error": "preview failed"}
+                _out[_s] = _info
+            _proj_in = sum(v.get("tokens_in_est", 0) for v in _out.values() if not v.get("cache_hit"))
+            _cached_in = sum(v.get("tokens_in_est", 0) for v in _out.values() if v.get("cache_hit"))
+            _will_run = [s for s in _steps if not _out[s].get("cache_hit")]
+            self._json_response(200, {
+                "steps": _out,
+                "projected_input_tokens": _proj_in,
+                "projected_output_tokens": len(_will_run) * 20000,  # ~20k out/step heuristic
+                "cached_input_tokens_saved": _cached_in,
+                "will_regenerate": _will_run,
+                "cache_hits": [s for s in _steps if _out[s].get("cache_hit")],
+            })
             return
 
         if path == "/api/build-file":
@@ -4449,6 +4495,35 @@ class ForgeHandler(BaseHTTPRequestHandler):
                     self._json_response(400, {"error": "unsupported model for tool"})
                     return
                 proj["model"] = data["model"]
+            if "build_step_models" in data:
+                # Per-step tool/model overrides for tiering. Validate each entry
+                # against KNOWN_TOOLS so an invalid pair can never reach a build.
+                _bsm = data["build_step_models"]
+                if not isinstance(_bsm, dict):
+                    self._json_response(400, {"error": "build_step_models must be an object"})
+                    return
+                _clean = {}
+                for _stp, _cfg in _bsm.items():
+                    if _stp not in ("backend", "frontend", "integration", "tests", "infra"):
+                        continue
+                    if not isinstance(_cfg, dict):
+                        continue
+                    _t = (_cfg.get("tool") or "").strip()
+                    _m = (_cfg.get("model") or "").strip()
+                    if _t and _t not in KNOWN_TOOLS:
+                        self._json_response(400, {"error": f"unsupported tool for {_stp}"})
+                        return
+                    if _t and _m:
+                        _valid = [x["id"] for x in KNOWN_TOOLS.get(_t, {}).get("models", [])]
+                        if _valid and _m not in _valid:
+                            self._json_response(400, {"error": f"unsupported model for {_stp}/{_t}"})
+                            return
+                    _entry = {}
+                    if _t: _entry["tool"] = _t
+                    if _m: _entry["model"] = _m
+                    if _entry:
+                        _clean[_stp] = _entry
+                proj["build_step_models"] = _clean
             if "project_name" in data:
                 proj["project_name"] = data["project_name"]
             if "project_type" in data:
@@ -4701,13 +4776,24 @@ class ForgeHandler(BaseHTTPRequestHandler):
                     }
                     build_runner = os.path.join(FORGE_DIR, "scripts", "build_runner.py")
                     _base_env = {**env, "PYTHONUNBUFFERED": "1"}
+                    _global_tool  = proj.get("tool", DEFAULT_TOOL)
+                    _global_model = proj.get("model", "")
+                    _step_overrides = proj.get("build_step_models", {}) or {}
 
                     def _run_one(s, extra_env=None):
                         """Run one build_runner step, streaming stdout to its log
                         file. Returns the process exit code (0 = success)."""
                         set_processing(STATUS_RUNNING, s)
                         _log_path = os.path.join(FORGE_DIR, "runs", f"build-log-{s}.txt")
-                        _renv = {**_base_env, **(extra_env or {})}
+                        # Per-step model/tool tiering: a step can override the global
+                        # tool+model (e.g. a fast model for mechanical steps). Falls
+                        # back to the project's global tool/model when unset.
+                        _ov = _step_overrides.get(s, {}) or {}
+                        _step_tool  = _ov.get("tool")  or _global_tool
+                        _step_model = _ov.get("model") or _global_model
+                        _renv = {**_base_env,
+                                 "FORGE_TOOL": _step_tool, "FORGE_MODEL": _step_model,
+                                 **(extra_env or {})}
                         try:
                             with open(_log_path, "w", encoding="utf-8") as _log_f:
                                 _proc = subprocess.Popen(

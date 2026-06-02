@@ -2224,6 +2224,170 @@ function renderBuildSteps() {
   }).join('');
 }
 
+// ---- Per-step model tiering -----------------------------------------------
+const _BLD_STEP_ORDER = ['backend','frontend','integration','tests','infra'];
+const _BLD_STEP_LABELS = {backend:'Backend & API', frontend:'Frontend UI',
+  integration:'Integration Layer', tests:'Test Suite', infra:'Infrastructure'};
+// Recommended tiering: mechanical steps -> fast model, complex -> default.
+const _BLD_FAST_STEPS = ['infra','tests'];
+let _stepModelsDraft = null;
+
+async function toggleStepModels() {
+  const panel = document.getElementById('step-models-panel');
+  if (!panel) return;
+  if (panel.style.display !== 'none') { panel.style.display = 'none'; return; }
+  await fetchToolStatus();
+  _stepModelsDraft = JSON.parse(JSON.stringify(state.build_step_models || {}));
+  panel.style.display = 'block';
+  renderStepModels();
+}
+
+function renderStepModels() {
+  const panel = document.getElementById('step-models-panel');
+  if (!panel || !detectedTools) return;
+  const gTool = state.tool || 'claude';
+  const gModel = state.model || '';
+  const toolOpts = Object.entries(detectedTools)
+    .map(([id,info]) => `<option value="${id}">${escapeHtml(info.label||id)}</option>`).join('');
+
+  const rows = _BLD_STEP_ORDER.map(s => {
+    const ov = _stepModelsDraft[s] || {};
+    const t = ov.tool || gTool;
+    const m = ov.model || '';
+    const models = (detectedTools[t] || {}).models || [];
+    const modelOpts = `<option value="">Default (${escapeHtml(gModel || (detectedTools[t]||{}).default_model || 'global')})</option>` +
+      models.map(mo => `<option value="${mo.id}" ${mo.id===m?'selected':''}>${escapeHtml(mo.label||mo.id)}${mo.tier?` · ${mo.tier}`:''}</option>`).join('');
+    const usingDefault = !ov.tool && !ov.model;
+    return `<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--border);">
+      <span style="flex:0 0 120px;font-size:12px;font-weight:600;color:var(--text-1);">${_BLD_STEP_LABELS[s]}</span>
+      <select onchange="setStepModel('${s}','tool',this.value)" style="flex:0 0 130px;height:30px;font-size:11px;padding:0 6px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text-1);">
+        ${toolOpts.replace(`value="${t}"`, `value="${t}" selected`)}
+      </select>
+      <select onchange="setStepModel('${s}','model',this.value)" style="flex:1;height:30px;font-size:11px;padding:0 6px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text-1);">
+        ${modelOpts}
+      </select>
+      <span style="flex:0 0 60px;font-size:10px;color:${usingDefault?'var(--text-3)':'var(--accent,#4f46e5)'};">${usingDefault?'global':'custom'}</span>
+    </div>`;
+  }).join('');
+
+  panel.innerHTML = `<div class="card" style="padding:14px 16px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+      <span style="font-size:12px;font-weight:700;color:var(--text-1);">Model per step</span>
+      <span style="font-size:11px;color:var(--text-3);">Route mechanical steps to a faster model to cut time + rate-limit pressure</span>
+    </div>
+    ${rows}
+    <div style="display:flex;align-items:center;gap:8px;margin-top:12px;">
+      <button class="btn btn-ghost btn-sm" onclick="applyTieringDefaults()" title="Set Infrastructure + Test Suite to the fast model, others to default">Apply recommended tiering</button>
+      <button class="btn btn-ghost btn-sm" onclick="clearStepModels()">Reset all to global</button>
+      <button class="btn btn-primary btn-sm" style="margin-left:auto;" onclick="saveStepModels()">Save</button>
+    </div>
+  </div>`;
+}
+
+function setStepModel(step, field, value) {
+  _stepModelsDraft[step] = _stepModelsDraft[step] || {};
+  if (value) _stepModelsDraft[step][field] = value;
+  else delete _stepModelsDraft[step][field];
+  // Switching tool invalidates a model from another tool
+  if (field === 'tool') delete _stepModelsDraft[step].model;
+  if (!Object.keys(_stepModelsDraft[step]).length) delete _stepModelsDraft[step];
+  renderStepModels();
+}
+
+function applyTieringDefaults() {
+  const gTool = state.tool || 'claude';
+  const fast = (detectedTools[gTool] || {}).fast_model;
+  const def  = (detectedTools[gTool] || {}).default_model;
+  _stepModelsDraft = {};
+  _BLD_STEP_ORDER.forEach(s => {
+    const m = _BLD_FAST_STEPS.includes(s) ? fast : def;
+    if (m) _stepModelsDraft[s] = { tool: gTool, model: m };
+  });
+  renderStepModels();
+}
+
+function clearStepModels() { _stepModelsDraft = {}; renderStepModels(); }
+
+async function saveStepModels() {
+  try {
+    const res = await apiFetch('/api/settings', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ build_step_models: _stepModelsDraft })
+    });
+    if (res.ok) {
+      state.build_step_models = JSON.parse(JSON.stringify(_stepModelsDraft));
+      showToast('Per-step models saved', 'success');
+      document.getElementById('step-models-panel').style.display = 'none';
+    } else {
+      const d = await res.json(); showToast(d.error || 'Save failed', 'error');
+    }
+  } catch(e) { showToast('Save failed', 'error'); }
+}
+
+// ---- Pre-flight cost preview ----------------------------------------------
+async function previewBuildCost() {
+  const btn = document.getElementById('btn-build-preview');
+  if (btn) { btn.disabled = true; btn.textContent = 'Estimating…'; }
+  try {
+    const res = await apiFetch('/api/build-preview');
+    const d = await res.json();
+    _showBuildPreviewModal(d);
+  } catch(e) {
+    showToast('Preview failed', 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg> Preview cost'; }
+  }
+}
+
+function _showBuildPreviewModal(d) {
+  const totalIn = d.projected_input_tokens || 0;
+  const totalOut = d.projected_output_tokens || 0;
+  const saved = d.cached_input_tokens_saved || 0;
+  const willRun = d.will_regenerate || [];
+  const cached = d.cache_hits || [];
+  const rows = _BLD_STEP_ORDER.map(s => {
+    const info = (d.steps || {})[s] || {};
+    const hit = info.cache_hit;
+    const tk = info.tokens_in_est || 0;
+    return `<tr>
+      <td style="padding:5px 8px;font-size:12px;color:var(--text-1);">${_BLD_STEP_LABELS[s]}</td>
+      <td style="padding:5px 8px;font-size:11px;color:var(--text-3);">${escapeHtml(info.model||'—')}</td>
+      <td style="padding:5px 8px;font-size:11px;text-align:right;color:var(--text-2);">${hit?'—':'~'+_fmtTokens(tk)}</td>
+      <td style="padding:5px 8px;font-size:11px;text-align:right;">${hit?'<span style="color:var(--green);">cached</span>':'<span style="color:var(--accent,#4f46e5);">will run</span>'}</td>
+    </tr>`;
+  }).join('');
+  const html = `
+    <div style="position:fixed;inset:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:9999;" onclick="if(event.target===this)this.remove()">
+      <div class="card" style="width:520px;max-width:92vw;padding:20px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+          <span style="font-size:15px;font-weight:700;color:var(--text-1);">Build cost preview</span>
+          <button onclick="this.closest('div[style*=fixed]').remove()" style="background:none;border:none;color:var(--text-3);font-size:18px;cursor:pointer;">✕</button>
+        </div>
+        <table style="width:100%;border-collapse:collapse;margin-bottom:14px;">
+          <thead><tr style="border-bottom:1px solid var(--border);">
+            <th style="text-align:left;padding:5px 8px;font-size:10px;color:var(--text-3);text-transform:uppercase;">Step</th>
+            <th style="text-align:left;padding:5px 8px;font-size:10px;color:var(--text-3);text-transform:uppercase;">Model</th>
+            <th style="text-align:right;padding:5px 8px;font-size:10px;color:var(--text-3);text-transform:uppercase;">Input</th>
+            <th style="text-align:right;padding:5px 8px;font-size:10px;color:var(--text-3);text-transform:uppercase;">Status</th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+        <div style="background:var(--bg-2,#f1f5f9);border-radius:8px;padding:12px;font-size:12px;color:var(--text-2);line-height:1.7;">
+          <div><b>${willRun.length}</b> of 5 steps will regenerate${cached.length?`, <b style="color:var(--green);">${cached.length}</b> cached (skipped)`:''}</div>
+          <div>Projected: <b>~${_fmtTokens(totalIn)}</b> input + <b>~${_fmtTokens(totalOut)}</b> output ≈ <b>${_fmtTokens(totalIn+totalOut)}</b> tokens</div>
+          ${saved?`<div style="color:var(--green);">Cache saves ~${_fmtTokens(saved)} input tokens this run</div>`:''}
+        </div>
+        <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:16px;">
+          <button class="btn btn-ghost btn-sm" onclick="this.closest('div[style*=fixed]').remove()">Close</button>
+          <button class="btn btn-primary btn-sm" onclick="this.closest('div[style*=fixed]').remove();runBuildStep('all')">Run Build (~${_fmtTokens(totalIn+totalOut)} tok)</button>
+        </div>
+      </div>
+    </div>`;
+  const wrap = document.createElement('div');
+  wrap.innerHTML = html;
+  document.body.appendChild(wrap.firstElementChild);
+}
+
 async function runBuildStep(step, phaseId) {
   try {
     optimisticRunning = { stage: step, startTime: Date.now() };

@@ -3,8 +3,10 @@
     "label": "Antigravity CLI",
     "install_cmd": "curl -fsSL https://agy.sh | sh",
     "install_url": "https://agy.sh",
+    "default_model": "default",
+    "fast_model": "default",
     "models": [
-      {"id": "default", "label": "Default (configured in agy)"}
+      {"id": "default", "label": "Default (configured in agy)", "tier": "balanced"}
     ]
   },
   "gemini": {
@@ -13,34 +15,40 @@
     "deprecated_message": "Gemini CLI ends June 18 2026. Switch to Antigravity CLI in Settings.",
     "install_cmd": "npm install -g @google/gemini-cli",
     "install_url": "https://github.com/google-gemini/gemini-cli",
+    "default_model": "gemini-3-flash-preview",
+    "fast_model": "gemini-2.5-flash-lite",
     "models": [
-      {"id": "gemini-3-flash-preview",  "label": "Gemini 3 Flash (recommended)"},
-      {"id": "gemini-3-pro-preview",    "label": "Gemini 3 Pro"},
-      {"id": "gemini-2.5-flash",        "label": "Gemini 2.5 Flash"},
-      {"id": "gemini-2.5-pro",          "label": "Gemini 2.5 Pro"},
-      {"id": "gemini-2.5-flash-lite",   "label": "Gemini 2.5 Flash Lite (fastest)"}
+      {"id": "gemini-3-flash-preview",  "label": "Gemini 3 Flash (recommended)", "tier": "balanced"},
+      {"id": "gemini-3-pro-preview",    "label": "Gemini 3 Pro", "tier": "strong"},
+      {"id": "gemini-2.5-flash",        "label": "Gemini 2.5 Flash", "tier": "balanced"},
+      {"id": "gemini-2.5-pro",          "label": "Gemini 2.5 Pro", "tier": "strong"},
+      {"id": "gemini-2.5-flash-lite",   "label": "Gemini 2.5 Flash Lite (fastest)", "tier": "fast"}
     ]
   },
   "claude": {
     "label": "Claude Code CLI",
     "install_cmd": "npm install -g @anthropic-ai/claude-code",
     "install_url": "https://github.com/anthropics/claude-code",
+    "default_model": "claude-sonnet-4-6",
+    "fast_model": "claude-haiku-4-5-20251001",
     "models": [
-      {"id": "claude-sonnet-4-6",        "label": "Claude Sonnet 4.6 (recommended)"},
-      {"id": "claude-opus-4-7",          "label": "Claude Opus 4.7"},
-      {"id": "claude-haiku-4-5-20251001","label": "Claude Haiku 4.5 (fastest)"}
+      {"id": "claude-sonnet-4-6",        "label": "Claude Sonnet 4.6 (recommended)", "tier": "balanced"},
+      {"id": "claude-opus-4-7",          "label": "Claude Opus 4.7", "tier": "strong"},
+      {"id": "claude-haiku-4-5-20251001","label": "Claude Haiku 4.5 (fastest)", "tier": "fast"}
     ]
   },
   "codex": {
     "label": "Codex CLI",
     "install_cmd": "npm install -g @openai/codex",
     "install_url": "https://github.com/openai/codex",
+    "default_model": "o4-mini",
+    "fast_model": "gpt-4.1-mini",
     "models": [
-      {"id": "o4-mini",      "label": "o4 Mini (recommended)"},
-      {"id": "o3",           "label": "o3"},
-      {"id": "gpt-5.5",      "label": "GPT-5.5"},
-      {"id": "gpt-4.1",      "label": "GPT-4.1"},
-      {"id": "gpt-4.1-mini", "label": "GPT-4.1 Mini"}
+      {"id": "o4-mini",      "label": "o4 Mini (recommended)", "tier": "balanced"},
+      {"id": "o3",           "label": "o3", "tier": "strong"},
+      {"id": "gpt-5.5",      "label": "GPT-5.5", "tier": "strong"},
+      {"id": "gpt-4.1",      "label": "GPT-4.1", "tier": "balanced"},
+      {"id": "gpt-4.1-mini", "label": "GPT-4.1 Mini", "tier": "fast"}
     ]
   },
   "openai": {
@@ -48,11 +56,13 @@
     "api_only": true,
     "install_url": "https://platform.openai.com/docs/quickstart",
     "setup_hint": "Set the OPENAI_API_KEY environment variable",
+    "default_model": "gpt-4o",
+    "fast_model": "gpt-4o-mini",
     "models": [
-      {"id": "gpt-5.5",     "label": "GPT-5.5"},
-      {"id": "gpt-4o",      "label": "GPT-4o"},
-      {"id": "gpt-4o-mini", "label": "GPT-4o Mini"},
-      {"id": "o3-mini",     "label": "o3 Mini"}
+      {"id": "gpt-5.5",     "label": "GPT-5.5", "tier": "strong"},
+      {"id": "gpt-4o",      "label": "GPT-4o", "tier": "balanced"},
+      {"id": "gpt-4o-mini", "label": "GPT-4o Mini", "tier": "fast"},
+      {"id": "o3-mini",     "label": "o3 Mini", "tier": "fast"}
     ]
   }
 }

@@ -4813,10 +4813,51 @@ def run_step(step):
 
     return True
 
+
+def preview_step(step):
+    """Estimate a step's cost WITHOUT generating: build the prompt, estimate
+    input tokens, and report whether it would be a cache hit. Reads the
+    per-step tool/model from FORGE_TOOL/FORGE_MODEL (set by the server).
+    Returns a dict; never writes anything."""
+    import hashlib as _hashlib
+    meta = STEPS.get(step)
+    if not meta:
+        return {"step": step, "error": "unknown step"}
+    tool = os.environ.get("FORGE_TOOL", DEFAULT_TOOL)
+    model_id = os.environ.get("FORGE_MODEL", "")
+    docs = collect_docs(meta)
+    api_contract = load_api_contract()
+    built_context = {}
+    if step in ("integration", "tests", "infra"):
+        bb = collect_built_step("backend")
+        if bb: built_context["backend"] = bb
+    if step in ("tests", "infra"):
+        fb = collect_built_step("frontend")
+        if fb: built_context["frontend"] = fb
+    persona = load_agent(meta["agent"])
+    prompt = build_prompt_for_step(step, persona, docs, api_contract, built_context)
+    input_hash = _hashlib.sha256(
+        (tool + "\0" + (model_id or "") + "\0" + prompt).encode(FILE_ENCODING)).hexdigest()
+    out_dir = (os.path.join(FORGE_DIR, DIR_BUILD, ACTIVE_PHASE_ID, step)
+               if ACTIVE_PHASE_ID else os.path.join(FORGE_DIR, meta["output_dir"]))
+    out_has_files = os.path.isdir(out_dir) and any(
+        os.path.isfile(os.path.join(r, f)) for r, _d, fs in os.walk(out_dir) for f in fs)
+    prev = load_build_status().get(step, {})
+    cache_hit = (prev.get("status") == STATUS_COMPLETE
+                 and prev.get("input_hash") == input_hash and out_has_files)
+    return {"step": step, "tool": tool, "model": model_id,
+            "tokens_in_est": _est_tokens(prompt), "cache_hit": cache_hit}
+
+
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Usage: build_runner.py <step>")
+        print("Usage: build_runner.py <step> [--preview]")
         sys.exit(1)
+
+    # Preview mode: estimate cost + cache status, print JSON, exit. No side effects.
+    if "--preview" in sys.argv[2:]:
+        print(json.dumps(preview_step(sys.argv[1])))
+        sys.exit(0)
 
     # Cross-process mutex via lockfile — prevents concurrent AI calls from
     # the same account when multiple build_runner processes are spawned
