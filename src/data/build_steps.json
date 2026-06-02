@@ -6,13 +6,9 @@
       "agent": "code-architect",
       "source_dirs": [
         "01-requirements",
-        "02-design",
         "03-analysis",
         "04-architecture",
-        "05-delivery",
-        "06-engineering",
-        "07-quality",
-        "08-operations"
+        "06-engineering"
       ],
       "source_files": [],
       "output_dir": "15-build/backend"
@@ -24,7 +20,6 @@
         "01-requirements",
         "02-design",
         "03-analysis",
-        "05-delivery",
         "06-engineering"
       ],
       "source_files": [
@@ -39,9 +34,7 @@
       "agent": "integration-engineer",
       "source_dirs": [
         "01-requirements",
-        "02-design",
         "03-analysis",
-        "05-delivery",
         "06-engineering"
       ],
       "source_files": [
@@ -57,9 +50,7 @@
       "agent": "qa-coder",
       "source_dirs": [
         "01-requirements",
-        "02-design",
         "04-architecture",
-        "05-delivery",
         "07-quality"
       ],
       "source_files": [
@@ -74,9 +65,7 @@
       "label": "Infrastructure",
       "agent": "devops-coder",
       "source_dirs": [
-        "03-analysis",
         "04-architecture",
-        "05-delivery",
         "06-engineering",
         "07-quality",
         "08-operations",

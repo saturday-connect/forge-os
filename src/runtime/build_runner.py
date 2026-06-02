@@ -70,7 +70,14 @@ def load_build_status():
             pass
     return {}
 
-def save_step_status(step, status_val, files=None, error=None, input_hash=None):
+def _est_tokens(text):
+    """Rough token estimate (~4 chars/token). Good enough for cost visibility;
+    avoids a tokenizer dependency."""
+    return len(text) // 4 if text else 0
+
+
+def save_step_status(step, status_val, files=None, error=None, input_hash=None,
+                     tokens_in=None, tokens_out=None, cached=None):
     # Serialize the read-modify-write across processes: under the parallel DAG
     # scheduler, multiple build_runner processes update DIFFERENT steps in the
     # same build-system.json concurrently. Without a lock they can clobber each
@@ -98,6 +105,10 @@ def save_step_status(step, status_val, files=None, error=None, input_hash=None):
             # input_hash fingerprints the exact prompt (spec + stack + upstream
             # code) that produced this output — for skip-unchanged builds.
             "input_hash": input_hash if input_hash is not None else existing.get("input_hash", ""),
+            # Token accounting for cost visibility (estimates, ~4 chars/token).
+            "tokens_in":  tokens_in  if tokens_in  is not None else existing.get("tokens_in", 0),
+            "tokens_out": tokens_out if tokens_out is not None else existing.get("tokens_out", 0),
+            "cached":     cached     if cached     is not None else False,
         }
         _tmp = BUILD_STATUS_FILE + ".tmp"
         with open(_tmp, "w", encoding=FILE_ENCODING) as f:
@@ -4632,10 +4643,11 @@ def run_step(step):
     if (not _force and _prev.get("status") == STATUS_COMPLETE
             and _prev.get("input_hash") == input_hash and _out_has_files):
         print(_LOG_PREFIX + " [cache] " + step
-              + ": inputs unchanged since last build — skipping regeneration (cache hit)")
-        # Re-affirm completion (keeps files/hash, refreshes nothing else)
-        save_step_status(step, STATUS_COMPLETE,
-                         files=_prev.get("files", []), input_hash=input_hash)
+              + ": inputs unchanged since last build — skipping regeneration (cache hit, ~"
+              + f"{_est_tokens(prompt):,}" + " input tokens saved)")
+        # Re-affirm completion (keeps files/hash); record 0 tokens spent (cached).
+        save_step_status(step, STATUS_COMPLETE, files=_prev.get("files", []),
+                         input_hash=input_hash, tokens_in=0, tokens_out=0, cached=True)
         return True
 
     # ── Invoke → Validate → Retry loop ──────────────────────────────────────
@@ -4775,8 +4787,12 @@ def run_step(step):
         file_list.append(rel_path)
         print(_LOG_PREFIX + " Written: " + rel_path)
 
-    save_step_status(step, STATUS_COMPLETE, files=file_list, input_hash=input_hash)
-    print(_LOG_PREFIX + " Done. " + str(len(file_list)) + " files generated.")
+    _tok_in = _est_tokens(prompt)
+    _tok_out = _est_tokens(output)   # 'output' holds the accepted generation
+    save_step_status(step, STATUS_COMPLETE, files=file_list, input_hash=input_hash,
+                     tokens_in=_tok_in, tokens_out=_tok_out, cached=False)
+    print(_LOG_PREFIX + " Done. " + str(len(file_list)) + " files generated. "
+          + f"(~{_tok_in:,} in / ~{_tok_out:,} out tokens)")
 
     # Deterministic fixups (correct AI-generated code mistakes)
     _post_generate_fixups(out_dir)

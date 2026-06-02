@@ -2208,8 +2208,14 @@ class ForgeHandler(BaseHTTPRequestHandler):
                     "generated_at": st.get("generated_at", ""),
                     "error": st.get("error"),
                     "phase_id": st.get("phase_id"),
+                    "tokens_in": st.get("tokens_in", 0),
+                    "tokens_out": st.get("tokens_out", 0),
+                    "cached": st.get("cached", False),
                 }
-            self._json_response(200, {"steps": steps_out, "active_phase_id": _active_pid})
+            _total_tok = sum(steps_out[k].get("tokens_in", 0) + steps_out[k].get("tokens_out", 0)
+                             for k in steps_out)
+            self._json_response(200, {"steps": steps_out, "active_phase_id": _active_pid,
+                                      "total_tokens": _total_tok})
             return
 
         if path == "/api/build-file":

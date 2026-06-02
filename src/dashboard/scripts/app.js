@@ -2118,6 +2118,13 @@ async function fetchBuildSteps() {
   } catch (e) {}
 }
 
+function _fmtTokens(n) {
+  if (!n) return '0';
+  if (n >= 1000000) return (n/1000000).toFixed(1) + 'M';
+  if (n >= 1000) return Math.round(n/1000) + 'k';
+  return String(n);
+}
+
 function renderBuildSteps() {
   const grid = document.getElementById('build-steps-grid');
   if (!grid) return;
@@ -2126,6 +2133,29 @@ function renderBuildSteps() {
     const container = document.createElement('div');
     container.id = 'build-log-drawer-container';
     grid.parentNode.insertBefore(container, grid.nextSibling);
+  }
+  // Build-total token meter (above the grid) — answers "how much did this cost?"
+  let meter = document.getElementById('build-token-meter');
+  if (!meter) {
+    meter = document.createElement('div');
+    meter.id = 'build-token-meter';
+    grid.parentNode.insertBefore(meter, grid);
+  }
+  const _totIn  = Object.values(buildStepsState).reduce((a, v) => a + (v.tokens_in || 0), 0);
+  const _totOut = Object.values(buildStepsState).reduce((a, v) => a + (v.tokens_out || 0), 0);
+  const _anyCached = Object.values(buildStepsState).some(v => v.cached);
+  if (_totIn + _totOut > 0) {
+    meter.style.cssText = 'display:flex;align-items:center;gap:10px;margin-bottom:12px;font-size:11px;color:var(--text-3);';
+    meter.innerHTML = `
+      <span style="font-weight:600;color:var(--text-2);">Tokens this build:</span>
+      <span title="Estimated input tokens">↑ ~${_fmtTokens(_totIn)} in</span>
+      <span title="Estimated output tokens">↓ ~${_fmtTokens(_totOut)} out</span>
+      <span style="color:var(--text-2);font-weight:600;">≈ ${_fmtTokens(_totIn + _totOut)} total</span>
+      ${_anyCached ? '<span style="color:var(--green);">· cache hits saved tokens</span>' : ''}
+      <span style="margin-left:auto;font-size:10px;color:var(--text-3);opacity:0.7;">estimate (~4 chars/token)</span>`;
+  } else {
+    meter.innerHTML = '';
+    meter.style.marginBottom = '0';
   }
   const isRunning = (state.processing && state.processing.status === 'running');
 
@@ -2151,7 +2181,11 @@ function renderBuildSteps() {
 
     } else if (st.status === 'complete') {
       badge = `<span class="badge badge-success" ${badgeClick}>${fileCount} file${fileCount!==1?'s':''}</span>`;
-      subline = `<span style="font-size:11px;color:var(--text-3);">Generated successfully</span>`;
+      const _tk = (st.tokens_in || 0) + (st.tokens_out || 0);
+      const _tkStr = st.cached
+        ? `<span style="color:var(--green);">cached — 0 tokens</span>`
+        : (_tk ? `~${_fmtTokens(_tk)} tokens` : 'Generated');
+      subline = `<span style="font-size:11px;color:var(--text-3);">${_tkStr}</span>`;
       // Icon-only View Code + text Rebuild
       actionBtns = `
         <button onclick="openBuildCodePanel('${key}')" title="View Code"
