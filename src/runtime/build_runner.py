@@ -4296,11 +4296,23 @@ def _validate_output_integrity(parsed):
       `export default memo(Component);`) — none of which are closing braces.
       A "must end with }" rule produces constant false positives.
 
-    Returns: (is_valid: bool, error: str | None)
+    Retry vs drop — the cost calculus:
+      A full regeneration costs 15-20 minutes. That is only worth paying for a
+      CLEAR code-truncation signal (an unbalanced .ts/.tsx/.js/.jsx file or a
+      .py syntax error) — those mean the whole file is unusable.
+      A malformed JSON file (e.g. a spurious empty package.json the model
+      emitted into a Python backend) is NOT worth a 20-minute retry: drop the
+      bad file, warn, and let downstream fixups (_ensure_package_dependencies,
+      etc.) regenerate it if it actually matters. Retrying the entire step for
+      one stray JSON file is the wrong trade and can loop until all attempts
+      are burned.
+
+    Returns: (should_retry: bool, retry_reason: str | None, files_to_drop: list[str])
     """
     import ast as _ast, json as _json
 
     _BRACE_IMBALANCE_THRESHOLD = 3  # imbalance below this is tolerated
+    files_to_drop = []
 
     for rel_path, content in parsed.items():
         if not content.strip():
@@ -4312,26 +4324,29 @@ def _validate_output_integrity(parsed):
             close_b = content.count("}")
             imbalance = open_b - close_b
             if imbalance >= _BRACE_IMBALANCE_THRESHOLD:
-                return False, (
+                return True, (
                     rel_path + ": " + str(imbalance) + " unclosed brace(s) ("
                     + str(open_b) + " open vs " + str(close_b) + " close) — "
                     "AI output was likely truncated mid-file"
-                )
+                ), []
 
         elif ext == ".py":
             try:
                 _ast.parse(content)
             except SyntaxError as _e:
-                return False, (
+                return True, (
                     rel_path + ": Python syntax error at line "
                     + str(_e.lineno) + " — " + (_e.msg or "unknown")
-                )
+                ), []
 
         elif ext == ".json" and not rel_path.endswith("package-lock.json"):
             try:
                 _json.loads(content)
-            except _json.JSONDecodeError as _e:
-                return False, rel_path + ": invalid JSON — " + str(_e)
+            except _json.JSONDecodeError:
+                # Don't retry the whole step — just drop this file and warn.
+                files_to_drop.append(rel_path)
+
+    return False, None, files_to_drop
 
     return True, None
 
@@ -4422,12 +4437,15 @@ def run_step(step):
 
         candidate = parse_files(output) or {"output.md": output}
 
-        # Validate structural integrity before accepting this output
-        is_valid, integrity_err = _validate_output_integrity(candidate)
-        if not is_valid:
+        # Validate structural integrity before accepting this output.
+        # should_retry is True only for clear code truncation (worth a full
+        # regeneration). Malformed JSON files are returned in drop_files and
+        # simply excluded — not worth a 20-minute retry.
+        should_retry, integrity_err, drop_files = _validate_output_integrity(candidate)
+        if should_retry:
             last_error = integrity_err
             if attempt < _MAX_GENERATION_ATTEMPTS:
-                print(_LOG_PREFIX + " [validate] Output rejected: " + (integrity_err or "unknown"))
+                print(_LOG_PREFIX + " [validate] Output rejected (truncation): " + (integrity_err or "unknown"))
                 continue
             # All attempts exhausted — fail with a clear, actionable message
             msg = (
@@ -4441,6 +4459,11 @@ def run_step(step):
             save_step_status(step, STATUS_ERROR, error=msg)
             print(_LOG_PREFIX + " [validate] FAILED after " + str(_MAX_GENERATION_ATTEMPTS) + " attempts: " + msg)
             return False
+
+        # Drop any malformed-JSON files rather than retrying the whole step.
+        for _bad in drop_files:
+            candidate.pop(_bad, None)
+            print(_LOG_PREFIX + " [validate] Dropped malformed JSON file (not retried): " + _bad)
 
         parsed = candidate
         if attempt > 1:

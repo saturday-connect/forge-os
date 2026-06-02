@@ -2229,7 +2229,8 @@ const _BLD_STAGES = [
 ];
 
 let _bld = { visible: false, step: null, content: '', running: false,
-             pollTimer: null, tickTimer: null, startTime: null };
+             pollTimer: null, tickTimer: null, startTime: null,
+             attempt: 1, attemptStart: null };
 
 function showBuildLog(step) {
   // If this step is already being tracked and the panel is visible,
@@ -2243,6 +2244,8 @@ function showBuildLog(step) {
   if (_bld.step !== step) {
     _bld.content = '';
     _bld.startTime = null;  // will be set from server's started_at on first poll
+    _bld.attempt = 1;
+    _bld.attemptStart = null;
   }
   _bld.step = step;
   _bld.visible = true;
@@ -2286,10 +2289,12 @@ async function _pollBuildLog() {
 
     // ── 2. Step switch: a different step became active ───────────────────
     if (runningEntry && runningEntry[0] !== _bld.step) {
-      _bld.step       = runningEntry[0];
-      _bld.content    = '';
-      _bld.running    = true;
-      _bld.startTime  = null;   // will be set from started_at below
+      _bld.step         = runningEntry[0];
+      _bld.content      = '';
+      _bld.running      = true;
+      _bld.startTime    = null;   // will be set from started_at below
+      _bld.attempt      = 1;
+      _bld.attemptStart = null;
       _renderBuildProgress();
     }
 
@@ -2321,34 +2326,82 @@ async function _pollBuildLog() {
 
     _bld.content = logData.content || '';
     _bld.running = logData.running;
+
+    // Detect retry attempts from the log. Each retry restarts generation from
+    // scratch, so reset the per-attempt clock to keep the progress bar honest.
+    const retryM = (_bld.content.match(/\[retry (\d+)\/\d+\]/g) || []);
+    let attempt = 1;
+    if (retryM.length) {
+      const last = retryM[retryM.length - 1].match(/\[retry (\d+)\//);
+      attempt = parseInt(last[1], 10);
+    }
+    if (attempt !== _bld.attempt) {
+      _bld.attempt = attempt;
+      _bld.attemptStart = Date.now();   // a new attempt just began
+    }
+    if (_bld.attemptStart === null) _bld.attemptStart = _bld.startTime;
+
     _updateBldProgress();
   } catch(e) {}
 }
 
 function _bldCalc() {
   const c = _bld.content || '';
-  const elapsed = _bld.startTime ? Math.floor((Date.now() - _bld.startTime) / 1000) : 0;
+  const totalElapsed = _bld.startTime ? Math.floor((Date.now() - _bld.startTime) / 1000) : 0;
+  const attemptBase = _bld.attemptStart || _bld.startTime;
+  const genElapsed = attemptBase ? Math.floor((Date.now() - attemptBase) / 1000) : 0;
   const est = _BLD_EST_SECS[_bld.step] || 720;
+
   const isDone  = /\[BUILD\] Done\./.test(c);
-  const isError = /rate limited|timed out|ai call failed/i.test(c);
-  let si = _bld.running || c.length ? 0 : -1;
+  const isError = /rate limited|timed out|ai call failed|FAILED after|\[lock\]/i.test(c);
+
+  // Furthest stage reached
+  let si = (_bld.running || c.length) ? 0 : -1;
   for (let i = _BLD_STAGES.length - 1; i >= 0; i--) {
     if (_BLD_STAGES[i].detect(c)) { si = i; break; }
   }
+
+  const writtenCount = (c.match(/\[BUILD\] Written:/g) || []).length;
+  const attempt = _bld.attempt || 1;
+  const isRetrying = attempt > 1;
+  const overEstimate = genElapsed > est;
+
+  // Progress is driven by REAL signals, not just elapsed time:
+  //  - "Writing files" stage is the only thing that pushes the bar past 75%,
+  //    because it means actual output exists.
+  //  - During "Generating", the bar climbs with elapsed-vs-estimate but is
+  //    HARD-CAPPED at 75% so it never falsely reads "almost done".
   let pct = 0;
-  if (isDone)    pct = 100;
-  else if (si===3) pct = 97;
-  else if (si===2) pct = 86 + Math.min(9, (c.match(/\[BUILD\] Written:/g)||[]).length);
-  else if (si===1) pct = 12 + Math.min(73, Math.round((elapsed / est) * 78));
-  else if (si===0) pct = 6;
-  else if (_bld.running) pct = 3;
-  const remaining = isDone ? 0 : Math.max(0, est - elapsed);
-  return { pct, si, isDone, isError, elapsed, remaining };
+  if (isDone)        pct = 100;
+  else if (si === 3) pct = 96;
+  else if (si === 2) pct = 78 + Math.min(17, writtenCount);
+  else if (si === 1) pct = 12 + Math.min(63, Math.round((genElapsed / est) * 63));
+  else if (si === 0) pct = 5;
+  else if (_bld.running) pct = 2;
+
+  const remaining = Math.max(0, est - genElapsed);
+  return { pct, si, isDone, isError, totalElapsed, genElapsed, remaining,
+           writtenCount, attempt, isRetrying, overEstimate };
 }
 
 function _fmtSecs(s) {
   if (s <= 0) return '0s';
   return s < 60 ? s + 's' : Math.ceil(s/60) + ' min';
+}
+
+// Honest one-line status. Never claims "almost done" on a timer alone.
+function _bldStatusMsg(p) {
+  if (p.isDone)  return 'Complete';
+  if (p.isError) return 'Failed — see Build log';
+  if (p.si >= 2) return p.writtenCount ? `Writing files (${p.writtenCount})…` : 'Writing files…';
+  if (p.isRetrying && p.si <= 1)
+    return `Output incomplete — retrying (attempt ${p.attempt} of 3)…`;
+  if (p.si === 1)
+    return p.overEstimate
+      ? 'Generating — taking longer than usual…'
+      : `Generating… ~${_fmtSecs(p.remaining)} left`;
+  if (p.si === 0) return 'Preparing…';
+  return 'Starting…';
 }
 
 function _bldStagePills(p) {
@@ -2374,9 +2427,9 @@ function _renderBuildProgress() {
     : p.isDone  ? `<span style="color:#16a34a;font-size:16px;line-height:1;flex-shrink:0;">✓</span>`
     : p.isError ? `<span style="color:var(--red);font-size:16px;line-height:1;flex-shrink:0;">✗</span>`
     : `<span style="display:inline-block;width:14px;height:14px;border:2px solid var(--border);border-radius:50%;flex-shrink:0;"></span>`;
-  const elStr = _bld.startTime ? _fmtSecs(Math.floor((Date.now()-_bld.startTime)/1000)) : '';
-  const remStr = p.isDone ? 'Complete' : p.isError ? 'Failed'
-    : p.remaining > 30 ? `~${_fmtSecs(p.remaining)} left` : _bld.running ? 'Almost done…' : '';
+  const elStr = p.totalElapsed ? _fmtSecs(p.totalElapsed) : '';
+  const remStr = _bldStatusMsg(p);
+  const remCol = p.isError ? 'var(--red)' : (p.isRetrying ? 'var(--accent,#4f46e5)' : 'var(--text-3)');
 
   c.innerHTML = `<div class="card" style="margin-top:12px;margin-bottom:20px;padding:16px 18px;">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
@@ -2384,7 +2437,7 @@ function _renderBuildProgress() {
         ${icon}
         <div>
           <div style="font-size:13px;font-weight:600;color:var(--text-1);">${meta.label}</div>
-          <div style="font-size:11px;color:var(--text-3);margin-top:2px;" id="bld-rem">${remStr}</div>
+          <div style="font-size:11px;color:${remCol};margin-top:2px;" id="bld-rem">${remStr}</div>
         </div>
       </div>
       <div style="display:flex;align-items:center;gap:10px;">
@@ -2418,8 +2471,10 @@ function _updateBldProgress() {
   const remEl = document.getElementById('bld-rem');
   const stgEl = document.getElementById('bld-stg');
   if (pctEl) pctEl.textContent = p.pct + '%';
-  if (remEl) remEl.textContent = p.isDone ? 'Complete' : p.isError ? 'Failed'
-    : p.remaining > 30 ? `~${_fmtSecs(p.remaining)} left` : _bld.running ? 'Almost done…' : '';
+  if (remEl) {
+    remEl.textContent = _bldStatusMsg(p);
+    remEl.style.color = p.isError ? 'var(--red)' : (p.isRetrying ? 'var(--accent,#4f46e5)' : 'var(--text-3)');
+  }
   if (stgEl) stgEl.innerHTML = _bldStagePills(p);
 }
 // ----------------------------------------------------------------------
