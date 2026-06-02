@@ -421,12 +421,8 @@
         <!-- Build System -->
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
           <div style="font-size:12px;font-weight:600;color:var(--text-2);text-transform:uppercase;letter-spacing:0.06em;">Build System</div>
-          <button class="btn btn-ghost btn-xs" onclick="toggleStepModels()" id="btn-step-models" title="Choose the AI model per step (tier mechanical steps to a faster model)">
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-            Models per step
-          </button>
+          <span style="font-size:11px;color:var(--text-3);">Per-step models: <a onclick="switchView('settings')" style="color:var(--accent,#4f46e5);cursor:pointer;">Settings → AI Runtime</a></span>
         </div>
-        <div id="step-models-panel" style="display:none;margin-bottom:16px;"></div>
         <div id="build-steps-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px;margin-bottom:20px;"></div>
 
         <!-- Code viewer (opens as full-screen modal) -->
@@ -622,6 +618,16 @@
               <label class="form-label">Model</label>
               <select class="form-select" id="settings-model" onchange="void 0"></select>
               <div class="settings-model-hint" id="settings-model-hint"></div>
+            </div>
+
+            <!-- Per-step model tiering (optional) -->
+            <div class="form-group">
+              <div style="display:flex;align-items:center;justify-content:space-between;">
+                <label class="form-label" style="margin:0;">Model per build step <span style="font-weight:400;color:var(--text-3);">(optional)</span></label>
+                <button class="btn btn-ghost btn-xs" type="button" onclick="applyTieringDefaults()" title="Route mechanical steps (Infrastructure, Tests) to a faster model; keep the strong model for Backend/Frontend">Recommend tiering</button>
+              </div>
+              <div class="settings-model-hint" style="margin-bottom:8px;">Override the model for individual build steps. Leave on Default to use the model above. Routing simple steps to a fast model cuts build time and rate-limit pressure.</div>
+              <div id="settings-step-models"></div>
             </div>
           </div>
 

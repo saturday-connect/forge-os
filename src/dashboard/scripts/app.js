@@ -2224,78 +2224,55 @@ function renderBuildSteps() {
   }).join('');
 }
 
-// ---- Per-step model tiering -----------------------------------------------
+// ---- Per-step model tiering (Settings -> AI Runtime) ----------------------
 const _BLD_STEP_ORDER = ['backend','frontend','integration','tests','infra'];
 const _BLD_STEP_LABELS = {backend:'Backend & API', frontend:'Frontend UI',
   integration:'Integration Layer', tests:'Test Suite', infra:'Infrastructure'};
 // Recommended tiering: mechanical steps -> fast model, complex -> default.
 const _BLD_FAST_STEPS = ['infra','tests'];
-let _stepModelsDraft = null;
+let _stepModelsDraft = {};
 
-async function toggleStepModels() {
-  const panel = document.getElementById('step-models-panel');
-  if (!panel) return;
-  if (panel.style.display !== 'none') { panel.style.display = 'none'; return; }
-  await fetchToolStatus();
-  _stepModelsDraft = JSON.parse(JSON.stringify(state.build_step_models || {}));
-  panel.style.display = 'block';
-  renderStepModels();
-}
+// Called by renderToolPicker() when the Settings view renders.
+function renderSettingsStepModels() {
+  const host = document.getElementById('settings-step-models');
+  if (!host) return;
+  if (!detectedTools) { fetchToolStatus(false).then(renderSettingsStepModels); return; }
+  // Seed the draft from saved state on first render of this Settings visit.
+  if (_stepModelsDraft === null || _stepModelsDraft === undefined) _stepModelsDraft = {};
+  const gTool  = getValue('settings-tool') || state.tool || 'claude';
+  const gModel = getValue('settings-model') || state.model || '';
+  const toolOpts = (t) => Object.entries(detectedTools)
+    .map(([id,info]) => `<option value="${id}" ${id===t?'selected':''}>${escapeHtml(info.label||id)}</option>`).join('');
 
-function renderStepModels() {
-  const panel = document.getElementById('step-models-panel');
-  if (!panel || !detectedTools) return;
-  const gTool = state.tool || 'claude';
-  const gModel = state.model || '';
-  const toolOpts = Object.entries(detectedTools)
-    .map(([id,info]) => `<option value="${id}">${escapeHtml(info.label||id)}</option>`).join('');
-
-  const rows = _BLD_STEP_ORDER.map(s => {
+  host.innerHTML = _BLD_STEP_ORDER.map(s => {
     const ov = _stepModelsDraft[s] || {};
     const t = ov.tool || gTool;
     const m = ov.model || '';
     const models = (detectedTools[t] || {}).models || [];
     const modelOpts = `<option value="">Default (${escapeHtml(gModel || (detectedTools[t]||{}).default_model || 'global')})</option>` +
       models.map(mo => `<option value="${mo.id}" ${mo.id===m?'selected':''}>${escapeHtml(mo.label||mo.id)}${mo.tier?` · ${mo.tier}`:''}</option>`).join('');
-    const usingDefault = !ov.tool && !ov.model;
-    return `<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--border);">
-      <span style="flex:0 0 120px;font-size:12px;font-weight:600;color:var(--text-1);">${_BLD_STEP_LABELS[s]}</span>
-      <select onchange="setStepModel('${s}','tool',this.value)" style="flex:0 0 130px;height:30px;font-size:11px;padding:0 6px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text-1);">
-        ${toolOpts.replace(`value="${t}"`, `value="${t}" selected`)}
-      </select>
-      <select onchange="setStepModel('${s}','model',this.value)" style="flex:1;height:30px;font-size:11px;padding:0 6px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text-1);">
-        ${modelOpts}
-      </select>
-      <span style="flex:0 0 60px;font-size:10px;color:${usingDefault?'var(--text-3)':'var(--accent,#4f46e5)'};">${usingDefault?'global':'custom'}</span>
+    const custom = !!(ov.tool || ov.model);
+    return `<div style="display:flex;align-items:center;gap:6px;padding:6px 0;border-bottom:1px solid var(--border);">
+      <span style="flex:0 0 110px;font-size:12px;color:var(--text-1);">${_BLD_STEP_LABELS[s]}</span>
+      <select onchange="setStepModel('${s}','tool',this.value)" style="flex:0 0 120px;height:30px;font-size:11px;padding:0 6px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text-1);">${toolOpts(t)}</select>
+      <select onchange="setStepModel('${s}','model',this.value)" style="flex:1;min-width:0;height:30px;font-size:11px;padding:0 6px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text-1);">${modelOpts}</select>
+      <span style="flex:0 0 48px;font-size:10px;text-align:right;color:${custom?'var(--accent,#4f46e5)':'var(--text-3)'};">${custom?'custom':'global'}</span>
     </div>`;
-  }).join('');
-
-  panel.innerHTML = `<div class="card" style="padding:14px 16px;">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
-      <span style="font-size:12px;font-weight:700;color:var(--text-1);">Model per step</span>
-      <span style="font-size:11px;color:var(--text-3);">Route mechanical steps to a faster model to cut time + rate-limit pressure</span>
-    </div>
-    ${rows}
-    <div style="display:flex;align-items:center;gap:8px;margin-top:12px;">
-      <button class="btn btn-ghost btn-sm" onclick="applyTieringDefaults()" title="Set Infrastructure + Test Suite to the fast model, others to default">Apply recommended tiering</button>
-      <button class="btn btn-ghost btn-sm" onclick="clearStepModels()">Reset all to global</button>
-      <button class="btn btn-primary btn-sm" style="margin-left:auto;" onclick="saveStepModels()">Save</button>
-    </div>
-  </div>`;
+  }).join('') + (Object.keys(_stepModelsDraft).length
+    ? `<div style="margin-top:8px;"><button class="btn btn-ghost btn-xs" type="button" onclick="clearStepModels()">Reset all to global model</button></div>` : '');
 }
 
 function setStepModel(step, field, value) {
   _stepModelsDraft[step] = _stepModelsDraft[step] || {};
   if (value) _stepModelsDraft[step][field] = value;
   else delete _stepModelsDraft[step][field];
-  // Switching tool invalidates a model from another tool
-  if (field === 'tool') delete _stepModelsDraft[step].model;
+  if (field === 'tool') delete _stepModelsDraft[step].model;  // model belongs to a tool
   if (!Object.keys(_stepModelsDraft[step]).length) delete _stepModelsDraft[step];
-  renderStepModels();
+  renderSettingsStepModels();
 }
 
 function applyTieringDefaults() {
-  const gTool = state.tool || 'claude';
+  const gTool = getValue('settings-tool') || state.tool || 'claude';
   const fast = (detectedTools[gTool] || {}).fast_model;
   const def  = (detectedTools[gTool] || {}).default_model;
   _stepModelsDraft = {};
@@ -2303,26 +2280,11 @@ function applyTieringDefaults() {
     const m = _BLD_FAST_STEPS.includes(s) ? fast : def;
     if (m) _stepModelsDraft[s] = { tool: gTool, model: m };
   });
-  renderStepModels();
+  renderSettingsStepModels();
+  showToast('Tiering applied — click Save to persist', 'info');
 }
 
-function clearStepModels() { _stepModelsDraft = {}; renderStepModels(); }
-
-async function saveStepModels() {
-  try {
-    const res = await apiFetch('/api/settings', {
-      method: 'POST', headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({ build_step_models: _stepModelsDraft })
-    });
-    if (res.ok) {
-      state.build_step_models = JSON.parse(JSON.stringify(_stepModelsDraft));
-      showToast('Per-step models saved', 'success');
-      document.getElementById('step-models-panel').style.display = 'none';
-    } else {
-      const d = await res.json(); showToast(d.error || 'Save failed', 'error');
-    }
-  } catch(e) { showToast('Save failed', 'error'); }
-}
+function clearStepModels() { _stepModelsDraft = {}; renderSettingsStepModels(); }
 
 // ---- Pre-flight cost preview ----------------------------------------------
 async function previewBuildCost() {
@@ -4867,6 +4829,7 @@ function renderToolPicker() {
 
   _updateInstallBanner(currentTool);
   populateModelDropdown(currentTool, state.model || '');
+  renderSettingsStepModels();
 }
 
 function selectTool(toolId) {
@@ -4879,6 +4842,7 @@ function selectTool(toolId) {
   });
   _updateInstallBanner(toolId);
   populateModelDropdown(toolId, '');
+  renderSettingsStepModels();  // refresh per-step "Default" hints for the new global tool
 }
 
 function _updateInstallBanner(toolId) {
@@ -4952,6 +4916,9 @@ function renderSettings() {
   const hidden = document.getElementById('settings-tool');
   if (hidden) hidden.value = state.tool || 'gemini';
 
+  // Seed the per-step model draft from saved state for this Settings visit
+  _stepModelsDraft = JSON.parse(JSON.stringify(state.build_step_models || {}));
+
   if (detectedTools) {
     renderToolPicker();
   } else {
@@ -4975,6 +4942,7 @@ async function saveSettings() {
     project_name: getValue('settings-product-name'),
     tool: getValue('settings-tool'),
     model: getValue('settings-model'),
+    build_step_models: _stepModelsDraft || {},
     git: {
       repo_url: getValue('settings-repo-url'),
       username: getValue('settings-username'),
