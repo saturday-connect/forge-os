@@ -4485,7 +4485,27 @@ def run_step(step):
             print(_LOG_PREFIX + " Error: " + last_error)
             return False
 
-        candidate = parse_files(output) or {"output.md": output}
+        candidate = parse_files(output)
+
+        # PROSE GUARD: if the model returned a summary/description instead of
+        # `=== path ===` file blocks, parse_files yields nothing. This is a
+        # format failure, NOT a single-doc output. Never fall back to saving the
+        # prose as output.md and never let it proceed to the write/clean step —
+        # doing so previously wiped good prior output and "succeeded" with a
+        # useless summary. Retry; if still prose after all attempts, fail and
+        # leave the previous output untouched.
+        if not candidate:
+            last_error = ("model returned prose with no file blocks — the "
+                          "'=== path ===' output format was not followed")
+            if attempt < _MAX_GENERATION_ATTEMPTS:
+                print(_LOG_PREFIX + " [validate] Rejected: no file blocks (got prose summary) — retrying...")
+                continue
+            save_step_status(step, STATUS_ERROR, error=(
+                "Generation produced only a prose summary, not code files, after "
+                + str(_MAX_GENERATION_ATTEMPTS) + " attempts. Previous output was "
+                "preserved. Retry the step."))
+            print(_LOG_PREFIX + " [validate] FAILED: prose-only output; prior output preserved.")
+            return False
 
         # Validate structural integrity before accepting this output.
         # should_retry is True only for clear code truncation (worth a full
@@ -4536,7 +4556,17 @@ def run_step(step):
     #
     # Done only AFTER generation has produced validated output, so a failed
     # generation never destroys the previous good output.
-    if os.path.isdir(out_dir):
+    #
+    # Belt-and-suspenders: never clean for a degenerate result (empty, or a lone
+    # output.md fallback). Real code generations always produce multiple files
+    # or at least one non-markdown source file. This guarantees a low-quality
+    # response can never wipe a good prior build.
+    _real = [p for p in parsed if not p.lower().endswith((".md", ".markdown"))]
+    _is_degenerate = (not parsed) or (len(parsed) == 1 and not _real)
+    if _is_degenerate:
+        print(_LOG_PREFIX + " [clean] SKIPPED — generation produced no real code files; "
+              "prior output left intact.")
+    elif os.path.isdir(out_dir):
         import shutil as _shutil
         for _entry in os.listdir(out_dir):
             _p = os.path.join(out_dir, _entry)
