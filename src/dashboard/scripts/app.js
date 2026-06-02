@@ -2313,13 +2313,17 @@ async function _pollBuildLog() {
     if (!logRes.ok) return;
     const logData = await logRes.json();
 
-    // Use the server's started_at as the canonical clock source.
-    // This survives panel close/reopen, page reload, and badge clicks —
-    // the timer always reflects when the build ACTUALLY started, not when
-    // the user last interacted with the panel.
+    // The server's started_at is the SINGLE source of truth for the clock.
+    // It's fixed for the lifetime of a step, so we set it unconditionally every
+    // poll — that makes a stale client-side timestamp (e.g. carried over from a
+    // previous step's run) structurally impossible. If a step switch happened,
+    // started_at now reflects the NEW step, so the timer self-corrects.
     if (logData.started_at) {
       const serverStart = new Date(logData.started_at).getTime();
-      if (!isNaN(serverStart) && (_bld.startTime === null || Math.abs(_bld.startTime - serverStart) > 5000)) {
+      if (!isNaN(serverStart)) {
+        // If the authoritative start jumped (new step / new run), reset the
+        // per-attempt clock too so genElapsed can't inherit a stale base.
+        if (_bld.startTime !== serverStart) _bld.attemptStart = serverStart;
         _bld.startTime = serverStart;
       }
     }
@@ -2347,9 +2351,12 @@ async function _pollBuildLog() {
 
 function _bldCalc() {
   const c = _bld.content || '';
-  const totalElapsed = _bld.startTime ? Math.floor((Date.now() - _bld.startTime) / 1000) : 0;
+  const totalElapsed = _bld.startTime ? Math.max(0, Math.floor((Date.now() - _bld.startTime) / 1000)) : 0;
   const attemptBase = _bld.attemptStart || _bld.startTime;
-  const genElapsed = attemptBase ? Math.floor((Date.now() - attemptBase) / 1000) : 0;
+  // genElapsed can NEVER exceed total time since the step started — clamping
+  // here means a stale attemptStart (from a prior step) cannot inflate the bar.
+  let genElapsed = attemptBase ? Math.floor((Date.now() - attemptBase) / 1000) : 0;
+  genElapsed = Math.max(0, Math.min(genElapsed, totalElapsed));
   const est = _BLD_EST_SECS[_bld.step] || 720;
 
   const isDone  = /\[BUILD\] Done\./.test(c);
