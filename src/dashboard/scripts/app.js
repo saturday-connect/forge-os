@@ -1309,6 +1309,21 @@ function renderGenerate() {
   const processing = state.processing || {};
   const serverRunning = processing.status === 'running';
 
+  // Token meter — total tokens spent generating docs (recorded per stage)
+  const _gm = document.getElementById('generate-token-meter');
+  if (_gm) {
+    const gt = state.generate_tokens || {};
+    const tin = gt.total_in || 0, tout = gt.total_out || 0;
+    if (tin + tout > 0) {
+      _gm.style.cssText = 'margin:10px 0 0;display:flex;align-items:center;gap:10px;font-size:11px;color:var(--text-3);';
+      _gm.innerHTML = `<span style="font-weight:600;color:var(--text-2);">Tokens generated:</span>`
+        + `<span title="Estimated input tokens">↑ ~${_fmtTokens(tin)} in</span>`
+        + `<span title="Estimated output tokens">↓ ~${_fmtTokens(tout)} out</span>`
+        + `<span style="color:var(--text-2);font-weight:600;">≈ ${_fmtTokens(tin+tout)} total</span>`
+        + `<span style="margin-left:auto;font-size:10px;opacity:0.7;">unchanged stages are cached (0 tokens on re-run)</span>`;
+    } else { _gm.innerHTML = ''; }
+  }
+
   // Clear optimistic spinner once server confirms real running state (or after 15 s timeout)
   if (optimisticRunning) {
     if (serverRunning || Date.now() - optimisticRunning.startTime > 15000) {
@@ -2285,6 +2300,67 @@ function applyTieringDefaults() {
 }
 
 function clearStepModels() { _stepModelsDraft = {}; renderSettingsStepModels(); }
+
+// ---- Per-stage model tiering for the GENERATE pipeline --------------------
+const _GEN_STAGE_ORDER = ['context','requirements','design','analysis','architecture',
+  'delivery','engineering','qa','operations','release','marketing'];
+const _GEN_STAGE_LABELS = {context:'Context', requirements:'Requirements', design:'Design',
+  analysis:'Analysis', architecture:'Architecture', delivery:'Delivery', engineering:'Engineering',
+  qa:'QA', operations:'Operations', release:'Release', marketing:'Marketing'};
+// Conservative tiering: keep the strong model on foundational/high-leverage
+// stages; only the lighter, lower-blast-radius stages drop to the fast model.
+const _GEN_FAST_STAGES = ['delivery','qa','operations','release','marketing'];
+let _genModelsDraft = {};
+
+function renderSettingsGenModels() {
+  const host = document.getElementById('settings-gen-models');
+  if (!host) return;
+  if (!detectedTools) { fetchToolStatus(false).then(renderSettingsGenModels); return; }
+  const gTool  = getValue('settings-tool') || state.tool || 'claude';
+  const gModel = getValue('settings-model') || state.model || '';
+  const toolOpts = (t) => Object.entries(detectedTools)
+    .map(([id,info]) => `<option value="${id}" ${id===t?'selected':''}>${escapeHtml(info.label||id)}</option>`).join('');
+  host.innerHTML = _GEN_STAGE_ORDER.map(s => {
+    const ov = _genModelsDraft[s] || {};
+    const t = ov.tool || gTool;
+    const m = ov.model || '';
+    const models = (detectedTools[t] || {}).models || [];
+    const modelOpts = `<option value="">Default (${escapeHtml(gModel || (detectedTools[t]||{}).default_model || 'global')})</option>` +
+      models.map(mo => `<option value="${mo.id}" ${mo.id===m?'selected':''}>${escapeHtml(mo.label||mo.id)}${mo.tier?` · ${mo.tier}`:''}</option>`).join('');
+    const custom = !!(ov.tool || ov.model);
+    return `<div style="display:flex;align-items:center;gap:6px;padding:5px 0;border-bottom:1px solid var(--border);">
+      <span style="flex:0 0 96px;font-size:12px;color:var(--text-1);">${_GEN_STAGE_LABELS[s]}</span>
+      <select onchange="setGenStageModel('${s}','tool',this.value)" style="flex:0 0 116px;height:28px;font-size:11px;padding:0 5px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text-1);">${toolOpts(t)}</select>
+      <select onchange="setGenStageModel('${s}','model',this.value)" style="flex:1;min-width:0;height:28px;font-size:11px;padding:0 5px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text-1);">${modelOpts}</select>
+      <span style="flex:0 0 44px;font-size:10px;text-align:right;color:${custom?'var(--accent,#4f46e5)':'var(--text-3)'};">${custom?'custom':'global'}</span>
+    </div>`;
+  }).join('') + (Object.keys(_genModelsDraft).length
+    ? `<div style="margin-top:8px;"><button class="btn btn-ghost btn-xs" type="button" onclick="clearGenModels()">Reset all to global model</button></div>` : '');
+}
+
+function setGenStageModel(stage, field, value) {
+  _genModelsDraft[stage] = _genModelsDraft[stage] || {};
+  if (value) _genModelsDraft[stage][field] = value;
+  else delete _genModelsDraft[stage][field];
+  if (field === 'tool') delete _genModelsDraft[stage].model;
+  if (!Object.keys(_genModelsDraft[stage]).length) delete _genModelsDraft[stage];
+  renderSettingsGenModels();
+}
+
+function applyGenTieringDefaults() {
+  const gTool = getValue('settings-tool') || state.tool || 'claude';
+  const fast = (detectedTools[gTool] || {}).fast_model;
+  const def  = (detectedTools[gTool] || {}).default_model;
+  _genModelsDraft = {};
+  _GEN_STAGE_ORDER.forEach(s => {
+    const m = _GEN_FAST_STAGES.includes(s) ? fast : def;
+    if (m) _genModelsDraft[s] = { tool: gTool, model: m };
+  });
+  renderSettingsGenModels();
+  showToast('Tiering applied — click Save to persist', 'info');
+}
+
+function clearGenModels() { _genModelsDraft = {}; renderSettingsGenModels(); }
 
 // ---- Pre-flight cost preview ----------------------------------------------
 async function previewBuildCost() {
@@ -4843,6 +4919,7 @@ function renderToolPicker() {
   _updateInstallBanner(currentTool);
   populateModelDropdown(currentTool, state.model || '');
   renderSettingsStepModels();
+  renderSettingsGenModels();
 }
 
 function selectTool(toolId) {
@@ -4856,6 +4933,7 @@ function selectTool(toolId) {
   _updateInstallBanner(toolId);
   populateModelDropdown(toolId, '');
   renderSettingsStepModels();  // refresh per-step "Default" hints for the new global tool
+  renderSettingsGenModels();
 }
 
 function _updateInstallBanner(toolId) {
@@ -4929,8 +5007,9 @@ function renderSettings() {
   const hidden = document.getElementById('settings-tool');
   if (hidden) hidden.value = state.tool || 'gemini';
 
-  // Seed the per-step model draft from saved state for this Settings visit
+  // Seed the per-step + per-stage model drafts from saved state for this visit
   _stepModelsDraft = JSON.parse(JSON.stringify(state.build_step_models || {}));
+  _genModelsDraft = JSON.parse(JSON.stringify(state.generate_stage_models || {}));
 
   if (detectedTools) {
     renderToolPicker();
@@ -4956,6 +5035,7 @@ async function saveSettings() {
     tool: getValue('settings-tool'),
     model: getValue('settings-model'),
     build_step_models: _stepModelsDraft || {},
+    generate_stage_models: _genModelsDraft || {},
     git: {
       repo_url: getValue('settings-repo-url'),
       username: getValue('settings-username'),

@@ -288,6 +288,7 @@
             <button class="btn btn-ghost btn-sm" onclick="dismissGenerationError()" style="padding:2px 8px;font-size:10px;color:var(--red);border-color:var(--red-dim);">Dismiss</button>
           </div>
         </div>
+        <div id="generate-token-meter" style="margin:10px 0 0;"></div>
         <div class="stage-grid" id="stage-grid"></div>
       </div>
     </div>
@@ -628,6 +629,16 @@
               </div>
               <div class="settings-model-hint" style="margin-bottom:8px;">Override the model for individual build steps. Leave on Default to use the model above. Routing simple steps to a fast model cuts build time and rate-limit pressure.</div>
               <div id="settings-step-models"></div>
+            </div>
+
+            <!-- Per-stage model tiering for the document-generation pipeline -->
+            <div class="form-group">
+              <div style="display:flex;align-items:center;justify-content:space-between;">
+                <label class="form-label" style="margin:0;">Model per generate stage <span style="font-weight:400;color:var(--text-3);">(optional)</span></label>
+                <button class="btn btn-ghost btn-xs" type="button" onclick="applyGenTieringDefaults()" title="Keep the strong model for the high-leverage doc stages (requirements, architecture, engineering…); route lighter stages (delivery, release, marketing…) to a faster model">Recommend tiering</button>
+              </div>
+              <div class="settings-model-hint" style="margin-bottom:8px;">Override the model per document-generation stage. The foundational stages (requirements, architecture, engineering) drive everything downstream — keep those strong; the lighter stages can use a faster model.</div>
+              <div id="settings-gen-models" style="max-height:260px;overflow-y:auto;"></div>
             </div>
           </div>
 

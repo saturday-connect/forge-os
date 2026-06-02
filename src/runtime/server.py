@@ -1866,12 +1866,28 @@ def compute_full_state():
     else:
         phase = PHASE_REVIEW
 
+    # Aggregate generate-pipeline token usage (recorded by run.py per stage file)
+    _gen_tokens = {"total_in": 0, "total_out": 0, "files": 0}
+    try:
+        _gc_path = os.path.join(FORGE_DIR, "runs", "generate-cache.json")
+        if os.path.exists(_gc_path):
+            with open(_gc_path) as _gcf:
+                _gc = json.load(_gcf)
+            for _v in _gc.values():
+                if isinstance(_v, dict):
+                    _gen_tokens["total_in"] += _v.get("tokens_in", 0)
+                    _gen_tokens["total_out"] += _v.get("tokens_out", 0)
+                    _gen_tokens["files"] += 1
+    except (OSError, json.JSONDecodeError):
+        pass
+
     return {
         "version": FORGE_VERSION,
         "phase": phase,
         "gates": gates,
         "tree": files_tree,
         "processing": processing_status,
+        "generate_tokens": _gen_tokens,
         "stageReviewSummary": stage_review_summary,
         "allReviewed": all_reviewed,
         "rawInputs": raw_inputs,
@@ -1884,6 +1900,7 @@ def compute_full_state():
         "tool": proj.get("tool", DEFAULT_TOOL),
         "model": proj.get("model", DEFAULT_TOOL),
         "build_step_models": proj.get("build_step_models", {}),
+        "generate_stage_models": proj.get("generate_stage_models", {}),
         "project_name": proj.get("project_name", ""),
         "skip_org_context": proj.get("skip_org_context", False),
         "orgContext": _build_org_context_meta(),
@@ -2697,30 +2714,49 @@ class ForgeHandler(BaseHTTPRequestHandler):
                 try:
                     tmp_combined = get_combined_raw_input_path()
                     proj = load_project_state()
+                    _g_tool  = proj.get("tool", DEFAULT_TOOL)
+                    _g_model = proj.get("model", "")
+                    _stage_ov = proj.get("generate_stage_models", {}) or {}
                     base_env = {
                         **os.environ,
-                        "FORGE_TOOL": proj.get("tool", DEFAULT_TOOL),
-                        "FORGE_MODEL": proj.get("model", ""),
+                        "FORGE_TOOL": _g_tool,
+                        "FORGE_MODEL": _g_model,
                     }
+
+                    def _stage_env(s, extra=None):
+                        # Per-stage model/tool tiering: a stage can override the
+                        # global tool+model (e.g. a fast model for marketing/release).
+                        ov = _stage_ov.get(s, {}) or {}
+                        e = {**base_env,
+                             "FORGE_TOOL": ov.get("tool") or _g_tool,
+                             "FORGE_MODEL": ov.get("model") or _g_model}
+                        if extra:
+                            e.update(extra)
+                        return e
+
                     if stage == "all":
                         pipeline_stages = [
                             "context", "requirements", "design", "analysis", "architecture",
                             "delivery", "engineering", "qa", "operations", "release", "marketing"
                         ]
-                        skip_env = {**base_env, "FORGE_SKIP_EXISTING": "1"}
                         for s in pipeline_stages:
                             set_processing(STATUS_RUNNING, s)
                             cmd = [sys.executable, forge_script, "generate", s]
                             if tmp_combined and s == "context":
                                 cmd.append(tmp_combined)
-                            rc = _run_stage_proc(cmd, REPO_ROOT, skip_env)
+                            # FORGE_SKIP_EXISTING is superseded by run.py's input-hash
+                            # cache (regenerates only stages whose inputs changed).
+                            rc = _run_stage_proc(cmd, REPO_ROOT, _stage_env(s))
                             if rc != 0:
                                 break
                     else:
                         cmd = [sys.executable, forge_script, "generate", stage]
                         if tmp_combined and stage == "context":
                             cmd.append(tmp_combined)
-                        _run_stage_proc(cmd, REPO_ROOT, base_env)
+                        # A single-stage generate is an explicit user action — force
+                        # regeneration even if inputs are unchanged. (Generate All
+                        # uses the input-hash cache to skip unchanged stages.)
+                        _run_stage_proc(cmd, REPO_ROOT, _stage_env(stage, {"FORGE_FORCE_REGEN": "1"}))
                 finally:
                     with _generate_lock:
                         _active_generate_proc = None
@@ -4524,6 +4560,35 @@ class ForgeHandler(BaseHTTPRequestHandler):
                     if _entry:
                         _clean[_stp] = _entry
                 proj["build_step_models"] = _clean
+            if "generate_stage_models" in data:
+                # Per-stage tool/model overrides for the generate pipeline.
+                _gsm = data["generate_stage_models"]
+                if not isinstance(_gsm, dict):
+                    self._json_response(400, {"error": "generate_stage_models must be an object"})
+                    return
+                _valid_stages = ("context", "requirements", "design", "analysis",
+                                 "architecture", "delivery", "engineering", "qa",
+                                 "operations", "release", "marketing")
+                _gclean = {}
+                for _stg, _cfg in _gsm.items():
+                    if _stg not in _valid_stages or not isinstance(_cfg, dict):
+                        continue
+                    _t = (_cfg.get("tool") or "").strip()
+                    _m = (_cfg.get("model") or "").strip()
+                    if _t and _t not in KNOWN_TOOLS:
+                        self._json_response(400, {"error": f"unsupported tool for {_stg}"})
+                        return
+                    if _t and _m:
+                        _vm = [x["id"] for x in KNOWN_TOOLS.get(_t, {}).get("models", [])]
+                        if _vm and _m not in _vm:
+                            self._json_response(400, {"error": f"unsupported model for {_stg}/{_t}"})
+                            return
+                    _e = {}
+                    if _t: _e["tool"] = _t
+                    if _m: _e["model"] = _m
+                    if _e:
+                        _gclean[_stg] = _e
+                proj["generate_stage_models"] = _gclean
             if "project_name" in data:
                 proj["project_name"] = data["project_name"]
             if "project_type" in data:

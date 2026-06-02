@@ -103,7 +103,12 @@ def main():
 
             result = subprocess.run(cmd)
 
-            if result.returncode == 0:
+            if result.returncode == 2:
+                # Cache hit: inputs unchanged, AI call skipped. Preserve the
+                # existing review status — the doc did not change.
+                success_count += 1
+                print(f"[STAGE-RUNNER] Cached (unchanged): {{output_file}}")
+            elif result.returncode == 0:
                 success_count += 1
                 try:
                     reviews_path = "reviews.json"
@@ -638,6 +643,28 @@ def main():
 
     prompt = build_prompt(agent_path, inputs, output_file, args.critique)
 
+    # ---- Skip-unchanged cache ------------------------------------------
+    # Fingerprint the exact inputs (tool + model + full prompt, which folds in
+    # the raw input, upstream stage docs, agent, and critique). If unchanged
+    # since the last successful generation AND the output still exists, skip the
+    # AI call entirely. Exit code 2 signals "cached/unchanged" to stage_runner,
+    # which preserves the existing review status (a regenerate would reset it).
+    # FORGE_FORCE_REGEN=1 bypasses.
+    import hashlib as _hl
+    _gcache_path = os.path.join(FORGE_DIR, "runs", "generate-cache.json")
+    _in_hash = _hl.sha256(
+        ((state.tool or "") + chr(0) + (state.model_id or "") + chr(0) + prompt).encode("utf-8")
+    ).hexdigest()
+    try:
+        _gcache = json.load(open(_gcache_path, encoding="utf-8")) if os.path.exists(_gcache_path) else {{}}
+    except Exception:
+        _gcache = {{}}
+    if (os.environ.get("FORGE_FORCE_REGEN", "") != "1"
+            and _gcache.get(output_file, {{}}).get("hash") == _in_hash
+            and os.path.exists(output_path) and os.path.getsize(output_path) > 0):
+        log_info(f"[cache] {{output_file}}: inputs unchanged - skipping regeneration")
+        sys.exit(2)
+
     log_info(f"Invoking model: {{state.tool}} {{state.model_id or '(default)'}}")
     try:
         invoke_model(prompt, output_path)
@@ -659,6 +686,26 @@ def main():
         log_error(str(e))
         _write_run_error(output_file, msg)
         sys.exit(1)
+
+    # Record input fingerprint + token estimate (cache + cost visibility)
+    try:
+        _out_txt = ""
+        if os.path.exists(output_path):
+            with open(output_path, encoding="utf-8", errors="replace") as _of:
+                _out_txt = _of.read()
+        _gcache[output_file] = {{
+            "hash": _in_hash,
+            "tokens_in": len(prompt) // 4,
+            "tokens_out": len(_out_txt) // 4,
+            "stage": args.stage,
+            "model": state.model_id or state.tool,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }}
+        os.makedirs(os.path.dirname(_gcache_path), exist_ok=True)
+        with open(_gcache_path, "w", encoding="utf-8") as _gf:
+            json.dump(_gcache, _gf, indent=2)
+    except Exception:
+        pass
 
     log_run()
     log_info("Stage complete.")

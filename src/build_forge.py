@@ -30,6 +30,8 @@ from build_constants import (
     RUNTIME_CONSTANTS_FILE,
     RUNTIME_SERVER_FILE,
     RUNTIME_BUILD_RUNNER_FILE,
+    RUNTIME_RUN_FILE,
+    RUNTIME_STAGE_RUNNER_FILE,
     RUNTIME_CLI_TEMPLATE_FILE,
     DASHBOARD_OUTPUT_FILE,
     DASHBOARD_INDEX_FILE,
@@ -305,7 +307,28 @@ def _render_template():
     )
 
 
-def _hot_deploy_runtime():
+def _extract_rendered_script(forge_content, var_name):
+    """Pull a fully-rendered embedded script (RUN_PY / STAGE_RUNNER_PY) out of
+    the built forge binary so the hot-deploy can push it to live project dirs.
+    These are module-level string-literal assignments; ast.literal_eval gives
+    the exact content `forge upgrade` would write."""
+    import ast
+    try:
+        tree = ast.parse(forge_content)
+    except SyntaxError:
+        return None
+    for node in tree.body:
+        if isinstance(node, ast.Assign):
+            for tgt in node.targets:
+                if isinstance(tgt, ast.Name) and tgt.id == var_name:
+                    try:
+                        return ast.literal_eval(node.value)
+                    except (ValueError, SyntaxError):
+                        return None
+    return None
+
+
+def _hot_deploy_runtime(run_py_content=None, stage_runner_content=None):
     import glob, shutil
     src_dir = os.path.dirname(__file__)
     dashboard_src = os.path.join(src_dir, DASHBOARD_OUTPUT_FILE)
@@ -343,6 +366,15 @@ def _hot_deploy_runtime():
             # build_runner.py — write the injected content (STEPS populated), not the raw source
             with open(os.path.join(sd, HOT_DEPLOY_FILES[3]), "w", encoding=FILE_ENCODING) as _bf:
                 _bf.write(BUILD_RUNNER_PY_CONTENT)
+            # run.py + stage_runner.py — the rendered generation runtime. Previously
+            # only refreshed on `forge upgrade`; deploying here keeps the generate
+            # pipeline (cache, tokens, per-stage model) current on every rebuild.
+            if run_py_content:
+                with open(os.path.join(sd, RUNTIME_RUN_FILE), "w", encoding=FILE_ENCODING) as _rf:
+                    _rf.write(run_py_content)
+            if stage_runner_content:
+                with open(os.path.join(sd, RUNTIME_STAGE_RUNNER_FILE), "w", encoding=FILE_ENCODING) as _srf:
+                    _srf.write(stage_runner_content)
             copied += 1
         except Exception:
             pass
@@ -355,7 +387,9 @@ def build_forge():
     forge_content = _render_template()
     with open(BUILD_OUTPUT_FILE, "w", encoding=FILE_ENCODING) as f:
         f.write(forge_content)
-    _hot_deploy_runtime()
+    _run_py = _extract_rendered_script(forge_content, "RUN_PY")
+    _stage_runner_py = _extract_rendered_script(forge_content, "STAGE_RUNNER_PY")
+    _hot_deploy_runtime(_run_py, _stage_runner_py)
     print(LOG_BUILD_SUCCESS)
 
 
