@@ -616,9 +616,9 @@
               <div id="settings-install-banner" style="display:none;"></div>
             </div>
             <div class="form-group">
-              <label class="form-label">Model</label>
-              <select class="form-select" id="settings-model" onchange="void 0"></select>
-              <div class="settings-model-hint" id="settings-model-hint"></div>
+              <label class="form-label">Default model</label>
+              <select class="form-select" id="settings-model" onchange="renderSettingsStepModels();renderSettingsGenModels();"></select>
+              <div class="settings-model-hint" id="settings-model-hint">Used for every build step and generate stage left on "Default" below. Set per-step or per-stage overrides only where you want something different.</div>
             </div>
 
             <!-- Per-step model tiering (optional) -->

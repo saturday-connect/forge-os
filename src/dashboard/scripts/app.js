@@ -4982,14 +4982,12 @@ function populateModelDropdown(tool, currentModel) {
   }
   if (hint) {
     const info = toolInfo || {};
-    if (info.api_only) {
-      hint.textContent = 'Direct API call — no CLI subprocess';
-      hint.className = 'settings-model-hint';
-    } else if (info.installed === false) {
+    const baseNote = 'Default for every build step and generate stage left on "Default" below.';
+    if (info.installed === false && !info.api_only) {
       hint.textContent = '⚠ ' + (info.label || tool) + ' not installed — generation will fail';
       hint.className = 'settings-model-hint settings-model-hint--warn';
     } else {
-      hint.textContent = 'Passed as -m flag to the ' + tool + ' CLI';
+      hint.textContent = baseNote;
       hint.className = 'settings-model-hint';
     }
   }
