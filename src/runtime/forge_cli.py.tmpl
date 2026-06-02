@@ -518,8 +518,15 @@ def invoke_model(prompt, output_path):
                 log_error(msg)
                 sys.exit(1)
         elif tool == "claude":
+            # `claude -p - --output-format text` reads the prompt from stdin and
+            # emits plain text — the robust non-interactive form. --model is what
+            # makes per-stage tiering actually take effect (bare `claude` ignored
+            # it and used the CLI default).
+            cmd = ["claude", "-p", "-", "--output-format", "text"]
+            if model_id:
+                cmd += ["--model", model_id]
             with open(tmp_path, 'w', encoding='utf-8') as out_f:
-                subprocess.run(["claude"], input=prompt, text=True, stdout=out_f, timeout=AI_GENERATION_TIMEOUT_SECS, check=True,
+                subprocess.run(cmd, input=prompt, text=True, stdout=out_f, timeout=AI_GENERATION_TIMEOUT_SECS, check=True,
                                cwd=FORGE_DIR)  # pin cwd — prevents Claude scanning ~/ or Desktop
         elif tool == "codex":
             cmd = ["codex", "exec", "--dangerously-bypass-approvals-and-sandbox", "--ephemeral",
