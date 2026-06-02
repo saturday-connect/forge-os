@@ -209,7 +209,7 @@ _local_run_stop = threading.Event()   # set() to signal log-reader + health thre
 FORGE_TOKEN = os.environ.get("FORGE_TOKEN", "")
 GIT_PAT = os.environ.get("FORGE_GIT_PAT", "")
 
-REPO_ROOT = os.path.abspath(os.environ.get("FORGE_REPO_ROOT", os.environ.get("AEOS_REPO_ROOT", ".")))
+REPO_ROOT = os.path.abspath(os.environ.get("FORGE_REPO_ROOT", "."))
 ORCHESTRATOR_ROOT = os.path.abspath(os.environ.get("FORGE_ORCHESTRATOR_ROOT", REPO_ROOT))
 _data_dir = os.environ.get("FORGE_DATA_DIR", "")
 FORGE_DIR = os.path.abspath(_data_dir) if _data_dir else os.path.join(REPO_ROOT, ".forge")
@@ -335,7 +335,6 @@ def set_project_root(project_root, data_dir=None):
     REVIEWS_FILE = os.path.join(FORGE_DIR, FILE_REVIEWS)
     STATE_FILE = os.path.join(FORGE_DIR, FILE_PROJECT_STATE)
     RAW_INPUT_DIR = os.path.join(FORGE_DIR, DIR_RAW_INPUT)
-    os.environ["AEOS_REPO_ROOT"] = REPO_ROOT
     os.environ["FORGE_REPO_ROOT"] = REPO_ROOT
     os.environ["FORGE_DATA_DIR"] = FORGE_DIR
 
@@ -4690,7 +4689,7 @@ class ForgeHandler(BaseHTTPRequestHandler):
                         **os.environ,
                         "FORGE_TOOL":  proj.get("tool", DEFAULT_TOOL),
                         "FORGE_MODEL": proj.get("model", ""),
-                        "AEOS_REPO_ROOT": REPO_ROOT,
+                        "FORGE_REPO_ROOT": REPO_ROOT,
                         FORGE_PHASE_ID_ENV:   phase_id,
                         FORGE_PHASE_NAME_ENV: phase_name,
                     }

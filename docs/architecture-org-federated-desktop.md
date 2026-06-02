@@ -251,7 +251,7 @@ Electron wraps the existing Python HTTP server + dashboard. The server subproces
 **Effort**: 2 weeks  
 **Deliverables**:
 - `.forge` dotfile schema + generation on `forge init`
-- `AEOS_REPO_ROOT` / path resolution rewrite (inverts current assumption)
+- `FORGE_REPO_ROOT` / path resolution rewrite (inverts current assumption)
 - `~/.forge/` global directory init on first app launch
 - Org repo sync: push/pull project docs at open/close
 - Migration script for existing `.forge/` installs
