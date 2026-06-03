@@ -106,7 +106,7 @@ These are replaced with generated Python dicts before the content is embedded in
 
 The per-file generator (`run.py`) re-sends the full upstream context for every file in a stage, so an N-file stage pays for that context N times. `batch_runner.py` is an opt-in alternative that sends the shared context **once** and asks the model to emit every file of the stage in a single response (`=== path === ` blocks — the same pattern the code generator uses).
 
-- **Enable**: set `FORGE_STAGE_BATCH=1` in the environment of whatever launches generation (the CLI, or the dashboard server process). Opt-in; default behavior is unchanged.
+- **Enable**: **Settings → AI Runtime → "Batch generation"** toggle (persisted as `stage_batch` in `project-state.json`; the server sets `FORGE_STAGE_BATCH=1` on the generation subprocess). Or, for CLI use, set `FORGE_STAGE_BATCH=1` in the environment directly. The saved toggle is **authoritative** for dashboard-launched generation — when off, the server clears any inherited env so OFF always wins. Opt-in; default off.
 - **Hook**: `stage_runner.py` tries `batch_runner.py` first when `FORGE_STAGE_BATCH=1` and the stage has ≥2 pending files. Exit `0` = all files written (or all cached) → stage done. Any non-zero exit (`3` = deferred/incomplete/AI-failure, `2` = bad args) → falls through to the proven per-file loop. The batch path can never regress generation.
 - **Atomicity**: `batch_runner` writes files only when the parsed response contains *every* requested file; a partial/garbled batch writes nothing and defers.
 - **Reuse**: `batch_runner` imports `build_runner` and reuses its `invoke_ai`, `parse_files`, `_est_tokens`, and `_strip_wrapping_code_fence` — no duplication of AI-invocation logic.
@@ -678,6 +678,7 @@ Component sizing rules:
 - `action` dispatch pattern in POST handlers: single endpoint per resource, multiple action values — avoids URL proliferation
 - CI auto-release: `check-version` job reads `desktop/package.json` version, creates git tag + GitHub Release if version not found — push to main is sufficient, no manual tag needed
 - Batch stage generation (`FORGE_STAGE_BATCH=1`): `batch_runner.py` emits a whole stage's docs in one AI call (shared context sent once, not N times), wired into `stage_runner` as a fast-path with all-or-nothing writes and automatic fallback to the per-file loop on any non-zero exit — validated hermetically (stubbed AI) for the success, partial-output, defer, and bad-args paths
+- Batch generation Settings toggle: Settings -> AI Runtime -> "Batch generation" persists `stage_batch` to `project-state.json`; the server injects `FORGE_STAGE_BATCH=1` into the generation subprocess env (authoritative over ambient env — OFF clears any inherited value), so the per-file vs. batch path is a UI choice, not just an env flag
 
 ---
 

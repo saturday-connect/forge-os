@@ -1909,6 +1909,7 @@ def compute_full_state():
         "generate_stage_models": proj.get("generate_stage_models", {}),
         "project_name": proj.get("project_name", ""),
         "skip_org_context": proj.get("skip_org_context", False),
+        "stage_batch": proj.get("stage_batch", False),
         "orgContext": _build_org_context_meta(),
         "user": load_user(),
         "project_type": proj.get("project_type", "standard"),
@@ -2722,6 +2723,13 @@ class ForgeHandler(BaseHTTPRequestHandler):
                         "FORGE_TOOL": _g_tool,
                         "FORGE_MODEL": _g_model,
                     }
+                    # Batch generation toggle (Settings -> AI Runtime). The saved
+                    # setting is authoritative for dashboard-launched generation:
+                    # enable it, or explicitly clear any inherited env so OFF wins.
+                    if proj.get("stage_batch"):
+                        base_env["FORGE_STAGE_BATCH"] = "1"
+                    else:
+                        base_env.pop("FORGE_STAGE_BATCH", None)
 
                     def _stage_env(s, extra=None):
                         # Per-stage model/tool tiering: a stage can override the
@@ -4596,6 +4604,11 @@ class ForgeHandler(BaseHTTPRequestHandler):
                 proj["project_type"] = data["project_type"]
             if "skip_org_context" in data:
                 proj["skip_org_context"] = data["skip_org_context"]
+            if "stage_batch" in data:
+                # Opt-in batch generation: whole stage in one AI call (shared
+                # context sent once). Coerced to bool — authoritative over any
+                # ambient FORGE_STAGE_BATCH for dashboard-launched generation.
+                proj["stage_batch"] = bool(data["stage_batch"])
             if "git" in data and "kb_repo_url" in data["git"]:
                 proj["git"]["kb_repo_url"] = data["git"]["kb_repo_url"]
             save_project_state(proj)

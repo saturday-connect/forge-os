@@ -5038,6 +5038,9 @@ function renderSettings() {
   _stepModelsDraft = JSON.parse(JSON.stringify(state.build_step_models || {}));
   _genModelsDraft = JSON.parse(JSON.stringify(state.generate_stage_models || {}));
 
+  const _sbToggle = document.getElementById('settings-stage-batch');
+  if (_sbToggle) _sbToggle.checked = !!state.stage_batch;
+
   if (detectedTools) {
     renderToolPicker();
   } else {
@@ -5063,6 +5066,7 @@ async function saveSettings() {
     model: getValue('settings-model'),
     build_step_models: _stepModelsDraft || {},
     generate_stage_models: _genModelsDraft || {},
+    stage_batch: !!document.getElementById('settings-stage-batch')?.checked,
     git: {
       repo_url: getValue('settings-repo-url'),
       username: getValue('settings-username'),

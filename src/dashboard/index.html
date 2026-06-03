@@ -640,6 +640,15 @@
               <div class="settings-model-hint" style="margin-bottom:8px;">Override the model per document-generation stage. The foundational stages (requirements, architecture, engineering) drive everything downstream — keep those strong; the lighter stages can use a faster model.</div>
               <div id="settings-gen-models" style="max-height:260px;overflow-y:auto;"></div>
             </div>
+
+            <!-- Batch generation: whole stage in one AI call (opt-in) -->
+            <div class="form-group" style="margin-bottom:0;">
+              <label class="form-label" style="display:flex;align-items:center;gap:8px;cursor:pointer;margin:0;">
+                <input type="checkbox" id="settings-stage-batch" style="width:auto;margin:0;accent-color:var(--primary);transform:translateY(1px);">
+                Batch generation <span style="font-weight:400;color:var(--text-3);">(experimental)</span>
+              </label>
+              <div class="settings-model-hint" style="margin-top:6px;">Generate all of a stage's documents in a single AI call — shared upstream context is sent once instead of re-sent per file, cutting tokens. Falls back to per-file generation automatically if a batch is incomplete.</div>
+            </div>
           </div>
 
           <!-- Git Config -->
