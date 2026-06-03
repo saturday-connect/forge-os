@@ -2174,6 +2174,13 @@ function renderBuildSteps() {
   }
   const isRunning = (state.processing && state.processing.status === 'running');
 
+  // "Retry failed" appears only when a step errored and nothing is running.
+  const _retryBtn = document.getElementById('btn-retry-failed');
+  if (_retryBtn) {
+    const _anyFailed = Object.values(buildStepsState).some(v => v.status === 'error');
+    _retryBtn.style.display = (_anyFailed && !isRunning && !optimisticRunning) ? '' : 'none';
+  }
+
   // Icon-only SVG buttons (no lucide dependency in dashboard)
   const _iconCode = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>`;
 
@@ -2456,7 +2463,10 @@ async function runBuildStep(step, phaseId) {
       optimisticRunning = null;
     } else {
       // Open the log drawer for the first step that will run
-      const firstStep = (step === 'all') ? 'backend' : step;
+      const firstStep = (step === 'all') ? 'backend'
+        : (step === 'failed')
+          ? (Object.keys(buildStepsState).find(k => buildStepsState[k] && buildStepsState[k].status === 'error') || 'backend')
+          : step;
       showBuildLog(firstStep);
     }
   } catch (e) {
@@ -5041,6 +5051,9 @@ function renderSettings() {
   const _sbToggle = document.getElementById('settings-stage-batch');
   if (_sbToggle) _sbToggle.checked = !!state.stage_batch;
 
+  const _bcSel = document.getElementById('settings-build-concurrency');
+  if (_bcSel) _bcSel.value = String(state.build_concurrency || 2);
+
   if (detectedTools) {
     renderToolPicker();
   } else {
@@ -5067,6 +5080,7 @@ async function saveSettings() {
     build_step_models: _stepModelsDraft || {},
     generate_stage_models: _genModelsDraft || {},
     stage_batch: !!document.getElementById('settings-stage-batch')?.checked,
+    build_concurrency: parseInt(document.getElementById('settings-build-concurrency')?.value || '2', 10),
     git: {
       repo_url: getValue('settings-repo-url'),
       username: getValue('settings-username'),

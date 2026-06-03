@@ -113,6 +113,7 @@ from constants import (
     SPEC_FILES_FOR_REVIEW,
     SPEC_SNIPPET_MAX_CHARS,
     STAGE_DIR_MAP,
+    STATUS_COMPLETE,
     STATUS_DISTILLING,
     STATUS_ERROR,
     STATUS_FIXING,
@@ -1910,6 +1911,7 @@ def compute_full_state():
         "project_name": proj.get("project_name", ""),
         "skip_org_context": proj.get("skip_org_context", False),
         "stage_batch": proj.get("stage_batch", False),
+        "build_concurrency": proj.get("build_concurrency", 2),
         "orgContext": _build_org_context_meta(),
         "user": load_user(),
         "project_type": proj.get("project_type", "standard"),
@@ -4609,6 +4611,15 @@ class ForgeHandler(BaseHTTPRequestHandler):
                 # context sent once). Coerced to bool — authoritative over any
                 # ambient FORGE_STAGE_BATCH for dashboard-launched generation.
                 proj["stage_batch"] = bool(data["stage_batch"])
+            if "build_concurrency" in data:
+                # Max parallel build steps for the DAG scheduler. Clamp to [1,4]
+                # (rate-limit safety); authoritative over ambient FORGE_BUILD_CONCURRENCY.
+                try:
+                    _bc = int(data["build_concurrency"])
+                except (TypeError, ValueError):
+                    self._json_response(400, {"error": "build_concurrency must be an integer 1-4"})
+                    return
+                proj["build_concurrency"] = max(1, min(_bc, 4))
             if "git" in data and "kb_repo_url" in data["git"]:
                 proj["git"]["kb_repo_url"] = data["git"]["kb_repo_url"]
             save_project_state(proj)
@@ -4834,7 +4845,9 @@ class ForgeHandler(BaseHTTPRequestHandler):
             # Allow caller to pass explicit phase_id; fall back to active_phase_id in state
             req_phase_id = data.get("phase_id", "").strip()
             step_keys = ["backend", "frontend", "integration", "tests", "infra"]
-            if step != "all" and step not in step_keys:
+            # "all" = full DAG; "failed" = retry only previously-errored steps;
+            # otherwise a single step.
+            if step not in ("all", "failed") and step not in step_keys:
                 self._json_response(400, {"error": "Unknown step: " + step})
                 return
 
@@ -4899,7 +4912,7 @@ class ForgeHandler(BaseHTTPRequestHandler):
                             logger.warning("build step %s stream error: %s", s, _exc)
                             return 1
 
-                    if step != "all":
+                    if step in step_keys:
                         _run_one(step)
                     else:
                         # ── Parallel DAG scheduler ───────────────────────────
@@ -4918,15 +4931,37 @@ class ForgeHandler(BaseHTTPRequestHandler):
                             "tests":       ["backend", "frontend"],
                             "infra":       ["backend", "frontend"],
                         }
+                        # Concurrency: the saved setting is authoritative; fall back
+                        # to ambient FORGE_BUILD_CONCURRENCY, then to 2. Clamp [1,4].
                         try:
-                            _max_c = int(os.environ.get("FORGE_BUILD_CONCURRENCY", "2"))
-                        except ValueError:
+                            _bc_setting = proj.get("build_concurrency")
+                            _max_c = int(_bc_setting) if _bc_setting else int(
+                                os.environ.get("FORGE_BUILD_CONCURRENCY", "2"))
+                        except (TypeError, ValueError):
                             _max_c = 2
                         _max_c = max(1, min(_max_c, 4))
                         _orch = {"FORGE_ORCHESTRATED": "1"}  # build_runner skips its own lock
-                        _done, _failed = set(), set()
-                        _remaining = list(step_keys)
-                        logger.info("build-all: parallel DAG, concurrency=%d", _max_c)
+                        _failed = set()
+                        if step == "failed":
+                            # Retry only previously-errored steps. Seed _done with the
+                            # already-complete steps so their dependents are runnable
+                            # without re-running them.
+                            _bsys_path = os.path.join(FORGE_DIR, "runs", "build-system.json")
+                            try:
+                                with open(_bsys_path) as _bf:
+                                    _bstatus = json.load(_bf)
+                            except (OSError, json.JSONDecodeError):
+                                _bstatus = {}
+                            _remaining = [s for s in step_keys
+                                          if _bstatus.get(s, {}).get("status") == STATUS_ERROR]
+                            _done = {s for s in step_keys
+                                     if _bstatus.get(s, {}).get("status") == STATUS_COMPLETE}
+                            logger.info("retry-failed: %d step(s) to retry: %s",
+                                        len(_remaining), ", ".join(_remaining) or "none")
+                        else:
+                            _done = set()
+                            _remaining = list(step_keys)
+                        logger.info("build-%s: parallel DAG, concurrency=%d", step, _max_c)
                         with _cf.ThreadPoolExecutor(max_workers=_max_c) as _ex:
                             _running = {}   # future -> step
                             while _remaining or _running:

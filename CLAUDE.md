@@ -438,7 +438,7 @@ Inside a target `.forge/`:
 | `POST` | `/api/fix` | Regenerate with critique |
 | `POST` | `/api/gate` | Toggle gate state |
 | `POST` | `/api/build` | Branch, commit, push, PR workflow |
-| `GET/POST` | `/api/build-system` | Build subsystem status and generation |
+| `GET/POST` | `/api/build-system` | Build subsystem status and generation; POST `step` accepts `all`, `failed` (retry only errored steps), or a single step |
 | `GET` | `/api/build-file` | Generated build artifact content |
 | `GET/POST` | `/api/build-review` | Pre-push review lifecycle; also accepts `action: "human_review"` with `{verdict, notes}` to record the human reviewer verdict before pushing |
 | `GET/POST` | `/api/secrets` | Secret requirements and push/config status |
@@ -679,6 +679,8 @@ Component sizing rules:
 - CI auto-release: `check-version` job reads `desktop/package.json` version, creates git tag + GitHub Release if version not found — push to main is sufficient, no manual tag needed
 - Batch stage generation (`FORGE_STAGE_BATCH=1`): `batch_runner.py` emits a whole stage's docs in one AI call (shared context sent once, not N times), wired into `stage_runner` as a fast-path with all-or-nothing writes and automatic fallback to the per-file loop on any non-zero exit — validated hermetically (stubbed AI) for the success, partial-output, defer, and bad-args paths
 - Batch generation Settings toggle: Settings -> AI Runtime -> "Batch generation" persists `stage_batch` to `project-state.json`; the server injects `FORGE_STAGE_BATCH=1` into the generation subprocess env (authoritative over ambient env — OFF clears any inherited value), so the per-file vs. batch path is a UI choice, not just an env flag
+- Build concurrency control (Phase 1): Settings -> AI Runtime -> "Max parallel build steps" persists `build_concurrency` (1-4, clamped) to `project-state.json`; the parallel DAG scheduler reads it for `ThreadPoolExecutor(max_workers)`, authoritative over ambient `FORGE_BUILD_CONCURRENCY` — exposes the existing build-concurrency cap as a UI knob for rate-limit management
+- Retry failed build steps (Phase 1): `POST /api/build-system {step:"failed"}` re-runs only `error`-status steps whose deps are complete, seeding the DAG scheduler's done-set with already-complete steps so dependents are runnable without re-running them; a "Retry failed" button appears in the Build view when any step errored — re-run only what broke, not the whole build
 
 ---
 
