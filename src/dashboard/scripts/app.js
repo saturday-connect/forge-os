@@ -2113,6 +2113,7 @@ const BUILD_STEPS_META = {
 };
 
 let buildStepsState = {};  // populated from /api/build-system
+let buildDag = {};         // step dependency graph (from /api/build-system deps)
 let buildStepsActivePhaseId = '';  // phase the current buildStepsState was built for
 let buildCodePanelStep = null;
 
@@ -2122,6 +2123,7 @@ async function fetchBuildSteps() {
     if (res.ok) {
       const data = await res.json();
       buildStepsState = data.steps || {};
+      buildDag = data.deps || buildDag;
       buildStepsActivePhaseId = data.active_phase_id || '';
       renderBuildSteps();
       // Auto-show progress panel if a step is running and panel is not visible
@@ -2140,9 +2142,80 @@ function _fmtTokens(n) {
   return String(n);
 }
 
+function _fmtDuration(startIso, endIso) {
+  if (!startIso || !endIso) return '';
+  const s = (new Date(endIso) - new Date(startIso)) / 1000;
+  if (isNaN(s) || s < 0) return '';
+  if (s < 60) return Math.round(s) + 's';
+  const m = Math.floor(s / 60), r = Math.round(s % 60);
+  return m + 'm' + (r ? ' ' + r + 's' : '');
+}
+
+// ---- Build plan (DAG) + per-step timing/cost console -----------------
+// Renders the step dependency graph as waves with live status, duration,
+// tokens, and cache badges. Data is already in /api/build-system.
+function renderBuildDag() {
+  const grid = document.getElementById('build-steps-grid');
+  if (!grid) return;
+  let panel = document.getElementById('build-dag');
+  if (!panel) {
+    panel = document.createElement('div');
+    panel.id = 'build-dag';
+    grid.parentNode.insertBefore(panel, grid);
+  }
+  const deps = (buildDag && Object.keys(buildDag).length) ? buildDag
+    : { backend: [], frontend: ['backend'], integration: ['backend'],
+        tests: ['backend', 'frontend'], infra: ['backend', 'frontend'] };
+  const keys = Object.keys(deps);
+  // Hide until something has run — avoid clutter pre-build.
+  const anyState = keys.some(k => buildStepsState[k] && buildStepsState[k].status
+    && buildStepsState[k].status !== 'idle');
+  if (!anyState) { panel.innerHTML = ''; panel.style.cssText = 'display:none'; return; }
+  const memo = {};
+  const lvl = k => {
+    if (memo[k] != null) return memo[k];
+    const ds = deps[k] || [];
+    memo[k] = ds.length ? 1 + Math.max(...ds.map(lvl)) : 0;
+    return memo[k];
+  };
+  const waves = {};
+  keys.forEach(k => { const L = lvl(k); (waves[L] = waves[L] || []).push(k); });
+  const META = (typeof BUILD_STEPS_META !== 'undefined') ? BUILD_STEPS_META : {};
+  const label = k => (META[k] && META[k].label) || k;
+  const color = { complete: 'var(--green)', error: '#ef4444', running: '#f59e0b' };
+  let totalTok = 0;
+  keys.forEach(k => { const s = buildStepsState[k] || {}; totalTok += (s.tokens_in||0)+(s.tokens_out||0); });
+  let html = `<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+    <span style="font-size:11px;font-weight:600;color:var(--text-2);">Build plan</span>
+    ${totalTok ? `<span style="font-size:10px;color:var(--text-3);margin-left:auto;">≈ ${_fmtTokens(totalTok)} tokens this build</span>` : ''}
+  </div><div style="display:flex;flex-direction:column;gap:6px;">`;
+  Object.keys(waves).map(Number).sort((a,b)=>a-b).forEach(L => {
+    html += `<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+      <span style="font-size:10px;color:var(--text-3);min-width:52px;">Wave ${L+1}</span>`;
+    waves[L].forEach(k => {
+      const st = buildStepsState[k] || { status: 'idle' };
+      const c = color[st.status] || 'var(--text-3)';
+      const dur = _fmtDuration(st.started_at, st.generated_at);
+      const tok = (st.tokens_in||0) + (st.tokens_out||0);
+      html += `<span style="display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border:1px solid var(--border);border-radius:7px;font-size:11px;" title="${st.status}${st.error ? ': ' + escapeHtml(st.error) : ''}">
+        <span style="width:7px;height:7px;border-radius:50%;background:${c};flex-shrink:0;"></span>
+        <span style="color:var(--text);">${escapeHtml(label(k))}</span>
+        ${st.cached ? '<span style="font-size:9px;color:var(--green);">cached</span>'
+          : (dur ? `<span style="font-size:9px;color:var(--text-3);">${dur}</span>` : '')}
+        ${tok ? `<span style="font-size:9px;color:var(--text-3);">~${_fmtTokens(tok)}</span>` : ''}
+      </span>`;
+    });
+    html += '</div>';
+  });
+  html += '</div>';
+  panel.style.cssText = 'margin-bottom:14px;padding:12px 14px;border:1px solid var(--border);border-radius:10px;background:rgba(255,255,255,.02);';
+  panel.innerHTML = html;
+}
+
 function renderBuildSteps() {
   const grid = document.getElementById('build-steps-grid');
   if (!grid) return;
+  renderBuildDag();
   // Ensure log drawer container exists as a sibling below the grid
   if (!document.getElementById('build-log-drawer-container')) {
     const container = document.createElement('div');

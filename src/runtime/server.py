@@ -1830,6 +1830,17 @@ _BUILD_PROFILES = ("fast", "balanced", "thorough", "custom")
 _BLD_FAST_STEPS = ("infra", "tests")
 _PROFILE_CONCURRENCY = {"fast": 4, "balanced": 2, "thorough": 1}
 
+# Build step dependency graph (single source of truth for the parallel scheduler
+# and the Build view's DAG visualization). wave1: backend; wave2: frontend +
+# integration; wave3: tests + infra.
+_BUILD_DAG = {
+    "backend":     [],
+    "frontend":    ["backend"],
+    "integration": ["backend"],
+    "tests":       ["backend", "frontend"],
+    "infra":       ["backend", "frontend"],
+}
+
 
 def _resolve_build_profile(proj):
     """Effective profile. Explicit setting wins; otherwise 'custom' when the user
@@ -2362,7 +2373,7 @@ class ForgeHandler(BaseHTTPRequestHandler):
             _total_tok = sum(steps_out[k].get("tokens_in", 0) + steps_out[k].get("tokens_out", 0)
                              for k in steps_out)
             self._json_response(200, {"steps": steps_out, "active_phase_id": _active_pid,
-                                      "total_tokens": _total_tok})
+                                      "total_tokens": _total_tok, "deps": _BUILD_DAG})
             return
 
         if path == "/api/build-preview":
@@ -5089,13 +5100,7 @@ class ForgeHandler(BaseHTTPRequestHandler):
                         #   wave 2: frontend + integration  (need backend)
                         #   wave 3: tests + infra           (need backend+frontend)
                         import concurrent.futures as _cf
-                        _SCHED_DEPS = {
-                            "backend":     [],
-                            "frontend":    ["backend"],
-                            "integration": ["backend"],
-                            "tests":       ["backend", "frontend"],
-                            "infra":       ["backend", "frontend"],
-                        }
+                        _SCHED_DEPS = _BUILD_DAG
                         # Concurrency from the resolved profile (custom = the saved
                         # build_concurrency setting). Clamped [1,4].
                         _max_c = _profile_concurrency(_profile, proj)
