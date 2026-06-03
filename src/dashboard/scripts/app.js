@@ -2498,6 +2498,20 @@ function updateProfileButtons() {
     b.classList.toggle('active', b.dataset.profile === p));
 }
 
+async function clearBuildCache() {
+  try {
+    const res = await apiFetch('/api/build-system', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'clear_cache' })
+    });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) { showToast(d.error || 'Failed to clear cache', 'error'); return; }
+    showToast('Build cache cleared (' + (d.cleared || 0) + ' entries)', 'success');
+  } catch (e) {
+    showToast('Failed to clear cache', 'error');
+  }
+}
+
 // ---- Build Progress Panel --------------------------------------------
 // Vercel/Railway-style: stage indicators + animated progress bar + time estimates.
 // No raw log noise — users need signal, not output.

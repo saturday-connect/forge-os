@@ -45,6 +45,135 @@ _forge_data = os.environ.get("FORGE_DATA_DIR")
 FORGE_DIR = os.path.expanduser(_forge_data) if _forge_data else os.path.dirname(SCRIPT_DIR)
 BUILD_STATUS_FILE = os.path.join(FORGE_DIR, FILE_BUILD_SYSTEM)
 
+# ── Cross-run build cache (content-addressed, Phase 3) ───────────────────────
+# A store OUTSIDE the project (~/.forge/build-cache) keyed by each step's
+# input_hash, so a cache hit survives a 15-build clean or a fresh checkout — not
+# just an in-place re-run (Turborepo/Bazel-style). Disable with
+# FORGE_BUILD_CACHE=0; bounded to _BUILD_CACHE_MAX_ENTRIES (LRU by mtime).
+_BUILD_CACHE_DIR = os.path.join(os.path.expanduser("~"), ".forge", "build-cache")
+_BUILD_CACHE_META = "_cache_meta.json"
+_BUILD_CACHE_MAX_ENTRIES = 300
+
+
+def _build_cache_enabled():
+    return os.environ.get("FORGE_BUILD_CACHE", "1").strip() != "0"
+
+
+def _build_cache_restore(input_hash, out_dir, step):
+    """Copy a stored entry's files into out_dir (cleaned first). Returns the
+    stored file list on a hit, else None."""
+    import shutil as _sh
+    entry = os.path.join(_BUILD_CACHE_DIR, input_hash)
+    meta_path = os.path.join(entry, _BUILD_CACHE_META)
+    if not os.path.isfile(meta_path):
+        return None
+    try:
+        with open(meta_path, encoding=FILE_ENCODING) as _mf:
+            meta = json.load(_mf)
+    except (OSError, json.JSONDecodeError):
+        return None
+    if os.path.isdir(out_dir):
+        for _e in os.listdir(out_dir):
+            _p = os.path.join(out_dir, _e)
+            try:
+                _sh.rmtree(_p) if (os.path.isdir(_p) and not os.path.islink(_p)) else os.remove(_p)
+            except OSError:
+                pass
+    os.makedirs(out_dir, exist_ok=True)
+    for _root, _ds, _fs in os.walk(entry):
+        for _f in _fs:
+            if _f == _BUILD_CACHE_META and _root == entry:
+                continue
+            _src = os.path.join(_root, _f)
+            _dst = os.path.join(out_dir, os.path.relpath(_src, entry))
+            os.makedirs(os.path.dirname(_dst), exist_ok=True)
+            _sh.copy2(_src, _dst)
+    # backend's api-contract is read by downstream steps from a shared location.
+    if step == "backend":
+        _ac = os.path.join(out_dir, _API_CONTRACT_FILENAME)
+        if os.path.isfile(_ac):
+            os.makedirs(os.path.dirname(API_CONTRACT_FILE), exist_ok=True)
+            _sh.copy2(_ac, API_CONTRACT_FILE)
+    try:
+        os.utime(entry, None)  # LRU touch
+    except OSError:
+        pass
+    return meta.get("files", [])
+
+
+def _build_cache_save(input_hash, out_dir, step, files, meta_extra, force=False):
+    """Atomically store out_dir under input_hash (temp dir + os.replace). Skips
+    if already present unless force, which overwrites."""
+    import shutil as _sh
+    entry = os.path.join(_BUILD_CACHE_DIR, input_hash)
+    if os.path.isdir(entry):
+        if not force:
+            try:
+                os.utime(entry, None)
+            except OSError:
+                pass
+            return
+        try:
+            _sh.rmtree(entry)
+        except OSError:
+            return
+    tmp = entry + ".tmp." + str(os.getpid())
+    try:
+        os.makedirs(_BUILD_CACHE_DIR, exist_ok=True)
+        if os.path.isdir(tmp):
+            _sh.rmtree(tmp)
+        _sh.copytree(out_dir, tmp)
+        _meta = {"step": step, "files": files}
+        _meta.update(meta_extra or {})
+        with open(os.path.join(tmp, _BUILD_CACHE_META), "w", encoding=FILE_ENCODING) as _mf:
+            json.dump(_meta, _mf)
+        os.replace(tmp, entry)
+    except (OSError, _sh.Error) as _e:
+        print(_LOG_PREFIX + " [cache] store skipped: " + str(_e))
+        try:
+            if os.path.isdir(tmp):
+                _sh.rmtree(tmp)
+        except OSError:
+            pass
+        return
+    _build_cache_gc()
+
+
+def _build_cache_gc():
+    """Evict oldest entries beyond the cap (LRU by mtime)."""
+    try:
+        _all = [os.path.join(_BUILD_CACHE_DIR, d) for d in os.listdir(_BUILD_CACHE_DIR)]
+    except OSError:
+        return
+    _entries = [e for e in _all if os.path.isdir(e) and ".tmp." not in os.path.basename(e)]
+    if len(_entries) <= _BUILD_CACHE_MAX_ENTRIES:
+        return
+    _entries.sort(key=os.path.getmtime)
+    import shutil as _sh
+    for _e in _entries[:len(_entries) - _BUILD_CACHE_MAX_ENTRIES]:
+        try:
+            _sh.rmtree(_e)
+        except OSError:
+            pass
+
+
+def _build_cache_clear():
+    """Remove the entire cross-run cache. Returns count of entries removed."""
+    import shutil as _sh
+    try:
+        _entries = [d for d in os.listdir(_BUILD_CACHE_DIR)
+                    if os.path.isdir(os.path.join(_BUILD_CACHE_DIR, d))]
+    except OSError:
+        return 0
+    _n = 0
+    for _d in _entries:
+        try:
+            _sh.rmtree(os.path.join(_BUILD_CACHE_DIR, _d))
+            _n += 1
+        except OSError:
+            pass
+    return _n
+
 # Phase context — set by server when a phase is active
 ACTIVE_PHASE_ID   = os.environ.get(FORGE_PHASE_ID_ENV, "").strip()
 ACTIVE_PHASE_NAME = os.environ.get(FORGE_PHASE_NAME_ENV, "").strip()
@@ -4650,6 +4779,20 @@ def run_step(step):
                          input_hash=input_hash, tokens_in=0, tokens_out=0, cached=True)
         return True
 
+    # ── CROSS-RUN CACHE (persistent store) ──────────────────────────────────
+    # The in-place check missed (output cleaned, or a fresh checkout), but a
+    # global content-addressed store may hold this exact output from a prior
+    # build of these same inputs. Restore it instead of regenerating.
+    if not _force and _build_cache_enabled():
+        _restored = _build_cache_restore(input_hash, out_dir, step)
+        if _restored is not None:
+            print(_LOG_PREFIX + " [cache] " + step
+                  + ": restored from cross-run store — skipping regeneration (cache hit, ~"
+                  + f"{_est_tokens(prompt):,}" + " input tokens saved)")
+            save_step_status(step, STATUS_COMPLETE, files=_restored,
+                             input_hash=input_hash, tokens_in=0, tokens_out=0, cached=True)
+            return True
+
     # ── Invoke → Validate → Retry loop ──────────────────────────────────────
     # Never write structurally broken output to disk. If the AI truncates its
     # output (common when hitting output-token limits), validate and retry
@@ -4811,6 +4954,13 @@ def run_step(step):
         print(_LOG_PREFIX + " [validate] FORGE_VALIDATE_BUILD=1 — running post-generation validation...")
         _validate_build(out_dir, step)
 
+    # Persist to the cross-run store so a future clean/checkout restores instead
+    # of regenerating. Skip degenerate output; force overwrites the entry.
+    if _build_cache_enabled() and file_list and not _is_degenerate:
+        _build_cache_save(input_hash, out_dir, step, file_list,
+                          {"tool": tool, "model": model_id,
+                           "tokens_in": _tok_in, "tokens_out": _tok_out}, force=_force)
+
     return True
 
 
@@ -4851,8 +5001,14 @@ def preview_step(step):
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Usage: build_runner.py <step> [--preview]")
+        print("Usage: build_runner.py <step> [--preview] | --clear-cache")
         sys.exit(1)
+
+    # Clear the cross-run build cache. No step needed. Prints JSON for the server.
+    if sys.argv[1] == "--clear-cache":
+        _cleared = _build_cache_clear()
+        print(json.dumps({"cleared": _cleared}))
+        sys.exit(0)
 
     # Preview mode: estimate cost + cache status, print JSON, exit. No side effects.
     if "--preview" in sys.argv[2:]:

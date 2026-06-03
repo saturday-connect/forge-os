@@ -438,7 +438,7 @@ Inside a target `.forge/`:
 | `POST` | `/api/fix` | Regenerate with critique |
 | `POST` | `/api/gate` | Toggle gate state |
 | `POST` | `/api/build` | Branch, commit, push, PR workflow |
-| `GET/POST` | `/api/build-system` | Build subsystem status and generation; POST `step` accepts `all`, `failed` (retry only errored steps), or a single step |
+| `GET/POST` | `/api/build-system` | Build subsystem status and generation; POST `step` accepts `all`, `failed` (retry only errored steps), or a single step; also accepts `action: "clear_cache"` to wipe the cross-run build cache |
 | `GET` | `/api/build-file` | Generated build artifact content |
 | `GET/POST` | `/api/build-review` | Pre-push review lifecycle; also accepts `action: "human_review"` with `{verdict, notes}` to record the human reviewer verdict before pushing |
 | `GET/POST` | `/api/secrets` | Secret requirements and push/config status |
@@ -476,6 +476,7 @@ Inside a target `.forge/`:
 .projects/index.json            managed project registry and active selection
 ~/.forge/user.json              user role and department
 ~/.forge/_pat_signal            transient PAT handoff file (deleted after Electron reads it)
+~/.forge/build-cache/<hash>/    cross-run build cache: content-addressed step output + _cache_meta.json (LRU-capped)
 ```
 
 `project-state.json` is saved with `0o600` permissions. Git PAT is stripped before persistence (stored only in Electron safeStorage).
@@ -682,6 +683,7 @@ Component sizing rules:
 - Build concurrency control (Phase 1): Settings -> AI Runtime -> "Max parallel build steps" persists `build_concurrency` (1-4, clamped) to `project-state.json`; the parallel DAG scheduler reads it for `ThreadPoolExecutor(max_workers)`, authoritative over ambient `FORGE_BUILD_CONCURRENCY` — exposes the existing build-concurrency cap as a UI knob for rate-limit management
 - Retry failed build steps (Phase 1): `POST /api/build-system {step:"failed"}` re-runs only `error`-status steps whose deps are complete, seeding the DAG scheduler's done-set with already-complete steps so dependents are runnable without re-running them; a "Retry failed" button appears in the Build view when any step errored — re-run only what broke, not the whole build
 - Build profiles (Phase 2): `build_profile` (fast/balanced/thorough/custom) bundles the three real build knobs — per-step model tier, scheduler concurrency, post-build validation. Server-resolved at build + preview time via `_resolve_build_profile` / `_profile_step_model` / `_profile_concurrency` (server.py): fast = mechanical steps (infra, tests) -> tool `fast_model`, concurrency 4; balanced = global model, concurrency 2; thorough = global model, concurrency 1, `FORGE_VALIDATE_BUILD=1`; custom = the individual `build_step_models` + `build_concurrency` settings (so existing power-user configs are preserved — absent `build_profile` resolves to `custom` when overrides exist, else `balanced`). Selector lives in the Build view header + Settings -> AI Runtime
+- Persistent build cache (Phase 3/D1): content-addressed store at `~/.forge/build-cache/<input_hash>/` (build_runner.py `_build_cache_save` / `_build_cache_restore` / `_build_cache_gc`). Unlike the in-place skip-unchanged check, this survives a `15-build` clean or a fresh checkout — restore hook fires after an in-place miss, save hook after a successful non-degenerate build. Backend's restore re-establishes the shared `api-contract.md` downstream steps read. LRU-capped (`_BUILD_CACHE_MAX_ENTRIES`); disable with `FORGE_BUILD_CACHE=0`; `FORGE_FORCE_REBUILD=1` bypasses + overwrites. Cleared via `build_runner.py --clear-cache` or `POST /api/build-system {action:"clear_cache"}` (Build view "Clear cache" button). Validated hermetically: generate->store->clean->restore (0 AI calls, `cached:true`), and clear->regenerate
 
 ---
 

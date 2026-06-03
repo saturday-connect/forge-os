@@ -4889,6 +4889,18 @@ class ForgeHandler(BaseHTTPRequestHandler):
 
         if path == "/api/build-system":
             step = data.get("step", "")
+            if data.get("action") == "clear_cache":
+                _runner = os.path.join(FORGE_DIR, "scripts", "build_runner.py")
+                try:
+                    _r = subprocess.run([sys.executable, _runner, "--clear-cache"],
+                                        cwd=REPO_ROOT, capture_output=True, text=True, timeout=30)
+                    _cleared = json.loads(_r.stdout.strip().splitlines()[-1]).get("cleared", 0)
+                except (OSError, ValueError, json.JSONDecodeError, IndexError) as _e:
+                    logger.warning("clear-cache failed: %s", _e)
+                    self._json_response(500, {"error": "clear-cache failed"})
+                    return
+                self._json_response(200, {"status": "cleared", "cleared": _cleared})
+                return
             # Allow caller to pass explicit phase_id; fall back to active_phase_id in state
             req_phase_id = data.get("phase_id", "").strip()
             step_keys = ["backend", "frontend", "integration", "tests", "infra"]
