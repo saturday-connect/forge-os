@@ -30,10 +30,10 @@
         "requirements": ["00-context"],
         "design": ["00-context", "01-requirements"],
         "analysis": ["00-context", "01-requirements"],
-        "architecture": ["01-requirements", "02-design", "03-analysis"],
-        "delivery": ["01-requirements", "02-design", "03-analysis", "04-architecture"],
+        "architecture": ["01-requirements", "03-analysis"],
+        "delivery": ["01-requirements", "03-analysis", "04-architecture"],
         "engineering": ["01-requirements", "03-analysis", "04-architecture", "02-design"],
-        "qa": ["01-requirements", "02-design", "04-architecture", "06-engineering"],
+        "qa": ["01-requirements", "04-architecture", "06-engineering"],
         "operations": ["04-architecture", "05-delivery", "06-engineering", "07-quality"],
         "release": ["04-architecture", "05-delivery", "06-engineering", "07-quality", "08-operations"],
         "marketing": ["00-context", "01-requirements", "05-delivery"]
