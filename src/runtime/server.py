@@ -71,6 +71,8 @@ from constants import (
     GEMINI_ARG_PROMPT,
     GEMINI_ARG_SKIP_TRUST,
     GENERATE_TIMEOUT_SECS,
+    BUILD_CACHE_DIRNAME,
+    BUILD_CACHE_META_FILE,
     GIT_COMMIT_EMAIL,
     GIT_COMMIT_NAME,
     GIT_TIMEOUT_SECS,
@@ -1114,6 +1116,81 @@ def _run_export_to_kb(kb_config, proj, token, docs):
         shutil.rmtree(work_dir, ignore_errors=True)
 
 
+# ── Cross-run build cache: remote sync (Phase 3/D2) ──────────────────────────
+# Union-sync the local content-addressed store (~/.forge/build-cache) with a git
+# repo. Entries are immutable (keyed by input_hash) so the merge is conflict-free:
+# pull = copy remote entries missing locally; push = copy local entries missing
+# remotely, then commit+push. Advisory — invoked explicitly, never inline in a build.
+_LOCAL_BUILD_CACHE = os.path.join(os.path.expanduser("~"), ".forge", BUILD_CACHE_DIRNAME)
+
+
+def _cache_auth_url(repo_url, token):
+    """Inject the PAT for github https URLs; pass other schemes (file://, ssh) through."""
+    if token and repo_url.startswith("https://github.com/"):
+        return repo_url.replace("https://github.com/",
+                                f"https://x-access-token:{token}@github.com/", 1)
+    return repo_url
+
+
+def _run_sync_build_cache(repo_url, branch, token):
+    """Union-sync the local build cache with a remote git repo.
+    Returns {"pulled": n, "pushed": m, "error": str|None}."""
+    branch = (branch or "main").strip() or "main"
+    os.makedirs(_LOCAL_BUILD_CACHE, exist_ok=True)
+    work = tempfile.mkdtemp(prefix="forge-build-cache-")
+    pulled = pushed = 0
+    try:
+        clone = subprocess.run(["git", "clone", _cache_auth_url(repo_url, token), work],
+                               capture_output=True, text=True, timeout=GIT_TIMEOUT_SECS * 4)
+        if clone.returncode != 0:
+            return {"pulled": 0, "pushed": 0, "error": "clone failed: " + clone.stderr.strip()[:200]}
+        if subprocess.run(["git", "checkout", branch], cwd=work,
+                          capture_output=True, text=True).returncode != 0:
+            subprocess.run(["git", "checkout", "-b", branch], cwd=work, capture_output=True, text=True)
+        remote_cache = os.path.join(work, "cache")
+        os.makedirs(remote_cache, exist_ok=True)
+
+        def _complete(d):
+            return os.path.isfile(os.path.join(d, BUILD_CACHE_META_FILE))
+
+        for _h in os.listdir(remote_cache):
+            _rp, _lp = os.path.join(remote_cache, _h), os.path.join(_LOCAL_BUILD_CACHE, _h)
+            if os.path.isdir(_rp) and _complete(_rp) and not os.path.exists(_lp):
+                try:
+                    shutil.copytree(_rp, _lp)
+                    pulled += 1
+                except (OSError, shutil.Error):
+                    pass
+        for _h in os.listdir(_LOCAL_BUILD_CACHE):
+            _lp, _rp = os.path.join(_LOCAL_BUILD_CACHE, _h), os.path.join(remote_cache, _h)
+            if os.path.isdir(_lp) and ".tmp." not in _h and _complete(_lp) and not os.path.exists(_rp):
+                try:
+                    shutil.copytree(_lp, _rp)
+                    pushed += 1
+                except (OSError, shutil.Error):
+                    pass
+        if pushed:
+            subprocess.run(["git", "config", "user.email", GIT_COMMIT_EMAIL], cwd=work, capture_output=True)
+            subprocess.run(["git", "config", "user.name", GIT_COMMIT_NAME], cwd=work, capture_output=True)
+            subprocess.run(["git", "add", "."], cwd=work, capture_output=True)
+            subprocess.run(["git", "commit", "-m", "build-cache: +" + str(pushed) + " entries"],
+                           cwd=work, capture_output=True)
+            push = subprocess.run(["git", "push", "origin", branch], cwd=work,
+                                  capture_output=True, text=True, timeout=GIT_TIMEOUT_SECS * 2)
+            if push.returncode != 0:
+                subprocess.run(["git", "pull", "--rebase", "origin", branch], cwd=work,
+                               capture_output=True, timeout=GIT_TIMEOUT_SECS * 2)
+                push = subprocess.run(["git", "push", "origin", branch], cwd=work,
+                                      capture_output=True, text=True, timeout=GIT_TIMEOUT_SECS * 2)
+                if push.returncode != 0:
+                    return {"pulled": pulled, "pushed": 0, "error": "push failed: " + push.stderr.strip()[:200]}
+        return {"pulled": pulled, "pushed": pushed, "error": None}
+    except (OSError, subprocess.SubprocessError) as e:
+        return {"pulled": pulled, "pushed": pushed, "error": str(e)[:200]}
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+
+
 def _parse_distill_sections(text):
     """Parse ## Patterns / ## Decisions / ## Learnings sections from AI distillation output."""
     buckets = {"patterns": [], "decisions": [], "learnings": []}
@@ -1954,6 +2031,7 @@ def compute_full_state():
         "stage_batch": proj.get("stage_batch", False),
         "build_concurrency": proj.get("build_concurrency", 2),
         "build_profile": _resolve_build_profile(proj),
+        "build_cache_repo": proj.get("build_cache_repo", {}),
         "orgContext": _build_org_context_meta(),
         "user": load_user(),
         "project_type": proj.get("project_type", "standard"),
@@ -4667,6 +4745,16 @@ class ForgeHandler(BaseHTTPRequestHandler):
                     self._json_response(400, {"error": "unknown build_profile"})
                     return
                 proj["build_profile"] = data["build_profile"]
+            if "build_cache_repo" in data:
+                # Optional git repo for sharing the cross-run build cache across machines.
+                _bcr = data["build_cache_repo"]
+                if not isinstance(_bcr, dict):
+                    self._json_response(400, {"error": "build_cache_repo must be an object"})
+                    return
+                proj["build_cache_repo"] = {
+                    "url": (_bcr.get("url") or "").strip(),
+                    "branch": (_bcr.get("branch") or "main").strip() or "main",
+                }
             if "git" in data and "kb_repo_url" in data["git"]:
                 proj["git"]["kb_repo_url"] = data["git"]["kb_repo_url"]
             save_project_state(proj)
@@ -4900,6 +4988,22 @@ class ForgeHandler(BaseHTTPRequestHandler):
                     self._json_response(500, {"error": "clear-cache failed"})
                     return
                 self._json_response(200, {"status": "cleared", "cleared": _cleared})
+                return
+            if data.get("action") == "sync_cache":
+                _proj = load_project_state()
+                _cfg = _proj.get("build_cache_repo", {}) or {}
+                _url = (_cfg.get("url") or "").strip()
+                if not _url:
+                    self._json_response(400, {"error": "No build-cache repo configured (Settings -> AI Runtime)."})
+                    return
+                _tok = (_proj.get("git", {}) or {}).get("token", "") or GIT_PAT
+                _res = _run_sync_build_cache(_url, _cfg.get("branch", "main"), _tok)
+                if _res.get("error"):
+                    self._json_response(502, {"error": _res["error"]})
+                    return
+                self._json_response(200, {"status": "synced",
+                                          "pulled": _res.get("pulled", 0),
+                                          "pushed": _res.get("pushed", 0)})
                 return
             # Allow caller to pass explicit phase_id; fall back to active_phase_id in state
             req_phase_id = data.get("phase_id", "").strip()

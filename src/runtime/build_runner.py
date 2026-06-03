@@ -24,6 +24,8 @@ from constants import (
     CLAUDE_ARG_MODEL,
     CLAUDE_ARG_OUTPUT_FORMAT,
     CLAUDE_OUTPUT_TEXT,
+    BUILD_CACHE_DIRNAME,
+    BUILD_CACHE_META_FILE,
     GENERATE_TIMEOUT_SECS,
     MARKDOWN_EXTENSION,
     SOURCE_MARKER,
@@ -50,8 +52,8 @@ BUILD_STATUS_FILE = os.path.join(FORGE_DIR, FILE_BUILD_SYSTEM)
 # input_hash, so a cache hit survives a 15-build clean or a fresh checkout — not
 # just an in-place re-run (Turborepo/Bazel-style). Disable with
 # FORGE_BUILD_CACHE=0; bounded to _BUILD_CACHE_MAX_ENTRIES (LRU by mtime).
-_BUILD_CACHE_DIR = os.path.join(os.path.expanduser("~"), ".forge", "build-cache")
-_BUILD_CACHE_META = "_cache_meta.json"
+_BUILD_CACHE_DIR = os.path.join(os.path.expanduser("~"), ".forge", BUILD_CACHE_DIRNAME)
+_BUILD_CACHE_META = BUILD_CACHE_META_FILE
 _BUILD_CACHE_MAX_ENTRIES = 300
 
 

@@ -398,6 +398,10 @@
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
             Clear cache
           </button>
+          <button class="btn btn-ghost btn-sm" onclick="syncBuildCache()" id="btn-sync-cache" style="display:none;" title="Pull/push the cross-run build cache to the configured repo">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0115-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 01-15 6.7L3 16"/></svg>
+            Sync cache
+          </button>
           <button class="btn btn-secondary" onclick="runBuildStep('failed')" id="btn-retry-failed" style="display:none;" title="Re-run only the steps that failed; completed steps are kept">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0115-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 01-15 6.7L3 16"/></svg>
             Retry failed
@@ -689,6 +693,14 @@
                 <option value="4">4</option>
               </select>
               <div class="settings-model-hint" style="margin-top:6px;">How many build steps the DAG scheduler runs at once. Higher is faster but makes more concurrent AI calls — watch rate limits. Capped at 4.</div>
+            </div>
+
+            <!-- Build cache repo (optional): share the cross-run cache across machines/CI -->
+            <div class="form-group" style="margin-bottom:0;margin-top:14px;">
+              <label class="form-label" style="margin:0;">Build cache repo <span style="font-weight:400;color:var(--text-3);">(optional)</span></label>
+              <input type="text" class="form-input" id="settings-build-cache-url" placeholder="https://github.com/org/build-cache" style="margin-top:4px;">
+              <input type="text" class="form-input" id="settings-build-cache-branch" placeholder="main" style="margin-top:6px;max-width:200px;">
+              <div class="settings-model-hint" style="margin-top:6px;">A git repo to share the cross-run build cache across machines/CI (uses your Git token). Push/pull it from the Build view → "Sync cache".</div>
             </div>
           </div>
 

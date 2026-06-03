@@ -2512,6 +2512,21 @@ async function clearBuildCache() {
   }
 }
 
+async function syncBuildCache() {
+  showToast('Syncing build cache…', 'info');
+  try {
+    const res = await apiFetch('/api/build-system', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'sync_cache' })
+    });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) { showToast(d.error || 'Cache sync failed', 'error'); return; }
+    showToast('Cache synced — pulled ' + (d.pulled || 0) + ', pushed ' + (d.pushed || 0), 'success');
+  } catch (e) {
+    showToast('Cache sync failed', 'error');
+  }
+}
+
 // ---- Build Progress Panel --------------------------------------------
 // Vercel/Railway-style: stage indicators + animated progress bar + time estimates.
 // No raw log noise — users need signal, not output.
@@ -3337,6 +3352,8 @@ async function stopLocalRun() {
 function renderBuild() {
   fetchBuildSteps();
   updateProfileButtons();
+  const _syncBtn = document.getElementById('btn-sync-cache');
+  if (_syncBtn) _syncBtn.style.display = (state.build_cache_repo && state.build_cache_repo.url) ? '' : 'none';
   syncReviewStatus();
   checkAllPrStatuses();
   fetchLocalRun();
@@ -5093,6 +5110,10 @@ function renderSettings() {
   if (_bcSel) _bcSel.value = String(state.build_concurrency || 2);
   updateProfileButtons();
 
+  const _bcr = state.build_cache_repo || {};
+  setValue('settings-build-cache-url', _bcr.url || '');
+  setValue('settings-build-cache-branch', _bcr.branch || 'main');
+
   if (detectedTools) {
     renderToolPicker();
   } else {
@@ -5120,6 +5141,10 @@ async function saveSettings() {
     generate_stage_models: _genModelsDraft || {},
     stage_batch: !!document.getElementById('settings-stage-batch')?.checked,
     build_concurrency: parseInt(document.getElementById('settings-build-concurrency')?.value || '2', 10),
+    build_cache_repo: {
+      url: getValue('settings-build-cache-url'),
+      branch: getValue('settings-build-cache-branch') || 'main',
+    },
     git: {
       repo_url: getValue('settings-repo-url'),
       username: getValue('settings-username'),

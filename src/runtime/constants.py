@@ -199,6 +199,9 @@ FILE_REVIEWS = "reviews.json"
 FILE_STATUS = "runs/status.json"
 FILE_BUILD_SYSTEM = "runs/build-system.json"
 FILE_STACK = "runs/stack.json"          # locked technology stack (pinned once, enforced every step)
+# Cross-run build cache (shared by build_runner + server): ~/.forge/<dirname>
+BUILD_CACHE_DIRNAME = "build-cache"
+BUILD_CACHE_META_FILE = "_cache_meta.json"
 FILE_BUILD_REVIEW = "runs/build-review.json"
 FILE_BUILD_IN_PROGRESS = "runs/build-in-progress.json"
 FILE_DISTILL_RESULT = "runs/distill-result.json"
