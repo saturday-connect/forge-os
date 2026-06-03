@@ -45,7 +45,7 @@
     "description": "Documentation-first PDLC automation desktop app. AI-generated requirements, design, architecture, build systems, and deployment.",
     "url": "https://saturday-connect.github.io/forge-os/",
     "downloadUrl": "https://github.com/saturday-connect/forge-os/releases",
-    "softwareVersion": "1.0.0-beta.28",
+    "softwareVersion": "1.0.0-beta.116",
     "license": "https://www.apache.org/licenses/LICENSE-2.0",
     "author": {
       "@type": "Organization",
@@ -1166,7 +1166,43 @@
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
         </div>
         <div class="feature-title">Build &amp; CI generation</div>
-        <div class="feature-desc">Generates CI/CD pipelines, Dockerfiles, and env configs. Commits each component atomically with conventional commits and opens a PR.</div>
+        <div class="feature-desc">Generates a coherent, stack-pinned codebase plus CI/CD pipelines, Dockerfiles, and env configs. Commits each component atomically with conventional commits and opens a PR.</div>
+      </div>
+
+      <div class="feature-card" role="listitem">
+        <div class="feature-icon" aria-hidden="true">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>
+        </div>
+        <div class="feature-title">AI cost controls</div>
+        <div class="feature-desc">Route each generate stage and build step to a fast or strong model. Batch generation sends shared context once instead of per file, and a pre-flight preview shows projected tokens before you spend them.</div>
+        <span class="feature-tag feature-tag--new">New</span>
+      </div>
+
+      <div class="feature-card" role="listitem">
+        <div class="feature-icon" aria-hidden="true">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>
+        </div>
+        <div class="feature-title">Build profiles</div>
+        <div class="feature-desc">Fast, Balanced, or Thorough in one click — each bundles model tier, parallelism, and post-build validation. Switch to Custom for per-step control.</div>
+        <span class="feature-tag feature-tag--new">New</span>
+      </div>
+
+      <div class="feature-card" role="listitem">
+        <div class="feature-icon" aria-hidden="true">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
+        </div>
+        <div class="feature-title">Incremental build cache</div>
+        <div class="feature-desc">A content-addressed cache means unchanged steps cost zero tokens and rebuild instantly — even after a clean checkout. Share it across machines or CI through a git repo.</div>
+        <span class="feature-tag feature-tag--new">New</span>
+      </div>
+
+      <div class="feature-card" role="listitem">
+        <div class="feature-icon" aria-hidden="true">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="6" y1="3" x2="6" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 01-9 9"/></svg>
+        </div>
+        <div class="feature-title">Parallel builds &amp; observability</div>
+        <div class="feature-desc">A dependency-aware scheduler runs independent steps concurrently with a configurable cap, retries only the steps that failed, and shows a live build plan with per-step duration, token cost, and cache hits.</div>
+        <span class="feature-tag feature-tag--new">New</span>
       </div>
 
       <div class="feature-card" role="listitem">
@@ -1175,7 +1211,6 @@
         </div>
         <div class="feature-title">Local Preview</div>
         <div class="feature-desc">Auto-detects Docker Compose or your stack (FastAPI, Flask, Next.js). One-click run with live service health dots, port links, and streamed logs.</div>
-        <span class="feature-tag feature-tag--new">New in beta.28</span>
       </div>
 
       <div class="feature-card" role="listitem">
@@ -1192,7 +1227,6 @@
         </div>
         <div class="feature-title">Stuck build detection</div>
         <div class="feature-desc">Heartbeat ticker detects frozen git operations. Amber warning at 30s, prominent Stop button at 60s. Cancel kills the subprocess; Restart triggers a fresh branch.</div>
-        <span class="feature-tag feature-tag--new">New in beta.28</span>
       </div>
 
       <div class="feature-card" role="listitem">
@@ -1275,7 +1309,7 @@
       <div class="lifecycle-phase" role="listitem">
         <div class="phase-num">04</div>
         <div class="phase-name">Build</div>
-        <div class="phase-desc">Generate code, commit atomically with conventional commits, open PRs, and preview locally</div>
+        <div class="phase-desc">Generate code with build profiles and a parallel, cache-aware scheduler; commit atomically with conventional commits, open PRs, and preview locally</div>
       </div>
       <div class="lifecycle-phase" role="listitem">
         <div class="phase-num">05</div>
