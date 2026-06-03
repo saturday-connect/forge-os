@@ -381,6 +381,15 @@
           <div class="view-subtitle">Generate code from specs, then commit and push</div>
         </div>
         <div style="display:flex;align-items:center;gap:8px;">
+          <div style="display:flex;align-items:center;gap:6px;margin-right:2px;">
+            <span style="font-size:11px;color:var(--text-3);font-weight:600;">Profile</span>
+            <div style="display:flex;gap:1px;border:1px solid var(--border);border-radius:8px;padding:2px;background:var(--bg-2,rgba(255,255,255,.03));">
+              <button class="toggle-btn build-profile-btn" data-profile="fast" onclick="setBuildProfile('fast')" title="Mechanical steps (infra, tests) use the fast model · max parallelism (4) · no extra validation">Fast</button>
+              <button class="toggle-btn build-profile-btn" data-profile="balanced" onclick="setBuildProfile('balanced')" title="Your model on every step · concurrency 2">Balanced</button>
+              <button class="toggle-btn build-profile-btn" data-profile="thorough" onclick="setBuildProfile('thorough')" title="Your model on every step · serial · post-build validation on">Thorough</button>
+              <button class="toggle-btn build-profile-btn" data-profile="custom" onclick="setBuildProfile('custom')" title="Use your per-step model + Max-parallel-steps settings">Custom</button>
+            </div>
+          </div>
           <button class="btn btn-ghost" onclick="previewBuildCost()" id="btn-build-preview" title="Estimate tokens and see which steps will regenerate, before running">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
             Preview cost
@@ -623,6 +632,18 @@
               <label class="form-label">Default model</label>
               <select class="form-select" id="settings-model" onchange="renderSettingsStepModels();renderSettingsGenModels();"></select>
               <div class="settings-model-hint" id="settings-model-hint">Used for every build step and generate stage left on "Default" below. Set per-step or per-stage overrides only where you want something different.</div>
+            </div>
+
+            <!-- Build profile: bundles model tier + concurrency + validation -->
+            <div class="form-group">
+              <label class="form-label" style="margin:0;">Build profile</label>
+              <div style="display:flex;gap:1px;border:1px solid var(--border);border-radius:8px;padding:2px;background:var(--bg-2,rgba(255,255,255,.03));width:fit-content;margin-top:4px;">
+                <button type="button" class="toggle-btn build-profile-btn" data-profile="fast" onclick="setBuildProfile('fast')">Fast</button>
+                <button type="button" class="toggle-btn build-profile-btn" data-profile="balanced" onclick="setBuildProfile('balanced')">Balanced</button>
+                <button type="button" class="toggle-btn build-profile-btn" data-profile="thorough" onclick="setBuildProfile('thorough')">Thorough</button>
+                <button type="button" class="toggle-btn build-profile-btn" data-profile="custom" onclick="setBuildProfile('custom')">Custom</button>
+              </div>
+              <div class="settings-model-hint" style="margin-top:6px;">Fast: mechanical steps (infra, tests) use the fast model, max parallelism. Balanced: your model on every step. Thorough: serial + post-build validation. The per-step model and "Max parallel build steps" controls below apply only under <strong>Custom</strong>.</div>
             </div>
 
             <!-- Per-step model tiering (optional) -->

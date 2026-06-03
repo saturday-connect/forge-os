@@ -2475,6 +2475,29 @@ async function runBuildStep(step, phaseId) {
   }
 }
 
+// ---- Build profile (Fast / Balanced / Thorough / Custom) -------------
+async function setBuildProfile(name) {
+  try {
+    const res = await apiFetch('/api/settings', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ build_profile: name })
+    });
+    if (!res.ok) { showToast('Failed to set build profile', 'error'); return; }
+    if (state) state.build_profile = name;
+    updateProfileButtons();
+    showToast('Build profile: ' + name, 'success');
+    loadState();
+  } catch (e) {
+    showToast('Failed to set build profile', 'error');
+  }
+}
+
+function updateProfileButtons() {
+  const p = (state && state.build_profile) || 'balanced';
+  document.querySelectorAll('.build-profile-btn').forEach(b =>
+    b.classList.toggle('active', b.dataset.profile === p));
+}
+
 // ---- Build Progress Panel --------------------------------------------
 // Vercel/Railway-style: stage indicators + animated progress bar + time estimates.
 // No raw log noise — users need signal, not output.
@@ -3299,6 +3322,7 @@ async function stopLocalRun() {
 
 function renderBuild() {
   fetchBuildSteps();
+  updateProfileButtons();
   syncReviewStatus();
   checkAllPrStatuses();
   fetchLocalRun();
@@ -5053,6 +5077,7 @@ function renderSettings() {
 
   const _bcSel = document.getElementById('settings-build-concurrency');
   if (_bcSel) _bcSel.value = String(state.build_concurrency || 2);
+  updateProfileButtons();
 
   if (detectedTools) {
     renderToolPicker();

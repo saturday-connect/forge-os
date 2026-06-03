@@ -1744,6 +1744,47 @@ def set_processing(status, stage=""):
             logger.warning("set_processing write: %s", exc)
 
 
+# ── Build profiles ───────────────────────────────────────────────────────
+# A profile bundles the three real build knobs — per-step model tier, scheduler
+# concurrency, and post-build validation — into one choice. "custom" falls back
+# to the individual settings (build_step_models / build_concurrency), so existing
+# power-user configs are preserved on upgrade.
+_BUILD_PROFILES = ("fast", "balanced", "thorough", "custom")
+_BLD_FAST_STEPS = ("infra", "tests")
+_PROFILE_CONCURRENCY = {"fast": 4, "balanced": 2, "thorough": 1}
+
+
+def _resolve_build_profile(proj):
+    """Effective profile. Explicit setting wins; otherwise 'custom' when the user
+    has manual overrides (preserve them), else 'balanced'."""
+    p = proj.get("build_profile")
+    if p in _BUILD_PROFILES:
+        return p
+    return "custom" if (proj.get("build_step_models") or proj.get("build_concurrency")) else "balanced"
+
+
+def _profile_step_model(profile, step, proj, global_tool, global_model):
+    """(tool, model) for a build step under the resolved profile. Non-custom
+    profiles keep the global tool; 'fast' downshifts mechanical steps to the
+    tool's fast_model."""
+    if profile == "custom":
+        ov = (proj.get("build_step_models", {}) or {}).get(step, {}) or {}
+        return (ov.get("tool") or global_tool, ov.get("model") or global_model)
+    if profile == "fast" and step in _BLD_FAST_STEPS:
+        return (global_tool, KNOWN_TOOLS.get(global_tool, {}).get("fast_model") or global_model)
+    return (global_tool, global_model)
+
+
+def _profile_concurrency(profile, proj):
+    """Max parallel build steps under the resolved profile (custom = saved setting)."""
+    if profile == "custom":
+        try:
+            return max(1, min(int(proj.get("build_concurrency") or 2), 4))
+        except (TypeError, ValueError):
+            return 2
+    return _PROFILE_CONCURRENCY.get(profile, 2)
+
+
 def compute_full_state():
     if not os.path.isdir(FORGE_DIR):
         return {
@@ -1912,6 +1953,7 @@ def compute_full_state():
         "skip_org_context": proj.get("skip_org_context", False),
         "stage_batch": proj.get("stage_batch", False),
         "build_concurrency": proj.get("build_concurrency", 2),
+        "build_profile": _resolve_build_profile(proj),
         "orgContext": _build_org_context_meta(),
         "user": load_user(),
         "project_type": proj.get("project_type", "standard"),
@@ -2256,14 +2298,12 @@ class ForgeHandler(BaseHTTPRequestHandler):
                                    if p["id"] == _pv_phase), "")
             _g_tool  = _pvproj.get("tool", DEFAULT_TOOL)
             _g_model = _pvproj.get("model", "")
-            _ov_all  = _pvproj.get("build_step_models", {}) or {}
+            _pv_profile = _resolve_build_profile(_pvproj)
             _runner  = os.path.join(FORGE_DIR, "scripts", "build_runner.py")
             _steps = ["backend", "frontend", "integration", "tests", "infra"]
             _out = {}
             for _s in _steps:
-                _ov = _ov_all.get(_s, {}) or {}
-                _t = _ov.get("tool") or _g_tool
-                _m = _ov.get("model") or _g_model
+                _t, _m = _profile_step_model(_pv_profile, _s, _pvproj, _g_tool, _g_model)
                 _penv = {**os.environ, "FORGE_TOOL": _t, "FORGE_MODEL": _m,
                          "FORGE_REPO_ROOT": REPO_ROOT, "FORGE_DATA_DIR": FORGE_DIR,
                          FORGE_PHASE_ID_ENV: _pv_phase, FORGE_PHASE_NAME_ENV: _pv_phase_name}
@@ -4620,6 +4660,13 @@ class ForgeHandler(BaseHTTPRequestHandler):
                     self._json_response(400, {"error": "build_concurrency must be an integer 1-4"})
                     return
                 proj["build_concurrency"] = max(1, min(_bc, 4))
+            if "build_profile" in data:
+                # Bundles model tier + concurrency + validation. "custom" honors
+                # the individual build_step_models / build_concurrency settings.
+                if data["build_profile"] not in _BUILD_PROFILES:
+                    self._json_response(400, {"error": "unknown build_profile"})
+                    return
+                proj["build_profile"] = data["build_profile"]
             if "git" in data and "kb_repo_url" in data["git"]:
                 proj["git"]["kb_repo_url"] = data["git"]["kb_repo_url"]
             save_project_state(proj)
@@ -4881,18 +4928,20 @@ class ForgeHandler(BaseHTTPRequestHandler):
                     _global_tool  = proj.get("tool", DEFAULT_TOOL)
                     _global_model = proj.get("model", "")
                     _step_overrides = proj.get("build_step_models", {}) or {}
+                    _profile = _resolve_build_profile(proj)
+                    # "thorough" turns on post-build validation for every step.
+                    if _profile == "thorough":
+                        _base_env["FORGE_VALIDATE_BUILD"] = "1"
 
                     def _run_one(s, extra_env=None):
                         """Run one build_runner step, streaming stdout to its log
                         file. Returns the process exit code (0 = success)."""
                         set_processing(STATUS_RUNNING, s)
                         _log_path = os.path.join(FORGE_DIR, "runs", f"build-log-{s}.txt")
-                        # Per-step model/tool tiering: a step can override the global
-                        # tool+model (e.g. a fast model for mechanical steps). Falls
-                        # back to the project's global tool/model when unset.
-                        _ov = _step_overrides.get(s, {}) or {}
-                        _step_tool  = _ov.get("tool")  or _global_tool
-                        _step_model = _ov.get("model") or _global_model
+                        # Model/tool resolved from the build profile (custom = the
+                        # per-step build_step_models override, falling back to global).
+                        _step_tool, _step_model = _profile_step_model(
+                            _profile, s, proj, _global_tool, _global_model)
                         _renv = {**_base_env,
                                  "FORGE_TOOL": _step_tool, "FORGE_MODEL": _step_model,
                                  **(extra_env or {})}
@@ -4931,15 +4980,9 @@ class ForgeHandler(BaseHTTPRequestHandler):
                             "tests":       ["backend", "frontend"],
                             "infra":       ["backend", "frontend"],
                         }
-                        # Concurrency: the saved setting is authoritative; fall back
-                        # to ambient FORGE_BUILD_CONCURRENCY, then to 2. Clamp [1,4].
-                        try:
-                            _bc_setting = proj.get("build_concurrency")
-                            _max_c = int(_bc_setting) if _bc_setting else int(
-                                os.environ.get("FORGE_BUILD_CONCURRENCY", "2"))
-                        except (TypeError, ValueError):
-                            _max_c = 2
-                        _max_c = max(1, min(_max_c, 4))
+                        # Concurrency from the resolved profile (custom = the saved
+                        # build_concurrency setting). Clamped [1,4].
+                        _max_c = _profile_concurrency(_profile, proj)
                         _orch = {"FORGE_ORCHESTRATED": "1"}  # build_runner skips its own lock
                         _failed = set()
                         if step == "failed":
