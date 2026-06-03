@@ -350,7 +350,9 @@ Single workflow: `.github/workflows/build-desktop.yml`
 - Tag builds: publish to GitHub Releases (electron-updater reads `latest*.yml` from releases)
 - Working directory: `desktop/` (not `electron/`)
 
-**GitHub Pages**: Configured to deploy from `/docs` branch directly — no Actions workflow needed or present. The old `static.yml` workflow was deleted to prevent duplicate deployments.
+**GitHub Pages**: Configured to deploy from the `/docs` folder on `main` directly — no Actions workflow needed or present (no `docs` branch exists). The old `static.yml` workflow was deleted to prevent duplicate deployments. The site is a single `docs/index.html` (inline CSS/JS) + `docs/assets/`. The version banner and download buttons are **fetched live from the latest GitHub release** (`api.github.com/repos/.../releases`, reads `tag_name` + `browser_download_url`) — never hardcode the version in the buttons; only the static JSON-LD `softwareVersion` is hand-maintained.
+
+**Docs-vs-release hygiene**: a docs-only change must NOT bump `desktop/package.json` (the version-bump-to-release flow would cut a spurious desktop release). Pushing `docs/` to `main` still triggers `build-desktop.yml` (it builds but `check-version` skips the release). Add `paths-ignore: ['docs/**']` to the workflow to skip the app build on docs-only commits.
 
 ---
 
@@ -641,6 +643,29 @@ Component sizing rules:
 - Design decision: `_run_consistency_check()` is wrapped in try/except; a fix always completes even if the downstream AI call fails
 - This is intentional — consistency check is advisory, not blocking
 
+### Build Step Blocks On Missing Source Docs
+- Symptom: `run_step` exits without calling the AI; `build-system.json` shows `status: error`, message "No source documents found"
+- Cause: `collect_docs(meta)` returned empty — the step's `source_dirs` (e.g. `01-requirements`) had no `.md` files. Build steps are hard-gated on upstream specs and on `_STEP_REQUIRES` (e.g. integration needs backend built first)
+- Implication: exercising `run_step` (in tests or real builds) requires seeded/generated spec docs; an empty project errors *before* any cache or AI logic runs
+
+### Stale Validation Paths In This File
+- Symptom: the documented `./forge upgrade`, `test-projects/saas-todo`, and `.projects/task-flow` targets report "Forge not initialized" — those dirs don't exist on this machine
+- Cause: the real live runtimes are the Electron-managed projects under `~/.forge/projects/<uuid>/scripts/`; `build_forge.py` hot-deploys there (≈15 dirs), not to a repo-root `.forge`
+- Takeaway: validate against `~/.forge/projects/*/scripts/` (or `init` a throwaway project). Treat the repo-root / `test-projects` paths in the Validation Workflow as legacy
+
+### Docs-Only Push Triggers A (Non-Releasing) CI Build
+- Symptom: editing only `docs/` and pushing to main starts the full `build-desktop.yml` matrix
+- Cause: the workflow triggers on any push to main. `check-version` then sees the current version already released and skips the *release*, but the build matrix still runs and uploads 14-day artifacts — wasted CI
+- Fix: add `paths-ignore: ['docs/**']` to the push trigger so docs-only commits skip the app build. Also: a docs change must NOT bump `desktop/package.json` (that would cut a spurious release — the version-bump-to-release flow ties releases to the manifest version)
+
+### Cross-Run Build Cache + AI Nondeterminism
+- Design: the cache is content-addressed by `input_hash = sha256(tool\0model\0prompt)`; identical inputs restore the stored output at 0 tokens
+- Note: AI output for identical inputs can differ run-to-run, so a store entry is "a valid output," not "the only output." `FORGE_FORCE_REBUILD=1` skips restore AND overwrites the entry, so a forced rebuild refreshes the cache rather than leaving a stale entry. The cross-run store hash and `run.py`'s single-file gen-cache hash are independent (different prompts), so toggling batch/per-file or local/remote modes can cause one redundant regen, then re-converges
+
+### Testing AI-Dependent Runtime Without Spending Tokens
+- Pattern established this session: validate generation/build orchestration by **stubbing the AI call** (`build_runner.invoke_ai` / a no-op `build_runner.py`) and running against an **isolated temp copy** of a managed project; for git-backed features, point at a **local bare repo** (`git init --bar`e + `file://`). Assert on observable effects (files written, env vars passed to the subprocess, exit codes, `build-system.json` fields, cache entries) — never on model output
+- This made every beta.110–116 change verifiable with zero AI/credential cost; reuse it for future generate/build changes
+
 ---
 
 ## Success Log
@@ -686,6 +711,29 @@ Component sizing rules:
 - Persistent build cache (Phase 3/D1): content-addressed store at `~/.forge/build-cache/<input_hash>/` (build_runner.py `_build_cache_save` / `_build_cache_restore` / `_build_cache_gc`). Unlike the in-place skip-unchanged check, this survives a `15-build` clean or a fresh checkout — restore hook fires after an in-place miss, save hook after a successful non-degenerate build. Backend's restore re-establishes the shared `api-contract.md` downstream steps read. LRU-capped (`_BUILD_CACHE_MAX_ENTRIES`); disable with `FORGE_BUILD_CACHE=0`; `FORGE_FORCE_REBUILD=1` bypasses + overwrites. Cleared via `build_runner.py --clear-cache` or `POST /api/build-system {action:"clear_cache"}` (Build view "Clear cache" button). Validated hermetically: generate->store->clean->restore (0 AI calls, `cached:true`), and clear->regenerate
 - Remote build cache sync (Phase 3/D2): `build_cache_repo` ({url, branch} in `project-state.json`) optionally shares the cross-run cache across machines/CI. `_run_sync_build_cache` (server.py) union-syncs the local store with the git repo — entries are immutable (keyed by input_hash) so the merge is conflict-free: pull = copy remote entries missing locally, push = copy local entries missing remotely, then commit+push (rebase+retry once on rejection). Reuses the KB git plumbing (PAT auth via `x-access-token`, `_cache_auth_url` injects the token for github https and passes `file://`/ssh through). Advisory — invoked explicitly via `POST /api/build-system {action:"sync_cache"}` (Build view "Sync cache" button, shown when a repo is configured), never inline in a build. The cache dir name is centralized in `constants.py` (`BUILD_CACHE_DIRNAME`) so build_runner + server agree. Validated against a local bare repo: A push -> B pull -> B push -> A pull, bidirectional, no GitHub needed
 - Build DAG view + timing console (Phase 4): the build step dependency graph is centralized as `_BUILD_DAG` (server.py — single source for the parallel scheduler and the UI) and exposed via `GET /api/build-system` (`deps`). The Build view renders a "Build plan" panel (`renderBuildDag` in app.js): dependency waves (backend -> frontend/integration -> tests/infra) with per-step status, duration (`generated_at - started_at`), tokens, and cache badge, live-updating via the existing build polling. All timing/token data already lived in `build-system.json` — no new state. Completes the build-optimization roadmap (Phases 1-4: concurrency/retry, profiles, persistent+remote cache, observability)
+- Hermetic test discipline for AI-dependent runtime: every beta.110–116 change validated by stubbing the AI call + isolated temp projects + local bare git repos — zero AI/credential cost (see Failure Log)
+- Public site refreshed (docs/index.html): build-optimization feature cards added, stale `beta.28` tags removed, JSON-LD version current; deployed via the `docs/` folder on main without an app version bump
+
+---
+
+## Future Guidance
+
+Direction and known limitations for the next iteration. None of these block current functionality.
+
+### Build optimization (Phases 1-4 shipped)
+- **Remote cache (D2) is manual-sync.** Auto-sync (pull-before-build / push-after, fire-and-forget so it never blocks a build) is the natural next step. Keep it advisory.
+- **Cache GC is a simple LRU cap** (`_BUILD_CACHE_MAX_ENTRIES = 300`). Add size-based eviction + a remote-cache GC if stores grow large.
+- **`FORGE_VALIDATE_BUILD` is only enabled by the `thorough` profile.** A standalone "validate build output" toggle would let `custom` profiles opt in without going thorough.
+- **The DAG view is read-only.** Could add per-step log drill-down and a live timing waterfall (data is already in `build-system.json`).
+
+### Hygiene / debt
+- **Correct the stale Validation Workflow paths** in this file to target `~/.forge/projects/*/scripts/` (the real runtimes) instead of the non-existent repo-root `.forge` / `test-projects` / `.projects/task-flow`.
+- **Add `paths-ignore: ['docs/**']`** to `build-desktop.yml` so docs-only pushes skip the app build matrix.
+- **Centralize remaining build constants** the same way `BUILD_CACHE_DIRNAME` was — any path/marker shared by `build_runner` and `server` should live in `constants.py` to prevent drift.
+
+### Method to keep using
+- For any generate/build runtime change, **validate hermetically** (stub `invoke_ai` / `build_runner`, isolated temp project, local bare repo) before shipping. It caught the real bug this session (build step blocked on empty source docs) at zero cost.
+- Ship in **phases, each its own `beta.NNN` + merge + release**, with a confirm-before-next-phase checkpoint.
 
 ---
 

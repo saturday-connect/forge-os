@@ -4,6 +4,12 @@ on:
   push:
     branches: [main]
     tags: ['v*']
+    # Docs-only / top-level Markdown changes don't affect the app — skip the build.
+    # NOTE: '*.md' matches root only, so build-input prompts in src/data/**/*.md
+    # still trigger a build.
+    paths-ignore:
+      - 'docs/**'
+      - '*.md'
   workflow_dispatch:
 
 permissions:
