@@ -4922,17 +4922,46 @@ function renderToolPicker() {
   renderSettingsGenModels();
 }
 
+// Re-map per-step/per-stage overrides from one tool to another, preserving the
+// TIER. An override that was the old tool's fast model becomes the new tool's
+// fast model; anything that was the old tool's default becomes "Default" (so it
+// follows the new global model). Overrides intentionally on a third tool are
+// left alone. Mutates the draft in place; the caller persists only on Save.
+function _remapDraftToTool(draft, oldTool, newTool) {
+  if (!draft || !detectedTools) return;
+  const oldInfo = detectedTools[oldTool] || {};
+  const newInfo = detectedTools[newTool] || {};
+  Object.keys(draft).forEach(function(k) {
+    const ov = draft[k] || {};
+    if (ov.tool && ov.tool !== oldTool) return;       // intentional cross-tool: leave it
+    const wasFast = ov.model && ov.model === oldInfo.fast_model;
+    if (wasFast && newInfo.fast_model) {
+      draft[k] = { tool: newTool, model: newInfo.fast_model };
+    } else {
+      // was the strong/default tier -> revert to "Default" (new global model)
+      delete draft[k];
+    }
+  });
+}
+
 function selectTool(toolId) {
-  // Update hidden value
   const hidden = document.getElementById('settings-tool');
+  const oldTool = (hidden && hidden.value) || state.tool || '';
+  // When the global tool changes, re-map the tiering drafts to the new tool so
+  // the per-step/per-stage rows stop showing the previous tool's models.
+  // (Draft only — persisted when the user clicks Save.)
+  if (oldTool && oldTool !== toolId) {
+    _remapDraftToTool(_stepModelsDraft, oldTool, toolId);
+    _remapDraftToTool(_genModelsDraft, oldTool, toolId);
+  }
   if (hidden) hidden.value = toolId;
-  // Update visual state
   document.querySelectorAll('.tool-option').forEach(function(el) {
     el.classList.toggle('tool-option--active', el.dataset.tool === toolId);
   });
   _updateInstallBanner(toolId);
-  populateModelDropdown(toolId, '');
-  renderSettingsStepModels();  // refresh per-step "Default" hints for the new global tool
+  // Default the global model to the new tool's default so "Default" rows resolve sensibly
+  populateModelDropdown(toolId, (detectedTools[toolId] || {}).default_model || '');
+  renderSettingsStepModels();
   renderSettingsGenModels();
 }
 
