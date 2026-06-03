@@ -195,6 +195,12 @@ _reviews_lock  = threading.Lock()
 _index_lock    = threading.Lock()
 _generate_lock = threading.Lock()   # guards _active_generate_proc
 _active_generate_proc = None        # current Popen for the running forge-generate subprocess
+# Mutual-exclusion across ALL AI document operations (generate pipeline + fix/
+# critique). Acquired non-blocking in the request handler BEFORE the worker
+# thread starts, so two rapid clicks can't both pass a status-file check and
+# launch competing pipelines (the file status is only set later, inside the
+# thread — a time-of-check/time-of-use race).
+_generation_busy_lock = threading.Lock()
 
 _build_lock       = threading.Lock()  # guards _active_build_pid + _build_cancel
 _active_build_pid = None              # PID of the current blocking git/curl subprocess
@@ -2680,17 +2686,11 @@ class ForgeHandler(BaseHTTPRequestHandler):
             stage = data.get("stage", "all")
             forge_script = FORGE_SCRIPT or os.path.abspath(os.path.join(FORGE_DIR, "..", "..", "forge"))
 
-            # Concurrent operation guard
-            status_file_check = os.path.join(FORGE_DIR, FILE_STATUS)
-            if os.path.exists(status_file_check):
-                try:
-                    with open(status_file_check) as _scf:
-                        processing_status = json.load(_scf)
-                    if processing_status.get("status") == STATUS_RUNNING:
-                        self._json_response(409, {"error": "A generation is already in progress"})
-                        return
-                except (OSError, json.JSONDecodeError) as exc:
-                    logger.debug("status_file_check: %s", exc)
+            # Concurrent operation guard — real lock (not just a status-file
+            # check, which races because status is set later inside the thread).
+            if not _generation_busy_lock.acquire(blocking=False):
+                self._json_response(409, {"error": "A generation is already in progress"})
+                return
 
             def _run_stage_proc(cmd, cwd, env):
                 """Launch one forge-generate subprocess, register it for cancel, wait for it."""
@@ -2761,6 +2761,7 @@ class ForgeHandler(BaseHTTPRequestHandler):
                     with _generate_lock:
                         _active_generate_proc = None
                     set_processing(STATUS_IDLE)
+                    _generation_busy_lock.release()
                     if tmp_combined and os.path.exists(tmp_combined):
                         try:
                             os.remove(tmp_combined)
@@ -4692,20 +4693,29 @@ class ForgeHandler(BaseHTTPRequestHandler):
                 self._json_response(400, {"error": "invalid path"})
                 return
 
-            # Concurrent operation guard
-            status_file_fix = os.path.join(FORGE_DIR, FILE_STATUS)
-            if os.path.exists(status_file_fix):
-                try:
-                    with open(status_file_fix) as _scf:
-                        _cur_status = json.load(_scf)
-                    if _cur_status.get("status") == STATUS_RUNNING:
-                        self._json_response(409, {"error": "A generation is already in progress"})
-                        return
-                except (OSError, json.JSONDecodeError) as exc:
-                    logger.debug("status_file_fix read: %s", exc)
+            # Concurrent operation guard — shared with /api/generate so a
+            # critique-fix can't run alongside a generate pipeline (or another fix).
+            if not _generation_busy_lock.acquire(blocking=False):
+                self._json_response(409, {"error": "A generation is already in progress"})
+                return
 
             stage = file_path.split("/")[0].split("-", 1)[1] if "-" in file_path.split("/")[0] else "context"
             status_file = os.path.join(FORGE_DIR, FILE_STATUS)
+
+            # Apply the per-stage model tiering to the critique-regenerate too, so
+            # it uses the same model the stage is configured for (not the server's
+            # ambient global). Falls back to the project global.
+            _fproj = load_project_state()
+            _fov = (_fproj.get("generate_stage_models", {}) or {}).get(stage, {}) or {}
+            _fix_env = {
+                **os.environ,
+                "FORGE_TOOL":  _fov.get("tool")  or _fproj.get("tool", DEFAULT_TOOL),
+                "FORGE_MODEL": _fov.get("model") or _fproj.get("model", ""),
+                "FORGE_REPO_ROOT": REPO_ROOT,
+                "FORGE_DATA_DIR": FORGE_DIR,
+                # A critique fix is an explicit request — always regenerate.
+                "FORGE_FORCE_REGEN": "1",
+            }
 
             def run_fix():
                 _consistency = None
@@ -4714,7 +4724,7 @@ class ForgeHandler(BaseHTTPRequestHandler):
                         with open(status_file, "w") as sf:
                             json.dump({"status": STATUS_FIXING, "stage": stage, "file": file_path, "updated_at": datetime.now().isoformat()}, sf)
                     cmd = [sys.executable, os.path.join(FORGE_DIR, "scripts/run.py"), stage, "--output", file_path, "--critique", critique]
-                    result = subprocess.run(cmd, cwd=REPO_ROOT)
+                    result = subprocess.run(cmd, cwd=REPO_ROOT, env=_fix_env)
                     if result.returncode == 0:
                         _proj = load_project_state()
                         _consistency = _run_consistency_check(file_path, _proj)
@@ -4725,6 +4735,7 @@ class ForgeHandler(BaseHTTPRequestHandler):
                             _payload["consistency_check"] = _consistency
                         with open(status_file, "w") as sf:
                             json.dump(_payload, sf)
+                    _generation_busy_lock.release()
 
             t = threading.Thread(target=run_fix, daemon=True)
             t.start()
