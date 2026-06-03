@@ -4486,6 +4486,35 @@ body.mac .projects-main {
 }
 .settings-model-hint--warn { color: var(--amber); }
 
+/* Advanced disclosure — progressive disclosure for power-user settings */
+.settings-advanced {
+  margin-top: 18px;
+  border-top: 1px solid var(--border);
+}
+.settings-advanced > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  padding: 12px 0 2px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-2);
+  list-style: none;
+  user-select: none;
+}
+.settings-advanced > summary::-webkit-details-marker { display: none; }
+.settings-advanced > summary:hover { color: var(--text); }
+.settings-advanced-chevron { color: var(--text-3); transition: transform var(--trans); flex-shrink: 0; }
+.settings-advanced[open] > summary .settings-advanced-chevron { transform: rotate(90deg); }
+.settings-advanced-sub { font-weight: 400; font-size: 11px; color: var(--text-3); }
+.settings-advanced-body {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding-top: 12px;
+}
+
 /* ============================================================
    Tool Gate — Generate view blocking banner
    ============================================================ */

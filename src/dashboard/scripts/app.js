@@ -2558,6 +2558,11 @@ async function setBuildProfile(name) {
     if (!res.ok) { showToast('Failed to set build profile', 'error'); return; }
     if (state) state.build_profile = name;
     updateProfileButtons();
+    // Choosing Custom unlocks per-step controls — open Advanced so they're visible.
+    if (name === 'custom') {
+      const adv = document.querySelector('.settings-advanced');
+      if (adv) adv.open = true;
+    }
     showToast('Build profile: ' + name, 'success');
     loadState();
   } catch (e) {
@@ -2569,6 +2574,9 @@ function updateProfileButtons() {
   const p = (state && state.build_profile) || 'balanced';
   document.querySelectorAll('.build-profile-btn').forEach(b =>
     b.classList.toggle('active', b.dataset.profile === p));
+  // Per-step model + concurrency apply only under the Custom profile.
+  const custom = document.getElementById('settings-custom-build');
+  if (custom) custom.style.display = (p === 'custom') ? 'flex' : 'none';
 }
 
 async function clearBuildCache() {

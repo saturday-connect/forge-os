@@ -639,11 +639,11 @@
             <div class="form-group">
               <label class="form-label">Default model</label>
               <select class="form-select" id="settings-model" onchange="renderSettingsStepModels();renderSettingsGenModels();"></select>
-              <div class="settings-model-hint" id="settings-model-hint">Used for every build step and generate stage left on "Default" below. Set per-step or per-stage overrides only where you want something different.</div>
+              <div class="settings-model-hint" id="settings-model-hint">Used for every generate stage and build step. Fine-tune individual stages or steps under Advanced.</div>
             </div>
 
-            <!-- Build profile: bundles model tier + concurrency + validation -->
-            <div class="form-group">
+            <!-- Build profile: the one build decision most users make -->
+            <div class="form-group" style="margin-bottom:0;">
               <label class="form-label" style="margin:0;">Build profile</label>
               <div style="display:flex;gap:1px;border:1px solid var(--border);border-radius:8px;padding:2px;background:var(--bg-2,rgba(255,255,255,.03));width:fit-content;margin-top:4px;">
                 <button type="button" class="toggle-btn build-profile-btn" data-profile="fast" onclick="setBuildProfile('fast')">Fast</button>
@@ -651,57 +651,69 @@
                 <button type="button" class="toggle-btn build-profile-btn" data-profile="thorough" onclick="setBuildProfile('thorough')">Thorough</button>
                 <button type="button" class="toggle-btn build-profile-btn" data-profile="custom" onclick="setBuildProfile('custom')">Custom</button>
               </div>
-              <div class="settings-model-hint" style="margin-top:6px;">Fast: mechanical steps (infra, tests) use the fast model, max parallelism. Balanced: your model on every step. Thorough: serial + post-build validation. The per-step model and "Max parallel build steps" controls below apply only under <strong>Custom</strong>.</div>
+              <div class="settings-model-hint" style="margin-top:6px;"><strong>Fast</strong> routes mechanical steps to a faster model and maxes parallelism. <strong>Balanced</strong> uses your model on every step. <strong>Thorough</strong> runs serially with post-build validation. <strong>Custom</strong> unlocks per-step control (under Advanced).</div>
             </div>
 
-            <!-- Per-step model tiering (optional) -->
-            <div class="form-group">
-              <div style="display:flex;align-items:center;justify-content:space-between;">
-                <label class="form-label" style="margin:0;">Model per build step <span style="font-weight:400;color:var(--text-3);">(optional)</span></label>
-                <button class="btn btn-ghost btn-xs" type="button" onclick="applyTieringDefaults()" title="Route mechanical steps (Infrastructure, Tests) to a faster model; keep the strong model for Backend/Frontend">Recommend tiering</button>
+            <!-- ADVANCED — progressive disclosure; collapsed by default to keep the common path simple -->
+            <details class="settings-advanced">
+              <summary>
+                <svg class="settings-advanced-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+                Advanced
+                <span class="settings-advanced-sub">per-stage models · batch · build cache</span>
+              </summary>
+              <div class="settings-advanced-body">
+
+                <!-- Per-stage model tiering for the document-generation pipeline -->
+                <div class="form-group">
+                  <div style="display:flex;align-items:center;justify-content:space-between;">
+                    <label class="form-label" style="margin:0;">Model per generate stage <span style="font-weight:400;color:var(--text-3);">(optional)</span></label>
+                    <button class="btn btn-ghost btn-xs" type="button" onclick="applyGenTieringDefaults()" title="Keep the strong model for the high-leverage doc stages (requirements, architecture, engineering…); route lighter stages (delivery, release, marketing…) to a faster model">Recommend tiering</button>
+                  </div>
+                  <div class="settings-model-hint" style="margin-bottom:8px;">Override the model per document-generation stage. Keep the foundational stages (requirements, architecture, engineering) strong; lighter stages can use a faster model.</div>
+                  <div id="settings-gen-models" style="max-height:240px;overflow-y:auto;"></div>
+                </div>
+
+                <!-- Batch generation: whole stage in one AI call (opt-in) -->
+                <div class="form-group">
+                  <label class="form-label" style="display:flex;align-items:center;gap:8px;cursor:pointer;margin:0;">
+                    <input type="checkbox" id="settings-stage-batch" style="width:auto;margin:0;accent-color:var(--primary);transform:translateY(1px);">
+                    Batch generation <span style="font-weight:400;color:var(--text-3);">(experimental)</span>
+                  </label>
+                  <div class="settings-model-hint" style="margin-top:6px;">Generate all of a stage's documents in one AI call — shared context is sent once instead of re-sent per file, cutting tokens. Falls back to per-file automatically.</div>
+                </div>
+
+                <!-- Build cache repo (optional): share the cross-run cache across machines/CI -->
+                <div class="form-group">
+                  <label class="form-label" style="margin:0;">Build cache repo <span style="font-weight:400;color:var(--text-3);">(optional)</span></label>
+                  <input type="text" class="form-input" id="settings-build-cache-url" placeholder="https://github.com/org/build-cache" style="margin-top:4px;">
+                  <input type="text" class="form-input" id="settings-build-cache-branch" placeholder="main" style="margin-top:6px;max-width:200px;">
+                  <div class="settings-model-hint" style="margin-top:6px;">Share the cross-run build cache across machines/CI (uses your Git token). Push/pull it from the Build view → "Sync cache".</div>
+                </div>
+
+                <!-- Custom-profile-only controls (revealed by updateProfileButtons when profile === custom) -->
+                <div id="settings-custom-build" style="display:none;flex-direction:column;gap:18px;">
+                  <div class="form-group" style="margin:0;">
+                    <div style="display:flex;align-items:center;justify-content:space-between;">
+                      <label class="form-label" style="margin:0;">Model per build step</label>
+                      <button class="btn btn-ghost btn-xs" type="button" onclick="applyTieringDefaults()" title="Route mechanical steps (Infrastructure, Tests) to a faster model; keep the strong model for Backend/Frontend">Recommend tiering</button>
+                    </div>
+                    <div class="settings-model-hint" style="margin-bottom:8px;">Custom profile only — route mechanical steps (Infrastructure, Tests) to a faster model; keep Backend/Frontend on the strong model.</div>
+                    <div id="settings-step-models"></div>
+                  </div>
+                  <div class="form-group" style="margin:0;">
+                    <label class="form-label" for="settings-build-concurrency" style="margin:0;">Max parallel build steps</label>
+                    <select class="form-select" id="settings-build-concurrency" style="max-width:140px;">
+                      <option value="1">1 (serial)</option>
+                      <option value="2">2</option>
+                      <option value="3">3</option>
+                      <option value="4">4</option>
+                    </select>
+                    <div class="settings-model-hint" style="margin-top:6px;">Custom profile only. Higher is faster but makes more concurrent AI calls — watch rate limits. Capped at 4.</div>
+                  </div>
+                </div>
+
               </div>
-              <div class="settings-model-hint" style="margin-bottom:8px;">Override the model for individual build steps. Leave on Default to use the model above. Routing simple steps to a fast model cuts build time and rate-limit pressure.</div>
-              <div id="settings-step-models"></div>
-            </div>
-
-            <!-- Per-stage model tiering for the document-generation pipeline -->
-            <div class="form-group">
-              <div style="display:flex;align-items:center;justify-content:space-between;">
-                <label class="form-label" style="margin:0;">Model per generate stage <span style="font-weight:400;color:var(--text-3);">(optional)</span></label>
-                <button class="btn btn-ghost btn-xs" type="button" onclick="applyGenTieringDefaults()" title="Keep the strong model for the high-leverage doc stages (requirements, architecture, engineering…); route lighter stages (delivery, release, marketing…) to a faster model">Recommend tiering</button>
-              </div>
-              <div class="settings-model-hint" style="margin-bottom:8px;">Override the model per document-generation stage. The foundational stages (requirements, architecture, engineering) drive everything downstream — keep those strong; the lighter stages can use a faster model.</div>
-              <div id="settings-gen-models" style="max-height:260px;overflow-y:auto;"></div>
-            </div>
-
-            <!-- Batch generation: whole stage in one AI call (opt-in) -->
-            <div class="form-group" style="margin-bottom:0;">
-              <label class="form-label" style="display:flex;align-items:center;gap:8px;cursor:pointer;margin:0;">
-                <input type="checkbox" id="settings-stage-batch" style="width:auto;margin:0;accent-color:var(--primary);transform:translateY(1px);">
-                Batch generation <span style="font-weight:400;color:var(--text-3);">(experimental)</span>
-              </label>
-              <div class="settings-model-hint" style="margin-top:6px;">Generate all of a stage's documents in a single AI call — shared upstream context is sent once instead of re-sent per file, cutting tokens. Falls back to per-file generation automatically if a batch is incomplete.</div>
-            </div>
-
-            <!-- Build concurrency: max parallel build steps -->
-            <div class="form-group" style="margin-bottom:0;margin-top:14px;">
-              <label class="form-label" for="settings-build-concurrency" style="margin:0;">Max parallel build steps</label>
-              <select class="form-select" id="settings-build-concurrency" style="max-width:140px;">
-                <option value="1">1 (serial)</option>
-                <option value="2">2</option>
-                <option value="3">3</option>
-                <option value="4">4</option>
-              </select>
-              <div class="settings-model-hint" style="margin-top:6px;">How many build steps the DAG scheduler runs at once. Higher is faster but makes more concurrent AI calls — watch rate limits. Capped at 4.</div>
-            </div>
-
-            <!-- Build cache repo (optional): share the cross-run cache across machines/CI -->
-            <div class="form-group" style="margin-bottom:0;margin-top:14px;">
-              <label class="form-label" style="margin:0;">Build cache repo <span style="font-weight:400;color:var(--text-3);">(optional)</span></label>
-              <input type="text" class="form-input" id="settings-build-cache-url" placeholder="https://github.com/org/build-cache" style="margin-top:4px;">
-              <input type="text" class="form-input" id="settings-build-cache-branch" placeholder="main" style="margin-top:6px;max-width:200px;">
-              <div class="settings-model-hint" style="margin-top:6px;">A git repo to share the cross-run build cache across machines/CI (uses your Git token). Push/pull it from the Build view → "Sync cache".</div>
-            </div>
+            </details>
           </div>
 
           <!-- Git Config -->
