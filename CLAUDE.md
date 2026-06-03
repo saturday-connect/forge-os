@@ -26,6 +26,7 @@ src/build_constants.py             all build-time string constants (paths, marke
 src/runtime/forge_cli.py.tmpl      CLI template compiled into ./forge
 src/runtime/server.py              dashboard API server (copied to .forge/scripts/server.py)
 src/runtime/build_runner.py        build-system runner (copied to .forge/scripts/build_runner.py)
+src/runtime/batch_runner.py        batch doc generator — whole stage in one AI call (copied to .forge/scripts/batch_runner.py)
 src/runtime/constants.py           runtime constants shared by server, build_runner, and template
 src/data/tools.json                AI tool + model definitions (source of truth for KNOWN_TOOLS)
 src/data/build_steps.json          build step definitions and execution order
@@ -72,10 +73,10 @@ docs/                              GitHub Pages product site (deployed from /doc
 `build_forge.py` is a pure compiler (~260 lines). It:
 1. Reads all data from `src/data/*.json`, `src/data/agents/*.md`, `src/data/gates/*.md`
 2. Reads runtime source files from `src/runtime/`
-3. Injects generated Python code blocks into `server.py` and `build_runner.py` via placeholder tokens
+3. Injects generated Python code blocks into `server.py`, `build_runner.py`, and `batch_runner.py` via placeholder tokens
 4. Renders `forge_cli.py.tmpl` via `str.format()` with all injected code blocks
 5. Writes the rendered output to `./forge`
-6. Hot-deploys `server.py`, `dashboard.html`, and `constants.py` to all live `.forge/scripts/` directories
+6. Hot-deploys `server.py`, `dashboard.html`, `constants.py`, `build_runner.py`, and `batch_runner.py` to all live `.forge/scripts/` directories
 
 All build-time string constants (file paths, JSON keys, codegen prefixes, placeholder sentinels, log messages, glob patterns) live in `src/build_constants.py`. There are no magic strings in `build_forge.py`.
 
@@ -89,6 +90,10 @@ KNOWN_TOOLS = {}  # __FORGE_KNOWN_TOOLS__
 
 # build_runner.py
 STEPS = {}  # __FORGE_BUILD_STEPS__
+
+# batch_runner.py
+STAGE_INPUTS = {}  # __FORGE_STAGE_INPUTS__
+STAGE_AGENTS = {}  # __FORGE_STAGE_AGENTS__
 ```
 
 These are replaced with generated Python dicts before the content is embedded into `forge`.
@@ -96,6 +101,17 @@ These are replaced with generated Python dicts before the content is embedded in
 ### Template Format() Pattern
 
 `forge_cli.py.tmpl` uses `str.format()` for code injection. Any literal Python braces inside the template that should survive injection unchanged must be doubled: `{{agent}}`, `{{gate}}`. Injected values do not need escaping.
+
+### Batch Generation (`FORGE_STAGE_BATCH`)
+
+The per-file generator (`run.py`) re-sends the full upstream context for every file in a stage, so an N-file stage pays for that context N times. `batch_runner.py` is an opt-in alternative that sends the shared context **once** and asks the model to emit every file of the stage in a single response (`=== path === ` blocks — the same pattern the code generator uses).
+
+- **Enable**: set `FORGE_STAGE_BATCH=1` in the environment of whatever launches generation (the CLI, or the dashboard server process). Opt-in; default behavior is unchanged.
+- **Hook**: `stage_runner.py` tries `batch_runner.py` first when `FORGE_STAGE_BATCH=1` and the stage has ≥2 pending files. Exit `0` = all files written (or all cached) → stage done. Any non-zero exit (`3` = deferred/incomplete/AI-failure, `2` = bad args) → falls through to the proven per-file loop. The batch path can never regress generation.
+- **Atomicity**: `batch_runner` writes files only when the parsed response contains *every* requested file; a partial/garbled batch writes nothing and defers.
+- **Reuse**: `batch_runner` imports `build_runner` and reuses its `invoke_ai`, `parse_files`, `_est_tokens`, and `_strip_wrapping_code_fence` — no duplication of AI-invocation logic.
+- **Cache caveat**: both paths share `runs/generate-cache.json`, but the input-hash covers the prompt, which differs between batch (multi-file) and per-file. Toggling `FORGE_STAGE_BATCH` invalidates the cache for affected files once (one redundant regen), then re-converges. Not a correctness issue — outputs are always written correctly.
+- **Injection**: `STAGE_INPUTS` / `STAGE_AGENTS` are injected at build time from `src/data/stage_pipeline.json` (the same source `run.py` uses), so no manual edits.
 
 ---
 
@@ -129,7 +145,7 @@ After any source change:
 
 ```bash
 python3 src/build_forge.py
-python3 -m py_compile src/build_forge.py src/runtime/server.py src/runtime/build_runner.py
+python3 -m py_compile src/build_forge.py src/runtime/server.py src/runtime/build_runner.py src/runtime/batch_runner.py
 ./forge upgrade
 ./forge --project "$PWD/.projects/task-flow" upgrade
 ./forge --project "$PWD/test-projects/saas-todo" upgrade
@@ -452,6 +468,7 @@ Inside a target `.forge/`:
 .forge/project-state.json       project settings, git, environments, builds, issues
 .forge/reviews.json             per-file review status
 .forge/runs/status.json         generation/processing status
+.forge/runs/generate-cache.json  per-file gen cache (input hash, tokens); shared by run.py + batch_runner
 .forge/runs/build-system.json   build subsystem step status
 .forge/runs/build-review.json   pre-push review state
 .forge/runs/kb-state.json           knowledge base pipeline operation state
@@ -660,6 +677,7 @@ Component sizing rules:
 - Manual code review: diff viewer + human verdict (approve/request_changes) with audit trail in build-review.json before push
 - `action` dispatch pattern in POST handlers: single endpoint per resource, multiple action values — avoids URL proliferation
 - CI auto-release: `check-version` job reads `desktop/package.json` version, creates git tag + GitHub Release if version not found — push to main is sufficient, no manual tag needed
+- Batch stage generation (`FORGE_STAGE_BATCH=1`): `batch_runner.py` emits a whole stage's docs in one AI call (shared context sent once, not N times), wired into `stage_runner` as a fast-path with all-or-nothing writes and automatic fallback to the per-file loop on any non-zero exit — validated hermetically (stubbed AI) for the success, partial-output, defer, and bad-args paths
 
 ---
 

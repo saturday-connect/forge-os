@@ -72,6 +72,7 @@ RUNTIME_SERVER_FILE = "server.py"
 RUNTIME_BUILD_RUNNER_FILE = "build_runner.py"
 RUNTIME_RUN_FILE = "run.py"
 RUNTIME_STAGE_RUNNER_FILE = "stage_runner.py"
+RUNTIME_BATCH_RUNNER_FILE = "batch_runner.py"
 RUNTIME_CLI_TEMPLATE_FILE = "forge_cli.py.tmpl"
 
 # ---------------------------------------------------------------------------
@@ -96,6 +97,9 @@ PLACEHOLDER_BUILD_STEPS = "STEPS = {}  # __FORGE_BUILD_STEPS__"
 PLACEHOLDER_SERVER_PY = "__FORGE_SERVER_PY__"
 PLACEHOLDER_AGENT_PROMPT = "__FORGE_AGENT_PROMPT__"
 PLACEHOLDER_DISTILL_PROMPT = "__FORGE_DISTILL_PROMPT__"
+# batch_runner.py — injected with the same pipeline data run.py uses
+PLACEHOLDER_STAGE_INPUTS = "STAGE_INPUTS = {}  # __FORGE_STAGE_INPUTS__"
+PLACEHOLDER_STAGE_AGENTS = "STAGE_AGENTS = {}  # __FORGE_STAGE_AGENTS__"
 
 # ---------------------------------------------------------------------------
 # Code generation variable names (emitted into the built forge binary)
@@ -109,6 +113,7 @@ CODEGEN_STAGE_MULTI_OUTPUTS = "STAGE_MULTI_OUTPUTS = "
 CODEGEN_STAGE_AGENT = "STAGE_AGENT = "
 CODEGEN_STAGE_GATE = "STAGE_GATE = "
 CODEGEN_STAGE_INPUTS = "STAGE_INPUTS = "
+CODEGEN_STAGE_AGENTS = "STAGE_AGENTS = "  # batch_runner stage->agent map (plural; distinct from STAGE_AGENT)
 CODEGEN_PIPELINE_STAGES = "PIPELINE_STAGES = "
 CODEGEN_AGENT_CONTENT_OPEN = "AGENT_CONTENT = {"
 CODEGEN_AGENT_CONTENT_CLOSE = "}"
@@ -146,6 +151,7 @@ HOT_DEPLOY_FILES = [
     RUNTIME_SERVER_FILE,
     RUNTIME_CONSTANTS_FILE,
     RUNTIME_BUILD_RUNNER_FILE,
+    RUNTIME_BATCH_RUNNER_FILE,
 ]
 
 # ---------------------------------------------------------------------------

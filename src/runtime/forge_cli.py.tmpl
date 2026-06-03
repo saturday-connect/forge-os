@@ -78,6 +78,39 @@ def main():
         status_file = os.path.join("runs", "status.json")
         run_error_file = os.path.join("runs", "last-run-error.json")
 
+        # Batch fast-path (opt-in via FORGE_STAGE_BATCH=1): generate the whole
+        # stage in ONE AI call — shared upstream context is sent once instead of
+        # re-sent per file. batch_runner exits 0 on full success / all-cached and
+        # non-zero to defer; on any non-zero we fall through to the proven
+        # per-file loop below, so this can never regress generation.
+        if os.environ.get("FORGE_STAGE_BATCH") == "1" and len(pending) >= 2:
+            print(f"[STAGE-RUNNER] Batch mode: generating {{len(pending)}} file(s) in one call")
+            if os.path.exists("runs"):
+                with open(status_file, "w", encoding='utf-8') as sf:
+                    json.dump({{
+                        "status": "running",
+                        "stage": stage,
+                        "file": f"all {{len(pending)}} files (batch)",
+                        "file_index": 1,
+                        "file_total": 1,
+                        "updated_at": __import__("datetime").datetime.now().isoformat()
+                    }}, sf)
+            batch_cmd = [sys.executable, "scripts/batch_runner.py", stage] + list(pending)
+            if raw_input:
+                batch_cmd.extend(["--raw-input", raw_input])
+            batch_result = subprocess.run(batch_cmd)
+            if batch_result.returncode == 0:
+                print(f"[STAGE-RUNNER] Batch complete: {{len(pending)}} file(s)")
+                if os.path.exists("runs"):
+                    with open(status_file, "w", encoding='utf-8') as sf:
+                        json.dump({{
+                            "status": "idle",
+                            "stage": stage,
+                            "updated_at": __import__("datetime").datetime.now().isoformat()
+                        }}, sf)
+                sys.exit(0)
+            print(f"[STAGE-RUNNER] Batch path exited {{batch_result.returncode}} — falling back to per-file generation")
+
         for file_idx, output_file in enumerate(pending):
             print(f"[STAGE-RUNNER] Generating: {{output_file}} ({{file_idx+1}}/{{total_files}})")
 
@@ -768,6 +801,8 @@ DASHBOARD_HTML = {DASHBOARD_HTML_CONTENT}
 
 BUILD_RUNNER_PY = {BUILD_RUNNER_PY_CONTENT}
 
+BATCH_RUNNER_PY = {BATCH_RUNNER_PY_CONTENT}
+
 CONSTANTS_PY = {CONSTANTS_PY_STRING_LITERAL}
 
 {AGENT_CONTENT_CODE}
@@ -919,6 +954,8 @@ PENDING
         f.write(VALIDATE_GATES_PY)
     with open(os.path.join(FORGE_DIR, "scripts/build_runner.py"), "w", encoding='utf-8') as f:
         f.write(BUILD_RUNNER_PY)
+    with open(os.path.join(FORGE_DIR, "scripts/batch_runner.py"), "w", encoding='utf-8') as f:
+        f.write(BATCH_RUNNER_PY)
     with open(os.path.join(FORGE_DIR, "scripts/server.py"), "w", encoding='utf-8') as f:
         f.write(SERVER_PY)
     with open(os.path.join(FORGE_DIR, "scripts/constants.py"), "w", encoding='utf-8') as f:
@@ -1070,6 +1107,7 @@ def _deploy_scripts_to_dir(scripts_dir):
             ("run.py",          RUN_PY),
             ("validate_gates.py", VALIDATE_GATES_PY),
             ("build_runner.py", BUILD_RUNNER_PY),
+            ("batch_runner.py", BATCH_RUNNER_PY),
             ("server.py",       SERVER_PY),
             ("constants.py",    CONSTANTS_PY),
             ("dashboard.html",  DASHBOARD_HTML),

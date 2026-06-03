@@ -32,6 +32,7 @@ from build_constants import (
     RUNTIME_BUILD_RUNNER_FILE,
     RUNTIME_RUN_FILE,
     RUNTIME_STAGE_RUNNER_FILE,
+    RUNTIME_BATCH_RUNNER_FILE,
     RUNTIME_CLI_TEMPLATE_FILE,
     DASHBOARD_OUTPUT_FILE,
     DASHBOARD_INDEX_FILE,
@@ -44,6 +45,8 @@ from build_constants import (
     PLACEHOLDER_SERVER_PY,
     PLACEHOLDER_AGENT_PROMPT,
     PLACEHOLDER_DISTILL_PROMPT,
+    PLACEHOLDER_STAGE_INPUTS,
+    PLACEHOLDER_STAGE_AGENTS,
     PROMPTS_DIR_NAME,
     AGENT_PROMPT_FILE,
     DISTILL_PROMPT_FILE,
@@ -56,6 +59,7 @@ from build_constants import (
     CODEGEN_STAGE_AGENT,
     CODEGEN_STAGE_GATE,
     CODEGEN_STAGE_INPUTS,
+    CODEGEN_STAGE_AGENTS,
     CODEGEN_PIPELINE_STAGES,
     CODEGEN_AGENT_CONTENT_OPEN,
     CODEGEN_AGENT_CONTENT_CLOSE,
@@ -207,6 +211,16 @@ BUILD_RUNNER_PY_CONTENT = BUILD_RUNNER_PY_CONTENT.replace(
     _generate_steps_code(STEPS, BUILD_ORDER)
 )
 
+with open(os.path.join(_HERE, RUNTIME_DIR_NAME, RUNTIME_BATCH_RUNNER_FILE), 'r', encoding=FILE_ENCODING) as _f:
+    BATCH_RUNNER_PY_CONTENT = _f.read()
+BATCH_RUNNER_PY_CONTENT = BATCH_RUNNER_PY_CONTENT.replace(
+    PLACEHOLDER_STAGE_INPUTS,
+    CODEGEN_STAGE_INPUTS + pformat(STAGE_PIPELINE[JSON_KEY_STAGE_INPUTS], width=PFORMAT_NORMAL, sort_dicts=False),
+).replace(
+    PLACEHOLDER_STAGE_AGENTS,
+    CODEGEN_STAGE_AGENTS + pformat(STAGE_PIPELINE[JSON_KEY_STAGE_AGENT], width=PFORMAT_NORMAL, sort_dicts=False),
+)
+
 
 def _stage_agent_code():
     return CODEGEN_STAGE_AGENT + pformat(STAGE_PIPELINE[JSON_KEY_STAGE_AGENT], width=PFORMAT_NORMAL, sort_dicts=False)
@@ -280,6 +294,7 @@ def _render_template():
         DASHBOARD_HTML_CONTENT=_json.dumps(DASHBOARD_HTML_CONTENT),
         FORGE_VERSION=FORGE_VERSION,
         BUILD_RUNNER_PY_CONTENT=_json.dumps(BUILD_RUNNER_PY_CONTENT),
+        BATCH_RUNNER_PY_CONTENT=_json.dumps(BATCH_RUNNER_PY_CONTENT),
         ALLOWED_MODELS_CODE=_generate_allowed_models_code(KNOWN_TOOLS),
         CONSTANTS_PY_CONTENT=CONSTANTS_PY_CONTENT,
         CONSTANTS_PY_STRING_LITERAL=_json.dumps(CONSTANTS_PY_CONTENT),
@@ -366,6 +381,9 @@ def _hot_deploy_runtime(run_py_content=None, stage_runner_content=None):
             # build_runner.py — write the injected content (STEPS populated), not the raw source
             with open(os.path.join(sd, HOT_DEPLOY_FILES[3]), "w", encoding=FILE_ENCODING) as _bf:
                 _bf.write(BUILD_RUNNER_PY_CONTENT)
+            # batch_runner.py — injected content (STAGE_INPUTS/STAGE_AGENTS populated)
+            with open(os.path.join(sd, HOT_DEPLOY_FILES[4]), "w", encoding=FILE_ENCODING) as _batf:
+                _batf.write(BATCH_RUNNER_PY_CONTENT)
             # run.py + stage_runner.py — the rendered generation runtime. Previously
             # only refreshed on `forge upgrade`; deploying here keeps the generate
             # pipeline (cache, tokens, per-stage model) current on every rebuild.
