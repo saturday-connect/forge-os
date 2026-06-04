@@ -4735,3 +4735,30 @@ body.mac .projects-main {
   vertical-align: middle;
   flex-shrink: 0;
 }
+
+/* ── Collaboration: Share dialog + shared-project discovery ──────────────── */
+.share-field { margin-bottom: 16px; }
+.share-field-label { font-size: 10px; font-weight: 600; color: var(--text-3); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px; }
+.share-vis-group { display: flex; flex-direction: column; gap: 6px; }
+.share-vis-opt { display: flex; align-items: center; gap: 8px; padding: 9px 11px; border: 1px solid var(--border); border-radius: 10px; cursor: pointer; font-size: 12px; transition: border-color .15s ease, background .15s ease; }
+.share-vis-opt:hover { border-color: rgba(255,255,255,0.18); background: rgba(255,255,255,0.02); }
+.share-vis-opt input { accent-color: var(--primary); margin: 0; }
+.share-vis-name { color: var(--text-1); font-weight: 500; }
+.share-vis-hint { color: var(--text-3); font-size: 11px; margin-left: auto; }
+.share-input { width: 100%; min-height: 38px; box-sizing: border-box; background: var(--bg-2); border: 1px solid var(--border); border-radius: 10px; padding: 8px 11px; font-size: 12px; color: var(--text-1); font-family: var(--mono); }
+.share-input:focus { outline: none; border-color: var(--primary); }
+.share-field-hint { font-size: 10px; color: var(--text-3); margin-top: 5px; }
+
+.discover-section { margin-top: 28px; border-top: 1px solid var(--border); padding-top: 18px; }
+.discover-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.discover-title { font-size: 13px; font-weight: 600; color: var(--text-1); }
+.discover-hint { font-size: 12px; color: var(--text-3); padding: 8px 0; }
+.discover-hint-inline { font-size: 11px; color: var(--text-3); }
+.discover-list { display: flex; flex-direction: column; gap: 8px; }
+.discover-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 11px 14px; background: var(--bg-2); border: 1px solid var(--border); border-radius: 12px; }
+.discover-row-info { min-width: 0; }
+.discover-row-name { font-size: 13px; font-weight: 500; color: var(--text-1); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.discover-row-meta { display: flex; align-items: center; gap: 8px; margin-top: 3px; }
+.discover-vis-pill { font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-2); background: rgba(255,255,255,0.06); border-radius: 6px; padding: 1px 6px; }
+.discover-row-slug { font-size: 11px; color: var(--text-3); font-family: var(--mono); }
+.discover-row-pending { font-size: 11px; color: var(--text-3); font-style: italic; }

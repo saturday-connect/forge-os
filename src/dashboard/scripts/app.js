@@ -128,6 +128,11 @@ let projectSearchTerm = '';
 let projectDraftName = '';
 let projectListMode = 'active';
 let pendingDeleteProjectId = '';
+// Collaboration: shared-project discovery (Projects home)
+let discoverLoaded = false;
+let discoverProjects = [];
+let discoverError = '';
+let discoverBusy = false;
 let currentView = 'overview';
 let currentInputFile = null;
 let inputFileModified = false;
@@ -375,6 +380,7 @@ function renderProjectsHome() {
             `}
           ` : `
             <button class="btn btn-primary btn-sm" onclick="openProject('${escHtmlJs(p.id)}')">${PROJECT_UI_TEXT.openProject}</button>
+            <button class="btn btn-secondary btn-sm" onclick="openShareDialog('${escHtmlJs(p.id)}')">Share</button>
             <button class="btn btn-secondary btn-sm" onclick="archiveProject('${escHtmlJs(p.id)}')">${PROJECT_UI_TEXT.archiveProject}</button>
           `}
         </div>
@@ -448,6 +454,7 @@ function renderProjectsHome() {
       </div>
 
       ${visibleProjects.length ? `<div class="projects-grid">${projectCards}</div>` : emptyState}
+      ${renderDiscoverSection()}
     </main>
   `;
   bindProjectHomeEvents();
@@ -472,6 +479,166 @@ function restoreProjectHomeFocus(snapshot) {
   if (snapshot.start !== null && snapshot.end !== null && typeof input.setSelectionRange === 'function') {
     input.setSelectionRange(snapshot.start, snapshot.end);
   }
+}
+
+// ============================================================
+// Collaboration: Share dialog + shared-project discovery / Join
+// ============================================================
+async function openShareDialog(projectId) {
+  // Share operates on the server's ACTIVE project — make the target active first.
+  if (projectId && projectId !== (projectsState.active_project_id || '')) {
+    try {
+      const r = await apiFetch('/api/projects/select', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ project_id: projectId }),
+      });
+      if (!r.ok) { showToast('Could not select project to share', 'error'); return; }
+      projectsState.active_project_id = projectId;
+    } catch (e) { showToast('Could not select project to share', 'error'); return; }
+  }
+  const proj = (projectsState.projects || []).find((p) => p.id === projectId) || {};
+  const name = proj.name || 'this project';
+  const overlay = document.createElement('div');
+  overlay.id = 'share-overlay';
+  overlay.className = 'dialog-overlay';
+  overlay.onclick = (e) => { if (e.target === overlay) closeShareDialog(); };
+  overlay.innerHTML = `
+    <div class="dialog" style="width:460px;max-width:92vw;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+        <h3 style="margin:0;">Share project</h3>
+        <button class="btn btn-ghost btn-xs" onclick="closeShareDialog()" aria-label="Close">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div style="font-size:11px;color:var(--text-3);margin-bottom:16px;line-height:1.6;">
+        Pushes <b style="color:var(--text-2);">${escHtmlJs(name)}</b>'s docs to a per-project repo and lists it in your team's discovery registry. Who can open it is governed by the repo's GitHub permissions.
+      </div>
+      <div class="share-field">
+        <div class="share-field-label">Visibility</div>
+        <div class="share-vis-group">
+          <label class="share-vis-opt"><input type="radio" name="share-vis" value="private" checked><span class="share-vis-name">Private</span><span class="share-vis-hint">collaborators only</span></label>
+          <label class="share-vis-opt"><input type="radio" name="share-vis" value="org"><span class="share-vis-name">Org</span><span class="share-vis-hint">everyone in the org can read</span></label>
+          <label class="share-vis-opt"><input type="radio" name="share-vis" value="public"><span class="share-vis-name">Public</span><span class="share-vis-hint">anyone</span></label>
+        </div>
+      </div>
+      <div class="share-field">
+        <div class="share-field-label">Docs repo <span style="color:var(--text-3);font-weight:400;text-transform:none;letter-spacing:0;">— optional</span></div>
+        <input id="share-repo-url" class="share-input" placeholder="https://github.com/org/forge-myproject-docs" />
+        <div class="share-field-hint">Leave blank to auto-create. Paste a repo URL if auto-create lacks permission.</div>
+      </div>
+      <div class="dialog-actions">
+        <button class="btn btn-ghost btn-sm" onclick="closeShareDialog()">Cancel</button>
+        <button class="btn btn-primary btn-sm" id="share-submit-btn" onclick="submitShare()">Share project</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+}
+
+function closeShareDialog() {
+  const o = document.getElementById('share-overlay');
+  if (o) o.remove();
+}
+
+async function submitShare() {
+  const visEl = document.querySelector('input[name="share-vis"]:checked');
+  const visibility = visEl ? visEl.value : 'private';
+  const repoEl = document.getElementById('share-repo-url');
+  const docs_repo_url = repoEl ? repoEl.value.trim() : '';
+  const btn = document.getElementById('share-submit-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Sharing…'; }
+  try {
+    const res = await apiFetch('/api/projects/share', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ visibility, docs_repo_url }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const msg = data.fallback === 'link_existing'
+        ? 'Auto-create failed — paste a repo URL to link instead.'
+        : (data.error || 'Share failed');
+      showToast(msg, 'error');
+      if (btn) { btn.disabled = false; btn.textContent = 'Share project'; }
+      return;
+    }
+    showToast('Sharing started' + (data.docs_repo_url ? ' → ' + data.docs_repo_url : ''), 'success');
+    closeShareDialog();
+  } catch (e) {
+    showToast('Share failed', 'error');
+    if (btn) { btn.disabled = false; btn.textContent = 'Share project'; }
+  }
+}
+
+async function loadDiscover() {
+  if (discoverBusy) return;
+  discoverBusy = true;
+  renderProjectsHome();
+  try {
+    const res = await apiFetch('/api/knowledge/discover', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
+    });
+    const data = await res.json().catch(() => ({}));
+    discoverLoaded = true;
+    if (!res.ok) { discoverError = data.error || 'Discovery failed'; discoverProjects = []; }
+    else { discoverError = ''; discoverProjects = Array.isArray(data.projects) ? data.projects : []; }
+  } catch (e) {
+    discoverLoaded = true; discoverError = 'Discovery failed'; discoverProjects = [];
+  } finally {
+    discoverBusy = false;
+    renderProjectsHome();
+  }
+}
+
+async function joinProject(slug) {
+  showToast('Joining…', 'info');
+  try {
+    const res = await apiFetch('/api/projects/join', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ slug }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) { showToast(data.error || 'Join failed', 'error'); return; }
+    showToast('Joined — ' + (data.docs_copied || 0) + ' docs imported', 'success');
+    await loadProjectsState();
+    renderProjectsHome();
+  } catch (e) { showToast('Join failed', 'error'); }
+}
+
+function renderDiscoverSection() {
+  const head = (right) => `
+    <div class="discover-head">
+      <div class="discover-title">Shared with your team</div>
+      ${right}
+    </div>`;
+  if (discoverBusy && !discoverLoaded) {
+    return `<section class="discover-section">${head('<span class="discover-hint-inline">Loading…</span>')}</section>`;
+  }
+  if (!discoverLoaded) {
+    return `<section class="discover-section">${head('<button class="btn btn-ghost btn-xs" onclick="loadDiscover()">Find shared projects</button>')}</section>`;
+  }
+  const refresh = `<button class="btn btn-ghost btn-xs" onclick="loadDiscover()">${discoverBusy ? 'Loading…' : 'Refresh'}</button>`;
+  if (discoverError) {
+    return `<section class="discover-section">${head(refresh)}<div class="discover-hint">${escHtmlJs(discoverError)}</div></section>`;
+  }
+  if (!discoverProjects.length) {
+    return `<section class="discover-section">${head(refresh)}<div class="discover-hint">No shared projects in the team registry yet. Share a project to list it here.</div></section>`;
+  }
+  const rows = discoverProjects.map((p) => {
+    const nm = escHtmlJs(p.name || p.slug || 'project');
+    const vis = escHtmlJs(p.visibility || '');
+    const sl = escHtmlJs(p.slug || '');
+    const joinable = !!p.docs_repo_url;
+    return `
+      <div class="discover-row">
+        <div class="discover-row-info">
+          <div class="discover-row-name">${nm}</div>
+          <div class="discover-row-meta">${vis ? `<span class="discover-vis-pill">${vis}</span>` : ''}<span class="discover-row-slug">${sl}</span></div>
+        </div>
+        ${joinable
+          ? `<button class="btn btn-secondary btn-xs" onclick="joinProject('${sl}')">Join</button>`
+          : `<span class="discover-row-pending">not shared yet</span>`}
+      </div>`;
+  }).join('');
+  return `<section class="discover-section">${head(refresh)}<div class="discover-list">${rows}</div></section>`;
 }
 
 function openProjectsHome() {
