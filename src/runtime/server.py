@@ -1364,6 +1364,93 @@ def _run_share_project(proj, token, docs_repo_url, visibility, kb_repo_url):
     }, None
 
 
+def _overlay_stage_docs(src_dir, target_forge_dir):
+    """Copy stage markdown from a cloned docs repo (src_dir/<stage>/<file>.md) into a project's
+    forge data dir (target_forge_dir/<stage>/<file>.md). Ignores anything that is not a known
+    stage dir or not markdown. Returns the count copied."""
+    copied = 0
+    for stage_dir in ALL_STAGE_DIRS:
+        src_stage = os.path.join(src_dir, stage_dir)
+        if not os.path.isdir(src_stage):
+            continue
+        for fn in sorted(os.listdir(src_stage)):
+            if not fn.endswith(MARKDOWN_EXTENSION):
+                continue
+            dst = os.path.join(target_forge_dir, stage_dir, fn)
+            os.makedirs(os.path.dirname(dst), exist_ok=True)
+            shutil.copy2(os.path.join(src_stage, fn), dst)
+            copied += 1
+    return copied
+
+
+def _run_join_project(repo_url, token, name_hint=""):
+    """Clone a shared docs repo into a NEW managed project. The project shell is created exactly
+    like create-project (unique slug, proj-<ts> id, `forge init`), then the cloned stage docs are
+    overlaid into the project's resolved data_dir. Returns (result, error). Access is delegated to
+    GitHub: a failed clone (403/404) simply means the caller lacks access to the repo."""
+    clone_dir = tempfile.mkdtemp(prefix="forge-join-")
+    try:
+        clone = subprocess.run(
+            ["git", "clone", "--depth=1", _cache_auth_url(repo_url, token), clone_dir],
+            capture_output=True, text=True, timeout=GIT_TIMEOUT_SECS * 4)
+        if clone.returncode != 0:
+            return None, "Clone failed (check repo access): " + clone.stderr.strip()[:200]
+        name = (name_hint or "").strip()
+        manifest = {}
+        man_path = os.path.join(clone_dir, "forge-project.json")
+        if os.path.isfile(man_path):
+            try:
+                with open(man_path, "r", encoding=FILE_ENCODING) as mf:
+                    manifest = json.load(mf)
+                name = name or (manifest.get("name", "") if isinstance(manifest, dict) else "")
+            except (OSError, json.JSONDecodeError, ValueError):
+                manifest = {}
+        if not name:
+            name = "Joined project"
+        index_data = sync_registry_from_disk(load_projects_index())
+        slug = ensure_unique_slug(index_data, slugify_project_name(name))
+        project_id = f"proj-{int(time.time() * 1000)}"
+        project_root = os.path.join(PROJECTS_ROOT, slug)
+        os.makedirs(project_root, exist_ok=True)
+        forge_script = FORGE_SCRIPT or os.path.abspath(os.path.join(ORCHESTRATOR_ROOT, "forge"))
+        init_result = subprocess.run(
+            [sys.executable, forge_script, "--project", project_root, "init"],
+            cwd=ORCHESTRATOR_ROOT, capture_output=True, text=True)
+        if init_result.returncode != 0:
+            return None, "Project init failed: " + (init_result.stderr or init_result.stdout)[:200]
+        data_dir = ""
+        try:
+            with open(os.path.join(project_root, ".forge"), "r", encoding="utf-8") as df:
+                data_dir = os.path.expanduser(json.load(df).get("data_dir", ""))
+        except (OSError, json.JSONDecodeError, ValueError):
+            data_dir = ""
+        if not data_dir or not os.path.isdir(data_dir):
+            return None, "Could not resolve project data dir after init"
+        copied = _overlay_stage_docs(clone_dir, data_dir)
+        now = datetime.now().isoformat()
+        entry = {
+            "id": project_id, "name": name, "slug": slug, "path": project_root,
+            "data_dir": data_dir, "created_at": now, "updated_at": now, "last_opened_at": now,
+        }
+        index_data.setdefault("projects", []).append(entry)
+        index_data["active_project_id"] = project_id
+        save_projects_index(index_data)
+        set_project_root(project_root, data_dir=data_dir)
+        try:
+            st = load_project_state()
+            st["project_name"] = st.get("project_name") or name
+            collab = st.setdefault("collaboration", {})
+            collab["docs_repo_url"] = repo_url
+            collab["visibility"] = manifest.get("visibility", "") if isinstance(manifest, dict) else ""
+            collab["joined_at"] = now
+            save_project_state(st)
+        except OSError as exc:
+            logger.warning("join state init: %s", exc)
+        return {"entry": entry, "docs_copied": copied}, None
+    finally:
+        shutil.rmtree(clone_dir, ignore_errors=True)
+
+
 # ── Cross-run build cache: remote sync (Phase 3/D2) ──────────────────────────
 # Union-sync the local content-addressed store (~/.forge/build-cache) with a git
 # repo. Entries are immutable (keyed by input_hash) so the merge is conflict-free:
@@ -3049,6 +3136,29 @@ class ForgeHandler(BaseHTTPRequestHandler):
                 "docs_repo_url": repo_url,
                 "created": created,
                 "visibility": visibility,
+            })
+            return
+
+        if path == "/api/projects/join":
+            repo_url = (data.get("repo_url") or "").strip()
+            slug = (data.get("slug") or "").strip()
+            proj = load_project_state()
+            token = proj.get("git", {}).get("token", "") or GIT_PAT
+            if not repo_url and slug:
+                entries, _ = _read_kb_registry(_kb_config_from_state(proj), token)
+                repo_url = next((e.get("docs_repo_url", "") for e in entries
+                                 if e.get("slug") == slug), "")
+            if not repo_url:
+                self._json_response(400, {"error": "repo_url or a known project slug is required"})
+                return
+            result, error = _run_join_project(repo_url, token, name_hint=(data.get("name") or ""))
+            if error:
+                self._json_response(502, {"error": error})
+                return
+            self._json_response(200, {
+                "status": "joined",
+                "project": result["entry"],
+                "docs_copied": result["docs_copied"],
             })
             return
 
