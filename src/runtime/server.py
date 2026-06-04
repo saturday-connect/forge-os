@@ -11,6 +11,7 @@ import re
 import urllib.parse
 import urllib.request
 import urllib.error
+import base64
 from datetime import datetime
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from constants import (
@@ -145,6 +146,11 @@ from constants import (
     KB_GLOBAL_LEARNINGS,
     KB_GLOBAL_PATTERNS,
     KB_PROJECTS_DIR,
+    KB_REGISTRY_FILE,
+    KB_REGISTRY_SCHEMA_VERSION,
+    KB_VISIBILITY_ORG,
+    KB_VISIBILITY_PRIVATE,
+    KB_VISIBILITY_PUBLIC,
     KB_STATUS_DISTILLING,
     KB_STATUS_DONE,
     KB_STATUS_ERROR,
@@ -1028,6 +1034,103 @@ def _collect_reviewed_docs():
     return docs
 
 
+def _collect_all_stage_docs():
+    """Return [(rel_path, abs_path)] for ALL non-empty stage markdown — the full current
+    project state (reviewed or not). Share pushes this so collaborators see work-in-progress,
+    unlike KB export which is reviewed-only."""
+    docs = []
+    for stage_dir in ALL_STAGE_DIRS:
+        stage_path = os.path.join(FORGE_DIR, stage_dir)
+        if not os.path.isdir(stage_path):
+            continue
+        for fname in sorted(os.listdir(stage_path)):
+            if not fname.endswith(MARKDOWN_EXTENSION):
+                continue
+            abs_path = os.path.join(stage_path, fname)
+            try:
+                if os.path.getsize(abs_path) == 0:
+                    continue
+            except OSError:
+                continue
+            docs.append((f"{stage_dir}/{fname}", abs_path))
+    return docs
+
+
+def _upsert_kb_registry(work_dir, proj, slug, doc_count, docs_repo_url="", visibility=""):
+    """Upsert this project's entry into the KB root registry.json — the shared discovery
+    directory every org member can read. Dedups by slug and MERGES: an empty docs_repo_url or
+    visibility preserves whatever a prior writer set, so a later reviewed-docs publish does not
+    wipe the docs_repo_url that Share recorded (and vice-versa). Forward-compatible schema. Only
+    org/public-visible projects are ever registered here; confidential projects are discovered
+    via GitHub access-filtering instead, never listed."""
+    reg_path = os.path.join(work_dir, KB_REGISTRY_FILE)
+    registry = []
+    if os.path.isfile(reg_path):
+        try:
+            with open(reg_path, "r", encoding=FILE_ENCODING) as rf:
+                loaded = json.load(rf)
+            if isinstance(loaded, list):
+                registry = loaded
+            elif isinstance(loaded, dict) and isinstance(loaded.get("projects"), list):
+                registry = loaded["projects"]
+        except (OSError, json.JSONDecodeError, ValueError):
+            registry = []
+    existing = next((e for e in registry if isinstance(e, dict) and e.get("slug") == slug), {})
+    entry = {
+        "slug": slug,
+        "name": proj.get("project_name", slug),
+        "org": os.environ.get("FORGE_ORG", "") or existing.get("org", ""),
+        "visibility": visibility or existing.get("visibility") or KB_VISIBILITY_ORG,
+        "docs_path": f"{KB_PROJECTS_DIR}/{slug}",
+        "code_repo_url": proj.get("git", {}).get("repo_url", "") or existing.get("code_repo_url", ""),
+        "docs_repo_url": docs_repo_url or existing.get("docs_repo_url", ""),
+        "doc_count": doc_count,
+        "updated_at": datetime.now().isoformat(),
+        "schema_version": KB_REGISTRY_SCHEMA_VERSION,
+    }
+    registry = [e for e in registry if isinstance(e, dict) and e.get("slug") != slug]
+    registry.append(entry)
+    registry.sort(key=lambda e: e.get("slug", ""))
+    with open(reg_path, "w", encoding=FILE_ENCODING) as rf:
+        json.dump(registry, rf, indent=2)
+    return entry
+
+
+def _read_kb_registry(kb_config, token):
+    """Fetch the KB root registry.json via the GitHub contents API (no clone — this is on
+    the dashboard read path). Returns (entries, error). A missing registry (404) means no
+    project has been published yet and is NOT an error → returns ([], None)."""
+    owner = kb_config.get("repo_owner", "")
+    repo = kb_config.get("repo_name", "")
+    if not owner or not repo:
+        return [], "KB repo not configured"
+    branch = kb_config.get("branch", "main") or "main"
+    url = (f"https://api.github.com/repos/{owner}/{repo}/contents/"
+           f"{KB_REGISTRY_FILE}?ref={urllib.parse.quote(branch)}")
+    headers = {
+        "Accept": GITHUB_ACCEPT_HEADER,
+        "X-GitHub-Api-Version": GITHUB_API_VERSION,
+        "User-Agent": GITHUB_USER_AGENT,
+    }
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    req = urllib.request.Request(url, headers=headers)
+    try:
+        with urllib.request.urlopen(req, timeout=NETWORK_TIMEOUT_SECS) as resp:
+            payload = json.loads(resp.read().decode("utf-8"))
+        content = base64.b64decode(payload.get("content", "")).decode("utf-8")
+        loaded = json.loads(content) if content.strip() else []
+        if isinstance(loaded, dict) and isinstance(loaded.get("projects"), list):
+            loaded = loaded["projects"]
+        return (loaded if isinstance(loaded, list) else []), None
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            return [], None
+        return [], f"GitHub API error {e.code}"
+    except (urllib.error.URLError, json.JSONDecodeError, ValueError, OSError) as e:
+        return [], str(e)[:200]
+
+
 def _run_export_to_kb(kb_config, proj, token, docs):
     """Clone KB repo, write project docs to projects/<slug>/, push branch, open PR. Returns (pr_url, error)."""
     owner = kb_config.get("repo_owner", "")
@@ -1065,6 +1168,7 @@ def _run_export_to_kb(kb_config, proj, token, docs):
         meta_path = os.path.join(work_dir, KB_PROJECTS_DIR, slug, "_meta.json")
         with open(meta_path, "w", encoding=FILE_ENCODING) as mf:
             json.dump(meta, mf, indent=2)
+        _upsert_kb_registry(work_dir, proj, slug, len(docs))
         subprocess.run(["git", "config", "user.email", GIT_COMMIT_EMAIL], cwd=work_dir, capture_output=True)
         subprocess.run(["git", "config", "user.name", GIT_COMMIT_NAME], cwd=work_dir, capture_output=True)
         subprocess.run(["git", "add", "."], cwd=work_dir, capture_output=True)
@@ -1114,6 +1218,150 @@ def _run_export_to_kb(kb_config, proj, token, docs):
         return None, str(e)[:300]
     finally:
         shutil.rmtree(work_dir, ignore_errors=True)
+
+
+# ── Project collaboration: docs-repo provisioning + Share (Phase 2) ──────────
+# A project becomes collaboratable when its generated docs live in a per-project,
+# access-scoped docs repo. "Share" provisions that repo (auto-create via the GitHub
+# API, else link a URL the user supplies), pushes the docs there, and registers it in
+# the KB discovery registry. Access is delegated to GitHub repo permissions; the KB
+# registry only makes org/public projects discoverable — it is never the access gate.
+
+def _gh_create_repo(org, name, private, token):
+    """Create a GitHub repo via the API. Creates under the org when `org` is set, else under
+    the authenticated user. auto_init=True so the repo has a default branch to clone at once.
+    Returns (clone_url, error). The caller treats ANY error as 'fall back to linking a URL'."""
+    if not token:
+        return None, "GitHub token required to auto-create a repo"
+    api = f"https://api.github.com/orgs/{org}/repos" if org else "https://api.github.com/user/repos"
+    payload = json.dumps({
+        "name": name,
+        "private": bool(private),
+        "auto_init": True,
+        "description": "Forge OS project docs",
+    }).encode("utf-8")
+    req = urllib.request.Request(api, data=payload, headers={
+        "Authorization": f"Bearer {token}",
+        "Accept": GITHUB_ACCEPT_HEADER,
+        "Content-Type": GITHUB_CONTENT_TYPE,
+        "X-GitHub-Api-Version": GITHUB_API_VERSION,
+        "User-Agent": GITHUB_USER_AGENT,
+    })
+    try:
+        with urllib.request.urlopen(req, timeout=NETWORK_TIMEOUT_SECS) as resp:
+            repo = json.loads(resp.read().decode("utf-8"))
+        return repo.get("clone_url") or repo.get("html_url"), None
+    except urllib.error.HTTPError as e:
+        body = e.read().decode("utf-8", errors="ignore")[:200]
+        return None, f"GitHub API error {e.code}: {body}"
+    except (urllib.error.URLError, OSError) as e:
+        return None, str(e)[:200]
+
+
+def _provision_docs_repo(proj, slug, token, link_url="", org="", private=True):
+    """Resolve the per-project docs repo. Prefer an explicitly linked URL; otherwise auto-create
+    `forge-<slug>-docs` via the GitHub API. If creation fails (commonly a missing repo-creation
+    scope), return the error so the caller can fall back to asking the user to paste a repo URL.
+    Returns (repo_url, created, error)."""
+    if link_url:
+        return link_url.strip(), False, None
+    repo_url, error = _gh_create_repo(org, f"forge-{slug}-docs", private, token)
+    if error:
+        return None, False, error
+    return repo_url, True, None
+
+
+def _register_in_kb(kb_repo_url, proj, token, slug, doc_count, docs_repo_url, visibility):
+    """Clone the KB repo, upsert this project's registry entry (with docs_repo_url + visibility),
+    and push registry.json straight to the default branch. Registry updates are metadata, so they
+    skip the PR flow that doc exports use. Returns error|None (advisory — never blocks Share)."""
+    if not kb_repo_url:
+        return "KB repo not configured"
+    work = tempfile.mkdtemp(prefix="forge-kb-reg-")
+    try:
+        clone = subprocess.run(["git", "clone", "--depth=1", _cache_auth_url(kb_repo_url, token), work],
+                               capture_output=True, text=True, timeout=GIT_TIMEOUT_SECS * 4)
+        if clone.returncode != 0:
+            return "KB clone failed: " + clone.stderr.strip()[:150]
+        def_br = subprocess.run(["git", "rev-parse", "--abbrev-ref", "HEAD"],
+                                cwd=work, capture_output=True, text=True)
+        default_branch = def_br.stdout.strip() or "main"
+        _upsert_kb_registry(work, proj, slug, doc_count, docs_repo_url=docs_repo_url, visibility=visibility)
+        subprocess.run(["git", "config", "user.email", GIT_COMMIT_EMAIL], cwd=work, capture_output=True)
+        subprocess.run(["git", "config", "user.name", GIT_COMMIT_NAME], cwd=work, capture_output=True)
+        subprocess.run(["git", "add", KB_REGISTRY_FILE], cwd=work, capture_output=True)
+        commit = subprocess.run(["git", "commit", "-m", f"kb(registry): register {slug}"],
+                                cwd=work, capture_output=True, text=True)
+        if commit.returncode != 0 and "nothing to commit" not in (commit.stdout + commit.stderr).lower():
+            return "KB commit failed: " + commit.stderr.strip()[:150]
+        push = subprocess.run(["git", "push", "origin", f"HEAD:{default_branch}"],
+                              cwd=work, capture_output=True, text=True, timeout=GIT_TIMEOUT_SECS * 2)
+        if push.returncode != 0:
+            return "KB push failed: " + push.stderr.strip()[:150]
+        return None
+    except (OSError, subprocess.SubprocessError) as e:
+        return str(e)[:150]
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+
+
+def _run_share_project(proj, token, docs_repo_url, visibility, kb_repo_url):
+    """Push the project's full .forge doc set + a forge-project.json manifest (the repo's
+    self-describing card) to the already-provisioned docs repo, then register it in the KB
+    discovery registry. Git ops validate against local bare repos in tests; the only
+    non-hermetic step (repo creation) already happened in _provision_docs_repo.
+    Returns (result, error). A registry failure is advisory — surfaced, not fatal."""
+    slug = slugify_project_name(proj.get("project_name", "project"))
+    docs = _collect_all_stage_docs()
+    if not docs:
+        return None, "No generated documents to share"
+    work_dir = tempfile.mkdtemp(prefix="forge-share-")
+    try:
+        clone = subprocess.run(["git", "clone", "--depth=1", _cache_auth_url(docs_repo_url, token), work_dir],
+                               capture_output=True, text=True, timeout=GIT_TIMEOUT_SECS * 4)
+        if clone.returncode != 0:
+            return None, "Docs repo clone failed: " + clone.stderr.strip()[:200]
+        def_br = subprocess.run(["git", "rev-parse", "--abbrev-ref", "HEAD"],
+                                cwd=work_dir, capture_output=True, text=True)
+        default_branch = def_br.stdout.strip() or "main"
+        for rel, abs_path in docs:
+            dest = os.path.join(work_dir, rel)
+            os.makedirs(os.path.dirname(dest), exist_ok=True)
+            shutil.copy2(abs_path, dest)
+        manifest = {
+            "slug": slug,
+            "name": proj.get("project_name", slug),
+            "visibility": visibility,
+            "code_repo_url": proj.get("git", {}).get("repo_url", ""),
+            "doc_count": len(docs),
+            "shared_at": datetime.now().isoformat(),
+            "schema_version": KB_REGISTRY_SCHEMA_VERSION,
+        }
+        with open(os.path.join(work_dir, "forge-project.json"), "w", encoding=FILE_ENCODING) as mf:
+            json.dump(manifest, mf, indent=2)
+        subprocess.run(["git", "config", "user.email", GIT_COMMIT_EMAIL], cwd=work_dir, capture_output=True)
+        subprocess.run(["git", "config", "user.name", GIT_COMMIT_NAME], cwd=work_dir, capture_output=True)
+        subprocess.run(["git", "add", "."], cwd=work_dir, capture_output=True)
+        commit = subprocess.run(
+            ["git", "commit", "-m", f"forge(share): {proj.get('project_name', slug)} ({len(docs)} docs)"],
+            cwd=work_dir, capture_output=True, text=True)
+        if commit.returncode != 0 and "nothing to commit" not in (commit.stdout + commit.stderr).lower():
+            return None, "Docs commit failed: " + commit.stderr.strip()[:200]
+        push = subprocess.run(["git", "push", "origin", f"HEAD:{default_branch}"],
+                              cwd=work_dir, capture_output=True, text=True, timeout=GIT_TIMEOUT_SECS * 2)
+        if push.returncode != 0:
+            return None, "Docs push failed: " + push.stderr.strip()[:200]
+    except (OSError, subprocess.SubprocessError) as e:
+        return None, str(e)[:200]
+    finally:
+        shutil.rmtree(work_dir, ignore_errors=True)
+    reg_error = _register_in_kb(kb_repo_url, proj, token, slug, len(docs), docs_repo_url, visibility)
+    return {
+        "docs_repo_url": docs_repo_url,
+        "visibility": visibility,
+        "doc_count": len(docs),
+        "registry_error": reg_error,
+    }, None
 
 
 # ── Cross-run build cache: remote sync (Phase 3/D2) ──────────────────────────
@@ -2756,6 +3004,52 @@ class ForgeHandler(BaseHTTPRequestHandler):
             except OSError as exc:
                 logger.warning("select backfill project_name: %s", exc)
             self._json_response(200, {"status": "selected", "project": target})
+            return
+
+        if path == "/api/projects/share":
+            proj = load_project_state()
+            kb_cfg = _kb_config_from_state(proj)
+            kb_repo_url = proj.get("git", {}).get("kb_repo_url", "")
+            if not kb_repo_url and kb_cfg.get("repo_owner") and kb_cfg.get("repo_name"):
+                kb_repo_url = f"https://github.com/{kb_cfg['repo_owner']}/{kb_cfg['repo_name']}"
+            token = proj.get("git", {}).get("token", "") or GIT_PAT
+            if not token:
+                self._json_response(400, {"error": "GitHub token required — configure it in Settings"})
+                return
+            slug = slugify_project_name(proj.get("project_name", "project"))
+            link_url = (data.get("docs_repo_url") or "").strip()
+            org = (data.get("org") or os.environ.get("FORGE_ORG", "")).strip()
+            visibility = (data.get("visibility") or KB_VISIBILITY_PRIVATE).strip()
+            private = visibility != KB_VISIBILITY_PUBLIC
+            repo_url, created, prov_err = _provision_docs_repo(
+                proj, slug, token, link_url=link_url, org=org, private=private)
+            if prov_err:
+                # Auto-create failed (often missing repo scope) → tell the UI to offer linking.
+                self._json_response(502, {
+                    "error": f"Could not provision a docs repo: {prov_err}",
+                    "fallback": "link_existing",
+                })
+                return
+
+            def _do_share():
+                result, error = _run_share_project(proj, token, repo_url, visibility, kb_repo_url)
+                _pstate = load_project_state()
+                collab = _pstate.setdefault("collaboration", {})
+                collab["docs_repo_url"] = repo_url
+                collab["visibility"] = visibility
+                collab["shared_at"] = datetime.now().isoformat()
+                collab["last_error"] = error or (result or {}).get("registry_error")
+                save_project_state(_pstate)
+                if error:
+                    logger.warning("share %s: %s", slug, error)
+
+            threading.Thread(target=_do_share, daemon=True).start()
+            self._json_response(200, {
+                "status": "started",
+                "docs_repo_url": repo_url,
+                "created": created,
+                "visibility": visibility,
+            })
             return
 
         if path == "/api/projects/archive":
@@ -4596,6 +4890,20 @@ class ForgeHandler(BaseHTTPRequestHandler):
 
             threading.Thread(target=_do_export, daemon=True).start()
             self._json_response(200, {"status": "started", "doc_count": len(docs)})
+            return
+
+        if path == "/api/knowledge/discover":
+            proj = load_project_state()
+            kb_cfg = _kb_config_from_state(proj)
+            if not kb_cfg.get("repo_owner") or not kb_cfg.get("repo_name"):
+                self._json_response(400, {"error": "Configure knowledge base repo first"})
+                return
+            token = proj.get("git", {}).get("token", "") or GIT_PAT
+            projects, error = _read_kb_registry(kb_cfg, token)
+            if error:
+                self._json_response(502, {"error": error})
+                return
+            self._json_response(200, {"projects": projects, "count": len(projects)})
             return
 
         if path == "/api/knowledge/distill":
