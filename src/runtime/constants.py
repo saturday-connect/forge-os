@@ -122,6 +122,15 @@ PHASE_BUILD = "build"
 PHASE_DEPLOY = "deploy"
 
 # ---------------------------------------------------------------------------
+# Feature flags (runtime-resolved: env override -> project-state -> default)
+# ---------------------------------------------------------------------------
+# Gates the Build + Deploy lifecycle stages and ALL related UI + API endpoints.
+# OFF for the initial release; flip with FORGE_ENABLE_BUILD_DEPLOY=1 (env) or the
+# project-state `build_deploy_enabled` setting. Nothing is removed when off — the
+# views, endpoints, and lifecycle phases are hidden/guarded, fully reversible.
+BUILD_DEPLOY_ENABLED_DEFAULT = False
+
+# ---------------------------------------------------------------------------
 # Lifecycle phases (template scripts)
 # ---------------------------------------------------------------------------
 PHASE_INITIALIZED = "initialized"

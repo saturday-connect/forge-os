@@ -73,6 +73,7 @@ from constants import (
     GENERATE_TIMEOUT_SECS,
     BUILD_CACHE_DIRNAME,
     BUILD_CACHE_META_FILE,
+    BUILD_DEPLOY_ENABLED_DEFAULT,
     GIT_COMMIT_EMAIL,
     GIT_COMMIT_NAME,
     GIT_TIMEOUT_SECS,
@@ -1873,6 +1874,22 @@ def _profile_concurrency(profile, proj):
     return _PROFILE_CONCURRENCY.get(profile, 2)
 
 
+def _resolve_build_deploy_enabled(proj):
+    """Runtime-resolve the Build+Deploy feature flag: env override -> project-state -> default.
+    OFF by default for the initial release. When off, the Build and Deploy lifecycle stages and
+    all related UI + API endpoints are hidden/guarded — nothing is removed, fully reversible."""
+    env = os.environ.get("FORGE_ENABLE_BUILD_DEPLOY", "").strip().lower()
+    if env in ("1", "true", "yes", "on"):
+        return True
+    if env in ("0", "false", "no", "off"):
+        return False
+    if proj:
+        val = proj.get("build_deploy_enabled")
+        if isinstance(val, bool):
+            return val
+    return BUILD_DEPLOY_ENABLED_DEFAULT
+
+
 def compute_full_state():
     if not os.path.isdir(FORGE_DIR):
         return {
@@ -1896,6 +1913,7 @@ def compute_full_state():
             "user": load_user(),
             "project_type": "standard",
             "lastDistill": None,
+            "build_deploy_enabled": _resolve_build_deploy_enabled(None),
         }
     proj = load_project_state()
     reviews = load_reviews()
@@ -1987,6 +2005,7 @@ def compute_full_state():
 
     last_build = builds[-1] if builds else None
 
+    _bd_enabled = _resolve_build_deploy_enabled(proj)
     if not raw_inputs:
         phase = PHASE_INPUT
     elif total_generated == 0:
@@ -1994,6 +2013,9 @@ def compute_full_state():
     elif total_generated < total_docs:
         phase = PHASE_GENERATE
     elif not all_reviewed:
+        phase = PHASE_REVIEW
+    elif not _bd_enabled:
+        # Build + Deploy gated off -> Review is the terminal lifecycle phase
         phase = PHASE_REVIEW
     elif not builds or (last_build and last_build.get("status") not in (BUILD_STATUS_PUSHED, BUILD_STATUS_COMMITTED)):
         phase = PHASE_BUILD
@@ -2042,6 +2064,7 @@ def compute_full_state():
         "stage_batch": proj.get("stage_batch", False),
         "build_concurrency": proj.get("build_concurrency", 2),
         "build_profile": _resolve_build_profile(proj),
+        "build_deploy_enabled": _bd_enabled,
         "build_cache_repo": proj.get("build_cache_repo", {}),
         "orgContext": _build_org_context_meta(),
         "user": load_user(),
@@ -2099,6 +2122,14 @@ class ForgeHandler(BaseHTTPRequestHandler):
         if not FORGE_TOKEN:
             return True
         return self.headers.get("X-Forge-Token", "") == FORGE_TOKEN
+
+    def _bd_guard(self):
+        # Build + Deploy feature flag: when off, refuse the related endpoints (403).
+        # Defense in depth — the UI hides these, but the API must reject direct calls too.
+        if not _resolve_build_deploy_enabled(load_project_state()):
+            self._json_response(403, {"error": "Build and Deploy are disabled in this version"})
+            return True
+        return False
 
     def do_OPTIONS(self):
         self.send_response(200)
@@ -2306,6 +2337,8 @@ class ForgeHandler(BaseHTTPRequestHandler):
             return
 
         if path == "/api/build-log":
+            if self._bd_guard():
+                return
             _bl_step = params.get("step", [""])[0].strip()
             _step_keys_log = ["backend", "frontend", "integration", "tests", "infra"]
             if _bl_step not in _step_keys_log:
@@ -2338,6 +2371,8 @@ class ForgeHandler(BaseHTTPRequestHandler):
             return
 
         if path == "/api/build-system":
+            if self._bd_guard():
+                return
             build_status_file = os.path.join(FORGE_DIR, FILE_BUILD_SYSTEM)
             build_status = {}
             if os.path.exists(build_status_file):
@@ -2377,6 +2412,8 @@ class ForgeHandler(BaseHTTPRequestHandler):
             return
 
         if path == "/api/build-preview":
+            if self._bd_guard():
+                return
             # Pre-flight cost estimate: for each step, run build_runner --preview
             # (no generation) to estimate input tokens + whether it's a cache hit,
             # using the per-step tool/model. Lets the UI show projected cost and
@@ -2420,6 +2457,8 @@ class ForgeHandler(BaseHTTPRequestHandler):
             return
 
         if path == "/api/build-file":
+            if self._bd_guard():
+                return
             step = params.get("step", [""])[0]
             rel  = params.get("path", [""])[0]
             # Optional explicit phase_id; if omitted use active phase
@@ -2450,6 +2489,8 @@ class ForgeHandler(BaseHTTPRequestHandler):
             return
 
         if path == "/api/pr-status":
+            if self._bd_guard():
+                return
             import re as _re3
             pr_url = params.get("pr_url", [""])[0]
             m = _re3.search(r'github\.com/([^/]+)/([^/]+)/pull/(\d+)', pr_url)
@@ -2519,6 +2560,8 @@ class ForgeHandler(BaseHTTPRequestHandler):
             return
 
         if path == "/api/build-review":
+            if self._bd_guard():
+                return
             review_file = os.path.join(FORGE_DIR, FILE_BUILD_REVIEW)
             if os.path.exists(review_file):
                 try:
@@ -2532,6 +2575,8 @@ class ForgeHandler(BaseHTTPRequestHandler):
             return
 
         if path == "/api/secrets":
+            if self._bd_guard():
+                return
             import re as _re2
             proj = load_project_state()
             git_cfg = proj.get("git", {})
@@ -2954,6 +2999,8 @@ class ForgeHandler(BaseHTTPRequestHandler):
             return
 
         if path == "/api/build-review":
+            if self._bd_guard():
+                return
             proj = load_project_state()
             tool = proj.get("tool", DEFAULT_TOOL)
             model_id = proj.get("model", "")
@@ -3235,6 +3282,8 @@ class ForgeHandler(BaseHTTPRequestHandler):
             return
 
         if path == "/api/build":
+            if self._bd_guard():
+                return
 
             # ── Cancel a stuck build ─────────────────────────────────────────
             if data.get("action") == "cancel":
@@ -3975,6 +4024,8 @@ class ForgeHandler(BaseHTTPRequestHandler):
 
                 # ── env_config ──────────────────────────────────────────────
                 if action == "env_config":
+                    if self._bd_guard():
+                        return
                     if not compose_dir:
                         self._json_response(200, {
                             "vars": [], "placeholder_count": 0,
@@ -4038,6 +4089,8 @@ class ForgeHandler(BaseHTTPRequestHandler):
 
                 # ── env_save ────────────────────────────────────────────────
                 if action == "env_save":
+                    if self._bd_guard():
+                        return
                     if not env_local_path:
                         self._json_response(400, {"error": "No compose project found"})
                         return
@@ -4367,6 +4420,8 @@ class ForgeHandler(BaseHTTPRequestHandler):
                 return
 
             if action == "deploy":
+                if self._bd_guard():
+                    return
                 phase_id = data.get("id")
                 phases = proj.get("phases", [])
                 phase = next((p for p in phases if p["id"] == phase_id), None)
@@ -4987,6 +5042,8 @@ class ForgeHandler(BaseHTTPRequestHandler):
             return
 
         if path == "/api/build-system":
+            if self._bd_guard():
+                return
             step = data.get("step", "")
             if data.get("action") == "clear_cache":
                 _runner = os.path.join(FORGE_DIR, "scripts", "build_runner.py")
@@ -5165,6 +5222,8 @@ class ForgeHandler(BaseHTTPRequestHandler):
             return
 
         if path == "/api/secrets":
+            if self._bd_guard():
+                return
             proj = load_project_state()
             git_cfg = proj.get("git", {})
             repo_url = git_cfg.get("repo_url", "")
