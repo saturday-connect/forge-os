@@ -4762,3 +4762,12 @@ body.mac .projects-main {
 .discover-vis-pill { font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-2); background: rgba(255,255,255,0.06); border-radius: 6px; padding: 1px 6px; }
 .discover-row-slug { font-size: 11px; color: var(--text-3); font-family: var(--mono); }
 .discover-row-pending { font-size: 11px; color: var(--text-3); font-style: italic; }
+
+/* ── Build + Deploy feature flag OFF: hide all Build/Deploy surfaces ─────────
+   Driven by body.bd-off (toggled in renderAll from state.build_deploy_enabled).
+   Gate, not delete — flip the flag on and everything returns. */
+body.bd-off .nav-item[data-view="build"],
+body.bd-off .nav-item[data-view="deploy"],
+body.bd-off #view-build,
+body.bd-off #view-deploy,
+body.bd-off .bd-only { display: none !important; }

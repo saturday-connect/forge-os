@@ -16,6 +16,10 @@ Projects → Input → Generate → Review → Build → Deploy
 
 The dashboard is project-first. A user starts at the Projects page, creates or selects a project, then operates the lifecycle for that project.
 
+> **Feature flag — Build + Deploy (initial release: OFF).** The `Build` and `Deploy` stages and all related UI + API endpoints are gated behind one flag, so the initial version ships the documentation lifecycle only: **Projects → Input → Generate → Review**. Resolution order: `FORGE_ENABLE_BUILD_DEPLOY` env (`1`/`0`) > project-state `build_deploy_enabled` > default `BUILD_DEPLOY_ENABLED_DEFAULT = False` (`constants.py`). Nothing is removed — flip the flag on and Build/Deploy return.
+> - **Server:** `_resolve_build_deploy_enabled()` surfaces it in `/api/state`; `compute_full_state` caps `phase` at `review` when off; `_bd_guard()` returns `403` from every build/deploy endpoint (`build-system`, `build-log`, `build-preview`, `build-file`, `pr-status`, `build-review`, `build`, `secrets`, and the `env_config`/`env_save`/`deploy` actions).
+> - **Frontend:** `renderAll` toggles `body.bd-off` and skips `renderBuild`/`renderDeploy`; `bdEnabled()` / `lifecyclePhases()` filter the lifecycle strip to 3 stages; `switchView` redirects `build`/`deploy` → `overview`; CSS hides nav `[data-view=build|deploy]`, `#view-build`/`#view-deploy`, and `.bd-only` (the Settings build profile, build-cache repo, and custom per-step/concurrency controls). Generate's per-stage models + batch toggle stay.
+
 ---
 
 ## Architecture: Source Layout
@@ -419,8 +423,8 @@ Inside a target `.forge/`:
 | Input | Raw input Markdown files |
 | Generate | Per-stage and full-pipeline AI generation |
 | Review | File viewer, critique regeneration, gate status, version history |
-| Build | Build-system generation, git branch/commit/push/PR automation |
-| Deploy | Environment config, CI/CD workflow generator, GitHub secrets status |
+| Build | Build-system generation, git branch/commit/push/PR automation — **gated by the Build+Deploy flag (off by default)** |
+| Deploy | Environment config, CI/CD workflow generator, GitHub secrets status — **gated by the Build+Deploy flag (off by default)** |
 | Issues | Lightweight issue tracker |
 | Knowledge | Knowledge base export (per-project docs → KB repo), AI distillation to global patterns/decisions/learnings, sync ref management |
 | Settings | Product config, AI tool/model, git, environments, danger zone |
@@ -720,6 +724,7 @@ Component sizing rules:
 - Public site refreshed (docs/index.html): build-optimization feature cards added, stale `beta.28` tags removed, JSON-LD version current; deployed via the `docs/` folder on main without an app version bump
 - AI Runtime settings decluttered (beta.117): progressive disclosure — only 3 primary controls stay visible (AI Tool, Default model, Build profile); per-stage model tiering, batch generation, build cache repo, and (Custom-only) per-step tiering + max-parallel move into a collapsed `<details class="settings-advanced">`. Choosing Custom reveals the per-step controls (`updateProfileButtons` toggles `#settings-custom-build`) and auto-opens Advanced. All element IDs preserved so save/seed wiring is unchanged. Verified via DOM eval: AI Runtime card exposes exactly 3 top-level `.form-group`s with Advanced collapsed by default
 - Project collaboration (beta.118–120): docs-first sharing across machines with **no central server** — access delegated to GitHub repo permissions. **Share** (`/api/projects/share`) provisions a per-project docs repo (auto-create via GitHub API, else link a pasted URL), pushes the full `.forge` doc set + a `forge-project.json` manifest, and registers `{docs_repo_url, visibility}` in a shared `registry.json` at the KB repo root (merge-safe upsert; the reviewed-docs export coexists without clobbering). **Discover** (`/api/knowledge/discover`) lists the registry via the contents API; **Join** (`/api/projects/join`) clones a shared docs repo into a new managed project (mirrors create-project, overlays docs into the resolved `data_dir`). UI: Share button + visibility dialog (private/org/public) on each project card, and a "Shared with your team" discovery list with Join, on the Projects home. Validated hermetically (local bare repos; only repo-create stubbed) + in-browser (preview screenshots). Three per-phase commits.
+- Build + Deploy feature flag (initial release, OFF by default): one flag gates the Build + Deploy stages and ALL related UI + endpoints so v1 ships the documentation lifecycle only (Projects → Input → Generate → Review). Server: `BUILD_DEPLOY_ENABLED_DEFAULT` (constants), `_resolve_build_deploy_enabled` (env `FORGE_ENABLE_BUILD_DEPLOY` > state `build_deploy_enabled` > default) surfaced in `/api/state`, phase capped at `review` when off, `_bd_guard()` 403s all build/deploy endpoints + the `env_config`/`env_save`/`deploy` actions. Frontend: `body.bd-off` + `.bd-only` CSS + `bdEnabled()`/`lifecyclePhases()` + a `switchView` guard hide the nav, the 3-stage lifecycle strip, the views, and the Settings build controls (Generate's per-stage models + batch toggle kept). Gate-not-delete, fully reversible. Validated hermetically (resolver precedence + endpoints 403 off / 200 on) and in-browser (off = 3-stage lifecycle, no Build/Deploy nav; on = restored). Three per-phase commits on `feat/build-deploy-flag`
 
 ---
 

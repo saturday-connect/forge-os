@@ -643,7 +643,7 @@
             </div>
 
             <!-- Build profile: the one build decision most users make -->
-            <div class="form-group" style="margin-bottom:0;">
+            <div class="form-group bd-only" style="margin-bottom:0;">
               <label class="form-label" style="margin:0;">Build profile</label>
               <div style="display:flex;gap:1px;border:1px solid var(--border);border-radius:8px;padding:2px;background:var(--bg-2,rgba(255,255,255,.03));width:fit-content;margin-top:4px;">
                 <button type="button" class="toggle-btn build-profile-btn" data-profile="fast" onclick="setBuildProfile('fast')">Fast</button>
@@ -683,7 +683,7 @@
                 </div>
 
                 <!-- Build cache repo (optional): share the cross-run cache across machines/CI -->
-                <div class="form-group">
+                <div class="form-group bd-only">
                   <label class="form-label" style="margin:0;">Build cache repo <span style="font-weight:400;color:var(--text-3);">(optional)</span></label>
                   <input type="text" class="form-input" id="settings-build-cache-url" placeholder="https://github.com/org/build-cache" style="margin-top:4px;">
                   <input type="text" class="form-input" id="settings-build-cache-branch" placeholder="main" style="margin-top:6px;max-width:200px;">
@@ -691,7 +691,7 @@
                 </div>
 
                 <!-- Custom-profile-only controls (revealed by updateProfileButtons when profile === custom) -->
-                <div id="settings-custom-build" style="display:none;flex-direction:column;gap:18px;">
+                <div id="settings-custom-build" class="bd-only" style="display:none;flex-direction:column;gap:18px;">
                   <div class="form-group" style="margin:0;">
                     <div style="display:flex;align-items:center;justify-content:space-between;">
                       <label class="form-label" style="margin:0;">Model per build step</label>

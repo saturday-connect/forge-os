@@ -5,13 +5,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
   <title>Forge OS — Documentation-first PDLC automation by Saturday Connect</title>
-  <meta name="description" content="Forge OS turns product ideas into a full delivery pipeline — AI-generated requirements, design, architecture, build systems, and deployment, driven from Markdown. Built by Saturday Connect." />
+  <meta name="description" content="Forge OS turns product ideas into reviewed, AI-generated specs — requirements, design, and architecture — driven from Markdown. Built by Saturday Connect." />
 
   <!-- Open Graph -->
   <meta property="og:type"        content="website" />
   <meta property="og:site_name"   content="Forge OS" />
   <meta property="og:title"       content="Forge OS — Documentation-first PDLC automation" />
-  <meta property="og:description" content="From idea to shipped product. AI-generated docs, review gates, build automation, local preview, and deployment — all in one open-source desktop app." />
+  <meta property="og:description" content="From idea to reviewed specs. AI-generated docs and review gates — all in one open-source desktop app." />
   <meta property="og:url"         content="https://saturday-connect.github.io/forge-os/" />
   <meta property="og:image"       content="https://saturday-connect.github.io/forge-os/assets/og-card.png" />
 
@@ -42,7 +42,7 @@
     "name": "Forge OS",
     "applicationCategory": "DeveloperApplication",
     "operatingSystem": ["macOS", "Windows", "Linux"],
-    "description": "Documentation-first PDLC automation desktop app. AI-generated requirements, design, architecture, build systems, and deployment.",
+    "description": "Documentation-first PDLC automation desktop app. AI-generated requirements, design, and architecture.",
     "url": "https://saturday-connect.github.io/forge-os/",
     "downloadUrl": "https://github.com/saturday-connect/forge-os/releases",
     "softwareVersion": "1.0.0-beta.116",
@@ -1071,7 +1071,7 @@
     </h1>
 
     <p class="hero-sub">
-      Forge OS drives the full PDLC — requirements through deployment — with AI, a local dashboard, and no cloud lock-in.
+      Forge OS drives the product lifecycle from idea to reviewed specs — AI-generated requirements, design, and architecture — with a local dashboard and no cloud lock-in.
     </p>
 
     <div class="download-row" role="group" aria-label="Download Forge OS">
@@ -1161,6 +1161,7 @@
         <div class="feature-desc">Every generated document must be reviewed and approved before the pipeline advances. File-level critique regeneration and gate sign-off included.</div>
       </div>
 
+      <!-- BD-HIDDEN-V1 (Build/Deploy gated for the initial release; restore when shipped)
       <div class="feature-card" role="listitem">
         <div class="feature-icon" aria-hidden="true">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
@@ -1168,16 +1169,18 @@
         <div class="feature-title">Build &amp; CI generation</div>
         <div class="feature-desc">Generates a coherent, stack-pinned codebase plus CI/CD pipelines, Dockerfiles, and env configs. Commits each component atomically with conventional commits and opens a PR.</div>
       </div>
+      -->
 
       <div class="feature-card" role="listitem">
         <div class="feature-icon" aria-hidden="true">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>
         </div>
         <div class="feature-title">AI cost controls</div>
-        <div class="feature-desc">Route each generate stage and build step to a fast or strong model. Batch generation sends shared context once instead of per file, and a pre-flight preview shows projected tokens before you spend them.</div>
+        <div class="feature-desc">Route each generate stage to a fast or strong model. Batch generation sends a stage's shared context once instead of per file, with a projected-token preview before you spend.</div>
         <span class="feature-tag feature-tag--new">New</span>
       </div>
 
+<!-- BD-HIDDEN-V1 (Build/Deploy gated for the initial release; restore when shipped)
       <div class="feature-card" role="listitem">
         <div class="feature-icon" aria-hidden="true">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>
@@ -1186,7 +1189,9 @@
         <div class="feature-desc">Fast, Balanced, or Thorough in one click — each bundles model tier, parallelism, and post-build validation. Switch to Custom for per-step control.</div>
         <span class="feature-tag feature-tag--new">New</span>
       </div>
+      -->
 
+<!-- BD-HIDDEN-V1 (Build/Deploy gated for the initial release; restore when shipped)
       <div class="feature-card" role="listitem">
         <div class="feature-icon" aria-hidden="true">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
@@ -1195,7 +1200,9 @@
         <div class="feature-desc">A content-addressed cache means unchanged steps cost zero tokens and rebuild instantly — even after a clean checkout. Share it across machines or CI through a git repo.</div>
         <span class="feature-tag feature-tag--new">New</span>
       </div>
+      -->
 
+<!-- BD-HIDDEN-V1 (Build/Deploy gated for the initial release; restore when shipped)
       <div class="feature-card" role="listitem">
         <div class="feature-icon" aria-hidden="true">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="6" y1="3" x2="6" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 01-9 9"/></svg>
@@ -1204,7 +1211,9 @@
         <div class="feature-desc">A dependency-aware scheduler runs independent steps concurrently with a configurable cap, retries only the steps that failed, and shows a live build plan with per-step duration, token cost, and cache hits.</div>
         <span class="feature-tag feature-tag--new">New</span>
       </div>
+      -->
 
+<!-- BD-HIDDEN-V1 (Build/Deploy gated for the initial release; restore when shipped)
       <div class="feature-card" role="listitem">
         <div class="feature-icon" aria-hidden="true">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
@@ -1212,15 +1221,17 @@
         <div class="feature-title">Local Preview</div>
         <div class="feature-desc">Auto-detects Docker Compose or your stack (FastAPI, Flask, Next.js). One-click run with live service health dots, port links, and streamed logs.</div>
       </div>
+      -->
 
       <div class="feature-card" role="listitem">
         <div class="feature-icon" aria-hidden="true">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/><path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/></svg>
         </div>
         <div class="feature-title">Phase timeline</div>
-        <div class="feature-desc">Track delivery phases (MVP, v1.0, beta) parsed from roadmap docs. Merged, deployed, and in-progress statuses — with one-click deployment confirmation.</div>
+        <div class="feature-desc">Track delivery phases (MVP, v1.0, beta) parsed from roadmap docs, with in-progress status at a glance.</div>
       </div>
 
+<!-- BD-HIDDEN-V1 (Build/Deploy gated for the initial release; restore when shipped)
       <div class="feature-card" role="listitem">
         <div class="feature-icon" aria-hidden="true">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/></svg>
@@ -1228,6 +1239,7 @@
         <div class="feature-title">Stuck build detection</div>
         <div class="feature-desc">Heartbeat ticker detects frozen git operations. Amber warning at 30s, prominent Stop button at 60s. Cancel kills the subprocess; Restart triggers a fresh branch.</div>
       </div>
+      -->
 
       <div class="feature-card" role="listitem">
         <div class="feature-icon" aria-hidden="true">
@@ -1237,6 +1249,7 @@
         <div class="feature-desc">Admins publish an org config once. Every member connects by entering the org name. Roles: admin, member, viewer. Shared knowledge base across all projects.</div>
       </div>
 
+<!-- BD-HIDDEN-V1 (Build/Deploy gated for the initial release; restore when shipped)
       <div class="feature-card" role="listitem">
         <div class="feature-icon" aria-hidden="true">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
@@ -1244,6 +1257,7 @@
         <div class="feature-title">Deploy &amp; secrets</div>
         <div class="feature-desc">Tracks required secrets, pushes them to GitHub via API, and reports environment readiness. Separate staging, production, and preview environments.</div>
       </div>
+      -->
 
       <div class="feature-card" role="listitem">
         <div class="feature-icon" aria-hidden="true">
@@ -1266,7 +1280,7 @@
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/></svg>
         </div>
         <div class="feature-title">Multi-project</div>
-        <div class="feature-desc">Manage unlimited independent projects from one dashboard. Each has its own pipeline, review state, builds, and deployment config.</div>
+        <div class="feature-desc">Manage unlimited independent projects from one dashboard. Each has its own pipeline and review state.</div>
       </div>
 
       <div class="feature-card" role="listitem">
@@ -1286,7 +1300,7 @@
   <div class="container">
     <div class="lifecycle-header">
       <span class="eyebrow">Lifecycle</span>
-      <h2 class="section-heading" id="lifecycle-heading">From input to deploy</h2>
+      <h2 class="section-heading" id="lifecycle-heading">From input to reviewed specs</h2>
       <p class="section-sub">A structured pipeline with AI at every stage, review gates at key transitions, and full observability throughout.</p>
     </div>
 
@@ -1306,6 +1320,7 @@
         <div class="phase-name">Review</div>
         <div class="phase-desc">File-level review with critique regeneration and gate sign-off before advancing</div>
       </div>
+<!-- BD-HIDDEN-V1 (Build/Deploy gated for the initial release; restore when shipped)
       <div class="lifecycle-phase" role="listitem">
         <div class="phase-num">04</div>
         <div class="phase-name">Build</div>
@@ -1316,6 +1331,7 @@
         <div class="phase-name">Deploy</div>
         <div class="phase-desc">Push secrets to GitHub, validate environments, confirm live URL, track deployment status</div>
       </div>
+      -->
     </div>
 
     <div class="stage-pills" role="list" aria-label="Pipeline stages">
@@ -1452,8 +1468,8 @@
         <li class="qs-step">
           <div class="qs-num" aria-hidden="true">5</div>
           <div class="qs-body">
-            <div class="qs-title">Build &amp; preview</div>
-            <div class="qs-desc">Review docs, approve gates, run <span class="inline-code">Build All</span> to generate code, then click <span class="inline-code">Run Locally</span> to see it live.</div>
+            <div class="qs-title">Review &amp; approve</div>
+            <div class="qs-desc">Review each generated document, regenerate any section with a critique, and approve the gates to lock in your product spec.</div>
           </div>
         </li>
       </ol>
