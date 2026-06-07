@@ -163,6 +163,11 @@ const VIEWER_DEFAULT_HTML = `
 const PHASES = ['input', 'generate', 'review', 'build', 'deploy'];
 const PHASE_LABELS = { input: 'Input', generate: 'Generate', review: 'Review', build: 'Build', deploy: 'Deploy' };
 
+// Build + Deploy feature flag (server-resolved, surfaced in /api/state). When off, the
+// Build and Deploy stages + all related UI are hidden (gated, not removed — fully reversible).
+function bdEnabled() { return !!(typeof state !== 'undefined' && state && state.build_deploy_enabled); }
+function lifecyclePhases() { return bdEnabled() ? PHASES : PHASES.filter(p => p !== 'build' && p !== 'deploy'); }
+
 const STAGES = [
   { key: 'context', label: 'Context', dir: '00-context', desc: 'Product vision & market' },
   { key: 'requirements', label: 'Requirements', dir: '01-requirements', desc: 'BRD, PRD, metrics' },
@@ -274,6 +279,7 @@ async function loadProjectsState() {
 }
 
 function renderAll() {
+  document.body.classList.toggle('bd-off', !bdEnabled());
   document.getElementById('projects-shell').style.display = 'none';
   document.getElementById('app').style.display = 'flex';
   renderTopbar();
@@ -281,9 +287,9 @@ function renderAll() {
   renderInput();
   renderGenerate();
   renderReview();
-  renderBuild();
+  if (bdEnabled()) renderBuild();
   renderPhases();
-  renderDeploy();
+  if (bdEnabled()) renderDeploy();
   renderIssues();
   if (!runtimeInitialized) {
     renderSettings();
@@ -671,9 +677,9 @@ function renderTopbar() {
 
   const phase = state.phase || 'input';
   const phaseIdx = PHASES.indexOf(phase);
-  stepper.innerHTML = PHASES.map((p, i) => {
+  stepper.innerHTML = lifecyclePhases().map((p, i) => {
     const cls = i < phaseIdx ? 'done' : (i === phaseIdx ? 'active' : '');
-    const arrow = i < PHASES.length - 1 ? '<span class="phase-arrow">›</span>' : '';
+    const arrow = i < lifecyclePhases().length - 1 ? '<span class="phase-arrow">›</span>' : '';
     return `
       <span class="phase-step ${cls}" onclick="switchView('${p}')">
         <span class="phase-dot"></span>${PHASE_LABELS[p]}
@@ -808,14 +814,14 @@ function renderOverview() {
     deploy:   (() => { const envs = state.environments || {}; return ((envs.staging || {}).url || (envs.production || {}).url) ? 100 : 0; })(),
   };
 
-  const phaseStates = PHASES.map((p, i) => {
+  const phaseStates = lifecyclePhases().map((p, i) => {
     if (i < phaseIdx) return 'done';
     if (i === phaseIdx) return 'active';
     return 'pending';
   });
 
   const stripEl = document.getElementById('overview-phase-strip');
-  stripEl.innerHTML = PHASES.map((p, i) => {
+  stripEl.innerHTML = lifecyclePhases().map((p, i) => {
     const st = phaseStates[i];
     const pct = phasePcts[p];
     const checkSvg = `<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 12.75l6 6 9-13.5"/></svg>`;
@@ -917,7 +923,7 @@ function renderOverview() {
         <div class="overview-attention-icon overview-attention-icon--warn">${icon('eye', 15)}</div>
         <div class="overview-attention-body">
           <div class="overview-attention-title">${remaining} document${remaining !== 1 ? 's' : ''} awaiting review</div>
-          <div class="overview-attention-desc">Review each generated document and mark it as approved. Gates only pass once all documents in a stage are reviewed. This unlocks Build.</div>
+          <div class="overview-attention-desc">Review each generated document and mark it as approved. Gates only pass once all documents in a stage are reviewed.${bdEnabled() ? ' This unlocks Build.' : ''}</div>
           ${items ? `<div class="overview-attention-items">${items}</div>` : ''}
           <div class="overview-attention-actions">
             <button class="btn btn-primary btn-sm" onclick="switchView('review')">${icon('eye',12)} Open Review</button>
@@ -5264,6 +5270,8 @@ async function saveSettings() {
 // Navigation
 // ============================================================
 function switchView(name) {
+  // Build + Deploy gated off -> never navigate into them (deep-link / stale-state backstop)
+  if (!bdEnabled() && (name === 'build' || name === 'deploy')) name = 'overview';
   currentView = name;
   document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));

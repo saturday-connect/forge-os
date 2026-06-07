@@ -4735,3 +4735,12 @@ body.mac .projects-main {
   vertical-align: middle;
   flex-shrink: 0;
 }
+
+/* ── Build + Deploy feature flag OFF: hide all Build/Deploy surfaces ─────────
+   Driven by body.bd-off (toggled in renderAll from state.build_deploy_enabled).
+   Gate, not delete — flip the flag on and everything returns. */
+body.bd-off .nav-item[data-view="build"],
+body.bd-off .nav-item[data-view="deploy"],
+body.bd-off #view-build,
+body.bd-off #view-deploy,
+body.bd-off .bd-only { display: none !important; }
