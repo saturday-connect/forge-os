@@ -348,6 +348,7 @@ function renderProjectsHome() {
     const archivedAt = formatProjectDate(p.archived_at);
     const isArchived = (p.status || 'active') === 'archived';
     const isDeletePending = pendingDeleteProjectId === p.id;
+    const collab = p.collaboration || {};
     return `
       <div class="project-card ${isActive ? 'active' : ''}">
         <div class="project-card-head">
@@ -355,6 +356,9 @@ function renderProjectsHome() {
             <div class="project-name" title="${escHtmlJs(p.name || PROJECT_UI_TEXT.unnamed)}">${escHtmlJs(p.name || PROJECT_UI_TEXT.unnamed)}</div>
             <div class="project-slug">${escHtmlJs(p.slug || '')}</div>
           </div>
+          ${collab.shared ? `<span class="collab-pill" title="${escHtmlJs(collab.docs_repo_url || '')}">Shared${collab.visibility ? ' · ' + escHtmlJs(collab.visibility) : ''}</span>` : ''}
+          ${collab.joined ? `<span class="collab-pill collab-pill-joined" title="${escHtmlJs(collab.docs_repo_url || '')}">Joined</span>` : ''}
+          ${collab.error ? `<span class="collab-pill collab-pill-error" title="${escHtmlJs(collab.error)}">Share error</span>` : ''}
           ${isActive ? `<span class="active-pill">${PROJECT_UI_TEXT.active}</span>` : ''}
           ${isArchived ? `<span class="archive-pill">${PROJECT_UI_TEXT.archived}</span>` : ''}
         </div>
@@ -504,6 +508,16 @@ async function openShareDialog(projectId) {
   }
   const proj = (projectsState.projects || []).find((p) => p.id === projectId) || {};
   const name = proj.name || 'this project';
+  // Learn the active project's share state so the dialog can offer Stop sharing and
+  // pre-fill the docs repo URL (re-sharing to the same repo, not auto-creating again).
+  let shared = null;
+  let lastRepoUrl = '';
+  try {
+    const st = await (await apiFetch('/api/state')).json();
+    const collab = st.collaboration || {};
+    if (collab.shared_at) shared = collab;
+    lastRepoUrl = collab.docs_repo_url || collab.last_docs_repo_url || '';
+  } catch (e) { /* dialog works without share state */ }
   const overlay = document.createElement('div');
   overlay.id = 'share-overlay';
   overlay.className = 'dialog-overlay';
@@ -517,27 +531,53 @@ async function openShareDialog(projectId) {
         </button>
       </div>
       <div style="font-size:11px;color:var(--text-3);margin-bottom:16px;line-height:1.6;">
-        Pushes <b style="color:var(--text-2);">${escHtmlJs(name)}</b>'s docs to a per-project repo and lists it in your team's discovery registry. Who can open it is governed by the repo's GitHub permissions.
+        Pushes <b style="color:var(--text-2);">${escHtmlJs(name)}</b>'s docs to a per-project repo. Org and Public shares are listed in your team's discovery registry; Private shares are link-only, never listed. Who can open the docs is governed by the repo's GitHub permissions.
       </div>
+      ${shared ? `<div style="font-size:11px;color:var(--text-2);margin:-8px 0 16px;line-height:1.6;">Currently shared${shared.visibility ? ` (${escHtmlJs(shared.visibility)})` : ''} → <span style="word-break:break-all;">${escHtmlJs(shared.docs_repo_url || '')}</span></div>` : ''}
       <div class="share-field">
         <div class="share-field-label">Visibility</div>
         <div class="share-vis-group">
-          <label class="share-vis-opt"><input type="radio" name="share-vis" value="private" checked><span class="share-vis-name">Private</span><span class="share-vis-hint">collaborators only</span></label>
+          <label class="share-vis-opt"><input type="radio" name="share-vis" value="private" checked><span class="share-vis-name">Private</span><span class="share-vis-hint">collaborators only, unlisted</span></label>
           <label class="share-vis-opt"><input type="radio" name="share-vis" value="org"><span class="share-vis-name">Org</span><span class="share-vis-hint">everyone in the org can read</span></label>
           <label class="share-vis-opt"><input type="radio" name="share-vis" value="public"><span class="share-vis-name">Public</span><span class="share-vis-hint">anyone</span></label>
         </div>
       </div>
       <div class="share-field">
         <div class="share-field-label">Docs repo <span style="color:var(--text-3);font-weight:400;text-transform:none;letter-spacing:0;">— optional</span></div>
-        <input id="share-repo-url" class="share-input" placeholder="https://github.com/org/forge-myproject-docs" />
+        <input id="share-repo-url" class="share-input" placeholder="https://github.com/org/forge-myproject-docs" value="${escHtmlJs(lastRepoUrl)}" />
         <div class="share-field-hint">Leave blank to auto-create. Paste a repo URL if auto-create lacks permission.</div>
       </div>
       <div class="dialog-actions">
+        ${shared ? '<button class="btn btn-danger btn-sm" id="share-unshare-btn" style="margin-right:auto;" onclick="submitUnshare()">Stop sharing</button>' : ''}
         <button class="btn btn-ghost btn-sm" onclick="closeShareDialog()">Cancel</button>
-        <button class="btn btn-primary btn-sm" id="share-submit-btn" onclick="submitShare()">Share project</button>
+        <button class="btn btn-primary btn-sm" id="share-submit-btn" onclick="submitShare()">${shared ? 'Re-share' : 'Share project'}</button>
       </div>
     </div>`;
   document.body.appendChild(overlay);
+}
+
+async function submitUnshare() {
+  if (!confirm('Stop sharing this project? It is removed from the team discovery registry; the docs repo itself is kept.')) return;
+  const btn = document.getElementById('share-unshare-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Stopping…'; }
+  try {
+    const res = await apiFetch('/api/projects/share', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'unshare' }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      showToast(data.error || 'Unshare failed', 'error');
+      if (btn) { btn.disabled = false; btn.textContent = 'Stop sharing'; }
+      return;
+    }
+    showToast(data.registry_error ? `Sharing stopped (registry: ${data.registry_error})` : 'Sharing stopped', 'success');
+    closeShareDialog();
+    if (discoverLoaded) loadDiscover();
+  } catch (e) {
+    showToast('Unshare failed', 'error');
+    if (btn) { btn.disabled = false; btn.textContent = 'Stop sharing'; }
+  }
 }
 
 function closeShareDialog() {

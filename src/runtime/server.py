@@ -1062,8 +1062,9 @@ def _upsert_kb_registry(work_dir, proj, slug, doc_count, docs_repo_url="", visib
     directory every org member can read. Dedups by slug and MERGES: an empty docs_repo_url or
     visibility preserves whatever a prior writer set, so a later reviewed-docs publish does not
     wipe the docs_repo_url that Share recorded (and vice-versa). Forward-compatible schema. Only
-    org/public-visible projects are ever registered here; confidential projects are discovered
-    via GitHub access-filtering instead, never listed."""
+    org/public-visible projects are listed here — the share path routes private shares to
+    _deregister_from_kb instead, so confidential projects are discovered via GitHub
+    access-filtering, never via this registry."""
     reg_path = os.path.join(work_dir, KB_REGISTRY_FILE)
     registry = []
     if os.path.isfile(reg_path):
@@ -1130,6 +1131,14 @@ def _read_kb_registry(kb_config, token):
         return [], f"GitHub API error {e.code}"
     except (urllib.error.URLError, json.JSONDecodeError, ValueError, OSError) as e:
         return [], str(e)[:200]
+
+
+def _filter_discoverable(entries):
+    """Drop private entries from discovery results — defense for legacy rows written before
+    private shares were unlisted from the registry. Entries without a visibility field are
+    kept (pre-share KB exports default to org visibility)."""
+    return [e for e in entries
+            if not (isinstance(e, dict) and e.get("visibility") == KB_VISIBILITY_PRIVATE)]
 
 
 def _run_export_to_kb(kb_config, proj, token, docs):
@@ -1272,10 +1281,15 @@ def _provision_docs_repo(proj, slug, token, link_url="", org="", private=True):
     return repo_url, True, None
 
 
-def _register_in_kb(kb_repo_url, proj, token, slug, doc_count, docs_repo_url, visibility):
-    """Clone the KB repo, upsert this project's registry entry (with docs_repo_url + visibility),
-    and push registry.json straight to the default branch. Registry updates are metadata, so they
-    skip the PR flow that doc exports use. Returns error|None (advisory — never blocks Share)."""
+def _kb_registry_op(kb_repo_url, token, mutate, commit_msg):
+    """Run one mutation against the KB root registry.json: clone the KB repo, call
+    mutate(work_dir) -> bool (True = file changed), then commit + push to the default branch.
+    Registry updates are metadata, so they skip the PR flow that doc exports use. A mutate that
+    reports no change skips the commit/push entirely. A rejected push (concurrent registry
+    writer won the race) is retried once: reset to the remote tip and re-apply the mutation —
+    NOT a textual rebase, because registry.json is one whole-file JSON that two writers always
+    conflict on; the slug-keyed mutate re-run against the fresh file is the merge. Returns
+    error|None (advisory — callers surface it, never block on it)."""
     if not kb_repo_url:
         return "KB repo not configured"
     work = tempfile.mkdtemp(prefix="forge-kb-reg-")
@@ -1287,23 +1301,107 @@ def _register_in_kb(kb_repo_url, proj, token, slug, doc_count, docs_repo_url, vi
         def_br = subprocess.run(["git", "rev-parse", "--abbrev-ref", "HEAD"],
                                 cwd=work, capture_output=True, text=True)
         default_branch = def_br.stdout.strip() or "main"
-        _upsert_kb_registry(work, proj, slug, doc_count, docs_repo_url=docs_repo_url, visibility=visibility)
-        subprocess.run(["git", "config", "user.email", GIT_COMMIT_EMAIL], cwd=work, capture_output=True)
-        subprocess.run(["git", "config", "user.name", GIT_COMMIT_NAME], cwd=work, capture_output=True)
-        subprocess.run(["git", "add", KB_REGISTRY_FILE], cwd=work, capture_output=True)
-        commit = subprocess.run(["git", "commit", "-m", f"kb(registry): register {slug}"],
-                                cwd=work, capture_output=True, text=True)
-        if commit.returncode != 0 and "nothing to commit" not in (commit.stdout + commit.stderr).lower():
-            return "KB commit failed: " + commit.stderr.strip()[:150]
-        push = subprocess.run(["git", "push", "origin", f"HEAD:{default_branch}"],
-                              cwd=work, capture_output=True, text=True, timeout=GIT_TIMEOUT_SECS * 2)
-        if push.returncode != 0:
-            return "KB push failed: " + push.stderr.strip()[:150]
-        return None
+        last_err = ""
+        for attempt in (1, 2):
+            if not mutate(work):
+                return None
+            subprocess.run(["git", "config", "user.email", GIT_COMMIT_EMAIL], cwd=work, capture_output=True)
+            subprocess.run(["git", "config", "user.name", GIT_COMMIT_NAME], cwd=work, capture_output=True)
+            subprocess.run(["git", "add", KB_REGISTRY_FILE], cwd=work, capture_output=True)
+            commit = subprocess.run(["git", "commit", "-m", commit_msg],
+                                    cwd=work, capture_output=True, text=True)
+            if commit.returncode != 0 and "nothing to commit" not in (commit.stdout + commit.stderr).lower():
+                return "KB commit failed: " + commit.stderr.strip()[:150]
+            push = subprocess.run(["git", "push", "origin", f"HEAD:{default_branch}"],
+                                  cwd=work, capture_output=True, text=True, timeout=GIT_TIMEOUT_SECS * 2)
+            if push.returncode == 0:
+                return None
+            last_err = push.stderr.strip()[:150]
+            if attempt == 1:
+                fetch = subprocess.run(["git", "fetch", "origin", default_branch],
+                                       cwd=work, capture_output=True, text=True,
+                                       timeout=GIT_TIMEOUT_SECS * 2)
+                reset = subprocess.run(["git", "reset", "--hard", f"origin/{default_branch}"],
+                                       cwd=work, capture_output=True, text=True)
+                if fetch.returncode != 0 or reset.returncode != 0:
+                    break
+        return "KB push failed: " + last_err
     except (OSError, subprocess.SubprocessError) as e:
         return str(e)[:150]
     finally:
         shutil.rmtree(work, ignore_errors=True)
+
+
+def _register_in_kb(kb_repo_url, proj, token, slug, doc_count, docs_repo_url, visibility):
+    """List this project in the discovery registry (org/public shares only — the share path
+    routes private shares to _deregister_from_kb). Returns error|None (advisory)."""
+    def _mutate(work):
+        _upsert_kb_registry(work, proj, slug, doc_count,
+                            docs_repo_url=docs_repo_url, visibility=visibility)
+        return True
+    return _kb_registry_op(kb_repo_url, token, _mutate, f"kb(registry): register {slug}")
+
+
+def _remove_kb_registry_entry(work_dir, slug):
+    """Drop slug's entry from registry.json. Returns True if an entry was removed."""
+    reg_path = os.path.join(work_dir, KB_REGISTRY_FILE)
+    if not os.path.isfile(reg_path):
+        return False
+    try:
+        with open(reg_path, "r", encoding=FILE_ENCODING) as rf:
+            loaded = json.load(rf)
+    except (OSError, json.JSONDecodeError, ValueError):
+        return False
+    registry = loaded if isinstance(loaded, list) else (
+        loaded.get("projects") if isinstance(loaded, dict) and isinstance(loaded.get("projects"), list) else [])
+    kept = [e for e in registry if not (isinstance(e, dict) and e.get("slug") == slug)]
+    if len(kept) == len(registry):
+        return False
+    with open(reg_path, "w", encoding=FILE_ENCODING) as rf:
+        json.dump(kept, rf, indent=2)
+    return True
+
+
+def _deregister_from_kb(kb_repo_url, token, slug):
+    """Ensure slug is NOT listed in the discovery registry — used by private shares (including
+    org/public -> private downgrades on re-share). No-op when the registry is absent or has no
+    entry. A project that is also KB-exported gets re-listed by its next export; that listing
+    reflects the export, not the private docs repo. Returns error|None (advisory)."""
+    return _kb_registry_op(kb_repo_url, token,
+                           lambda work: _remove_kb_registry_entry(work, slug),
+                           f"kb(registry): unlist {slug}")
+
+
+def _project_collab_summary(entry):
+    """Collaboration summary for a project index entry, read straight from that project's own
+    state file — the project is usually not the active one, so load_project_state() does not
+    apply. Nothing is denormalized into the index (the state file stays the single source of
+    truth), so projects shared before this field existed surface correctly. Returns {} for
+    non-collaborating projects or unreadable state."""
+    data_dir = os.path.expanduser(entry.get("data_dir", "") or "")
+    state_path = os.path.join(data_dir, FILE_PROJECT_STATE) if data_dir else ""
+    if not state_path or not os.path.isfile(state_path):
+        return {}
+    try:
+        with open(state_path, "r", encoding=FILE_ENCODING) as f:
+            st = json.load(f)
+    except (OSError, json.JSONDecodeError, ValueError):
+        return {}
+    collab = st.get("collaboration", {})
+    if not isinstance(collab, dict):
+        return {}
+    out = {}
+    if collab.get("shared_at"):
+        out["shared"] = True
+        if collab.get("visibility"):
+            out["visibility"] = collab["visibility"]
+    if collab.get("joined_at"):
+        out["joined"] = True
+    if collab.get("docs_repo_url"):
+        out["docs_repo_url"] = collab["docs_repo_url"]
+    if collab.get("last_error"):
+        out["error"] = str(collab["last_error"])[:200]
+    return out
 
 
 def _run_share_project(proj, token, docs_repo_url, visibility, kb_repo_url):
@@ -1325,6 +1423,19 @@ def _run_share_project(proj, token, docs_repo_url, visibility, kb_repo_url):
         def_br = subprocess.run(["git", "rev-parse", "--abbrev-ref", "HEAD"],
                                 cwd=work_dir, capture_output=True, text=True)
         default_branch = def_br.stdout.strip() or "main"
+        # Mirror, don't accumulate: clear previously-shared stage markdown first so local
+        # deletions and renames propagate on re-share ("git add ." below stages the removals).
+        # Non-stage files (README, forge-project.json) are untouched.
+        for stage_dir in ALL_STAGE_DIRS:
+            clone_stage = os.path.join(work_dir, stage_dir)
+            if not os.path.isdir(clone_stage):
+                continue
+            for fn in os.listdir(clone_stage):
+                if fn.endswith(MARKDOWN_EXTENSION):
+                    try:
+                        os.remove(os.path.join(clone_stage, fn))
+                    except OSError as exc:
+                        logger.debug("share mirror: could not clear %s/%s: %s", stage_dir, fn, exc)
         for rel, abs_path in docs:
             dest = os.path.join(work_dir, rel)
             os.makedirs(os.path.dirname(dest), exist_ok=True)
@@ -1356,11 +1467,19 @@ def _run_share_project(proj, token, docs_repo_url, visibility, kb_repo_url):
         return None, str(e)[:200]
     finally:
         shutil.rmtree(work_dir, ignore_errors=True)
-    reg_error = _register_in_kb(kb_repo_url, proj, token, slug, len(docs), docs_repo_url, visibility)
+    # Private shares are link-only: ensure the slug is absent from the discovery registry
+    # (covers org/public -> private downgrades on re-share). Org/public shares are listed.
+    listed = visibility != KB_VISIBILITY_PRIVATE
+    if listed:
+        reg_error = _register_in_kb(kb_repo_url, proj, token, slug, len(docs), docs_repo_url, visibility)
+    else:
+        # No KB repo configured means nothing to unlist — not an error for a link-only share.
+        reg_error = _deregister_from_kb(kb_repo_url, token, slug) if kb_repo_url else None
     return {
         "docs_repo_url": docs_repo_url,
         "visibility": visibility,
         "doc_count": len(docs),
+        "listed": listed,
         "registry_error": reg_error,
     }, None
 
@@ -2405,6 +2524,7 @@ def compute_full_state():
         "user": load_user(),
         "project_type": proj.get("project_type", "standard"),
         "lastDistill": _load_distill_result(),
+        "collaboration": proj.get("collaboration", {}),
         "schema_version": proj.get("schema_version", 1),
     }
 
@@ -2512,6 +2632,7 @@ class ForgeHandler(BaseHTTPRequestHandler):
                     "last_opened_at": p.get("last_opened_at", ""),
                     "archived_at": p.get("archived_at", ""),
                     "status": p.get("status", PROJECT_STATUS_ACTIVE),
+                    "collaboration": _project_collab_summary(p),
                 })
             self._json_response(200, {
                 "workspace_root": PROJECTS_ROOT,
@@ -3140,15 +3261,39 @@ class ForgeHandler(BaseHTTPRequestHandler):
 
         if path == "/api/projects/share":
             proj = load_project_state()
+            action = (data.get("action") or "share").strip()
+            if action not in ("share", "unshare"):
+                self._json_response(400, {"error": "unknown action"})
+                return
             kb_cfg = _kb_config_from_state(proj)
             kb_repo_url = proj.get("git", {}).get("kb_repo_url", "")
             if not kb_repo_url and kb_cfg.get("repo_owner") and kb_cfg.get("repo_name"):
                 kb_repo_url = f"https://github.com/{kb_cfg['repo_owner']}/{kb_cfg['repo_name']}"
             token = proj.get("git", {}).get("token", "") or GIT_PAT
+            slug = slugify_project_name(proj.get("project_name", "project"))
+            if action == "unshare":
+                if not proj.get("collaboration", {}).get("shared_at"):
+                    self._json_response(400, {"error": "Project is not shared"})
+                    return
+                # De-list from the discovery registry (advisory) and clear the local share
+                # state. The docs repo itself is kept — repo deletion stays a manual GitHub
+                # action by design. No token requirement: with no KB repo there is nothing
+                # to de-list, and the local clear must always succeed.
+                reg_error = _deregister_from_kb(kb_repo_url, token, slug) if kb_repo_url else None
+                st = load_project_state()
+                collab = st.setdefault("collaboration", {})
+                last_url = collab.pop("docs_repo_url", "")
+                if last_url:
+                    collab["last_docs_repo_url"] = last_url
+                for key in ("visibility", "shared_at", "last_error"):
+                    collab.pop(key, None)
+                collab["unshared_at"] = datetime.now().isoformat()
+                save_project_state(st)
+                self._json_response(200, {"status": "unshared", "registry_error": reg_error})
+                return
             if not token:
                 self._json_response(400, {"error": "GitHub token required — configure it in Settings"})
                 return
-            slug = slugify_project_name(proj.get("project_name", "project"))
             link_url = (data.get("docs_repo_url") or "").strip()
             org = (data.get("org") or os.environ.get("FORGE_ORG", "")).strip()
             visibility = (data.get("visibility") or KB_VISIBILITY_PRIVATE).strip()
@@ -5068,6 +5213,7 @@ class ForgeHandler(BaseHTTPRequestHandler):
             if error:
                 self._json_response(502, {"error": error})
                 return
+            projects = _filter_discoverable(projects)
             self._json_response(200, {"projects": projects, "count": len(projects)})
             return
 
