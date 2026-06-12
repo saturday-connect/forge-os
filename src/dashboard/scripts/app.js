@@ -533,7 +533,7 @@ async function openShareDialog(projectId) {
       <div style="font-size:11px;color:var(--text-3);margin-bottom:16px;line-height:1.6;">
         Pushes <b style="color:var(--text-2);">${escHtmlJs(name)}</b>'s docs to a per-project repo. Org and Public shares are listed in your team's discovery registry; Private shares are link-only, never listed. Who can open the docs is governed by the repo's GitHub permissions.
       </div>
-      ${shared ? `<div style="font-size:11px;color:var(--text-2);margin:-8px 0 16px;line-height:1.6;">Currently shared${shared.visibility ? ` (${escHtmlJs(shared.visibility)})` : ''} → <span style="word-break:break-all;">${escHtmlJs(shared.docs_repo_url || '')}</span></div>` : ''}
+      ${shared ? `<div style="font-size:11px;color:var(--text-2);margin:-8px 0 16px;line-height:1.6;">Currently shared${shared.visibility ? ` (${escHtmlJs(shared.visibility)})` : ''} → <span style="word-break:break-all;">${escHtmlJs(shared.docs_repo_url || '')}</span>${shared.visibility_note ? `<br><span style="color:var(--text-3);">${escHtmlJs(shared.visibility_note)}</span>` : ''}</div>` : ''}
       <div class="share-field">
         <div class="share-field-label">Visibility</div>
         <div class="share-vis-group">
@@ -547,6 +547,21 @@ async function openShareDialog(projectId) {
         <input id="share-repo-url" class="share-input" placeholder="https://github.com/org/forge-myproject-docs" value="${escHtmlJs(lastRepoUrl)}" />
         <div class="share-field-hint">Leave blank to auto-create. Paste a repo URL if auto-create lacks permission.</div>
       </div>
+      ${shared ? `
+      <div class="share-field">
+        <div class="share-field-label">Access</div>
+        <div id="share-access-list" class="share-field-hint" style="margin-bottom:8px;">Loading access list…</div>
+        <div style="display:flex;gap:8px;">
+          <input id="share-invite-user" class="share-input" placeholder="github-username" style="flex:1;min-width:0;" />
+          <select id="share-invite-perm" class="share-input" style="width:auto;flex-shrink:0;">
+            <option value="pull">read</option>
+            <option value="push" selected>write</option>
+            <option value="admin">admin</option>
+          </select>
+          <button class="btn btn-secondary btn-sm" id="share-invite-btn" onclick="submitInvite()" style="flex-shrink:0;">Invite</button>
+        </div>
+        <div class="share-field-hint">Invitees get GitHub access to the docs repo — that is what Join checks.</div>
+      </div>` : ''}
       <div class="dialog-actions">
         ${shared ? '<button class="btn btn-danger btn-sm" id="share-unshare-btn" style="margin-right:auto;" onclick="submitUnshare()">Stop sharing</button>' : ''}
         <button class="btn btn-ghost btn-sm" onclick="closeShareDialog()">Cancel</button>
@@ -554,6 +569,53 @@ async function openShareDialog(projectId) {
       </div>
     </div>`;
   document.body.appendChild(overlay);
+  if (shared) loadShareAccess();
+}
+
+async function loadShareAccess() {
+  const el = document.getElementById('share-access-list');
+  if (!el) return;
+  try {
+    const res = await apiFetch('/api/projects/share', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'access' }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) { el.textContent = data.error || 'Could not load access list'; return; }
+    const rows = [
+      ...(data.collaborators || []).map((c) => `${escHtmlJs(c.login)} · ${escHtmlJs(c.permission)}`),
+      ...(data.invitations || []).map((i) => `${escHtmlJs(i.login)} · ${escHtmlJs(i.permission)} (invited, pending)`),
+    ];
+    el.innerHTML = rows.length ? rows.join('<br>') : 'No direct collaborators yet — only you (and org admins) have access.';
+  } catch (e) {
+    el.textContent = 'Could not load access list';
+  }
+}
+
+async function submitInvite() {
+  const user = (document.getElementById('share-invite-user')?.value || '').trim();
+  if (!user) { showToast('Enter a GitHub username', 'error'); return; }
+  const perm = document.getElementById('share-invite-perm')?.value || 'push';
+  const btn = document.getElementById('share-invite-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Inviting…'; }
+  try {
+    const res = await apiFetch('/api/projects/share', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'invite', username: user, permission: perm }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      showToast(data.error || 'Invite failed', 'error');
+    } else {
+      showToast(data.status === 'invited' ? `Invitation sent to ${user}` : `${user}'s access updated`, 'success');
+      const input = document.getElementById('share-invite-user');
+      if (input) input.value = '';
+      loadShareAccess();
+    }
+  } catch (e) {
+    showToast('Invite failed', 'error');
+  }
+  if (btn) { btn.disabled = false; btn.textContent = 'Invite'; }
 }
 
 async function submitUnshare() {
@@ -606,7 +668,8 @@ async function submitShare() {
       if (btn) { btn.disabled = false; btn.textContent = 'Share project'; }
       return;
     }
-    showToast('Sharing started' + (data.docs_repo_url ? ' → ' + data.docs_repo_url : ''), 'success');
+    showToast('Sharing started' + (data.docs_repo_url ? ' → ' + data.docs_repo_url : '')
+      + (data.visibility_note ? ` (${data.visibility_note})` : ''), 'success');
     closeShareDialog();
   } catch (e) {
     showToast('Share failed', 'error');
@@ -642,11 +705,40 @@ async function joinProject(slug) {
       body: JSON.stringify({ slug }),
     });
     const data = await res.json().catch(() => ({}));
-    if (!res.ok) { showToast(data.error || 'Join failed', 'error'); return; }
+    if (!res.ok) {
+      if (data.reason === 'access_denied') { openRequestAccessDialog(slug, data.docs_repo_url || ''); return; }
+      showToast(data.error || 'Join failed', 'error');
+      return;
+    }
     showToast('Joined — ' + (data.docs_copied || 0) + ' docs imported', 'success');
     await loadProjectsState();
     renderProjectsHome();
   } catch (e) { showToast('Join failed', 'error'); }
+}
+
+function openRequestAccessDialog(slug, repoUrl) {
+  const overlay = document.createElement('div');
+  overlay.id = 'request-access-overlay';
+  overlay.className = 'dialog-overlay';
+  overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
+  overlay.innerHTML = `
+    <div class="dialog" style="width:440px;max-width:92vw;">
+      <h3 style="margin:0 0 8px;">No access yet</h3>
+      <div style="font-size:11px;color:var(--text-3);margin-bottom:14px;line-height:1.6;">
+        Your GitHub account cannot read <b style="color:var(--text-2);">${escHtmlJs(slug)}</b>'s docs repo.
+        Ask the project owner to invite you (their Share dialog → Access → Invite), then Join again.
+      </div>
+      ${repoUrl ? `
+      <div class="share-field">
+        <div class="share-field-label">Docs repo</div>
+        <input class="share-input" readonly value="${escHtmlJs(repoUrl)}" onclick="this.select()" />
+        <div class="share-field-hint">Click to select — share this URL with the owner when requesting access.</div>
+      </div>` : ''}
+      <div class="dialog-actions">
+        <button class="btn btn-primary btn-sm" onclick="document.getElementById('request-access-overlay').remove()">Got it</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
 }
 
 function renderDiscoverSection() {

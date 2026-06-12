@@ -1237,19 +1237,24 @@ def _run_export_to_kb(kb_config, proj, token, docs):
 # the KB discovery registry. Access is delegated to GitHub repo permissions; the KB
 # registry only makes org/public projects discoverable — it is never the access gate.
 
-def _gh_create_repo(org, name, private, token):
+def _gh_create_repo(org, name, private, token, internal=False):
     """Create a GitHub repo via the API. Creates under the org when `org` is set, else under
     the authenticated user. auto_init=True so the repo has a default branch to clone at once.
+    `internal=True` requests org-`internal` visibility (readable by every org member) — GitHub
+    accepts it only for orgs on Enterprise plans, so callers must be ready to retry without it.
     Returns (clone_url, error). The caller treats ANY error as 'fall back to linking a URL'."""
     if not token:
         return None, "GitHub token required to auto-create a repo"
     api = f"https://api.github.com/orgs/{org}/repos" if org else "https://api.github.com/user/repos"
-    payload = json.dumps({
+    body = {
         "name": name,
         "private": bool(private),
         "auto_init": True,
         "description": "Forge OS project docs",
-    }).encode("utf-8")
+    }
+    if internal and org:
+        body["visibility"] = "internal"
+    payload = json.dumps(body).encode("utf-8")
     req = urllib.request.Request(api, data=payload, headers={
         "Authorization": f"Bearer {token}",
         "Accept": GITHUB_ACCEPT_HEADER,
@@ -1268,17 +1273,103 @@ def _gh_create_repo(org, name, private, token):
         return None, str(e)[:200]
 
 
-def _provision_docs_repo(proj, slug, token, link_url="", org="", private=True):
+def _parse_github_repo(repo_url):
+    """Extract (owner, repo) from a github.com https URL — (None, None) for anything else
+    (file://, ssh): access management is a GitHub-only concept."""
+    m = re.match(r"https://github\.com/([^/]+)/([^/]+?)(?:\.git)?/?$", (repo_url or "").strip())
+    return (m.group(1), m.group(2)) if m else (None, None)
+
+
+def _gh_headers(token):
+    return {
+        "Authorization": f"Bearer {token}",
+        "Accept": GITHUB_ACCEPT_HEADER,
+        "X-GitHub-Api-Version": GITHUB_API_VERSION,
+        "User-Agent": GITHUB_USER_AGENT,
+    }
+
+
+def _gh_invite_collaborator(repo_url, token, username, permission):
+    """PUT /repos/{owner}/{repo}/collaborators/{username} — invite a new collaborator or update
+    an existing one's permission. Returns (status, error): 'invited' (201, invitation created)
+    or 'updated' (204, already a collaborator). GitHub remains the authorizer — a caller without
+    admin on the repo gets the 403 verbatim."""
+    owner, repo = _parse_github_repo(repo_url)
+    if not owner:
+        return None, "Docs repo is not a github.com repository"
+    api = (f"https://api.github.com/repos/{owner}/{repo}/collaborators/"
+           f"{urllib.parse.quote(username)}")
+    req = urllib.request.Request(api, data=json.dumps({"permission": permission}).encode("utf-8"),
+                                 method="PUT", headers=_gh_headers(token))
+    try:
+        with urllib.request.urlopen(req, timeout=NETWORK_TIMEOUT_SECS) as resp:
+            return ("invited" if resp.status == 201 else "updated"), None
+    except urllib.error.HTTPError as e:
+        body = e.read().decode("utf-8", errors="ignore")[:200]
+        return None, f"GitHub API error {e.code}: {body}"
+    except (urllib.error.URLError, OSError) as e:
+        return None, str(e)[:200]
+
+
+def _gh_list_access(repo_url, token):
+    """List the docs repo's direct collaborators + pending invitations. Returns
+    ({collaborators: [{login, permission}], invitations: [{login, permission}]}, error)."""
+    owner, repo = _parse_github_repo(repo_url)
+    if not owner:
+        return None, "Docs repo is not a github.com repository"
+
+    def _get(path):
+        req = urllib.request.Request(f"https://api.github.com/repos/{owner}/{repo}/{path}",
+                                     headers=_gh_headers(token))
+        with urllib.request.urlopen(req, timeout=NETWORK_TIMEOUT_SECS) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+
+    def _perm(p):
+        if p.get("admin"):
+            return "admin"
+        return "push" if p.get("push") else "pull"
+
+    try:
+        collabs = _get("collaborators?affiliation=direct&per_page=100")
+        invites = _get("invitations?per_page=100")
+    except urllib.error.HTTPError as e:
+        body = e.read().decode("utf-8", errors="ignore")[:200]
+        return None, f"GitHub API error {e.code}: {body}"
+    except (urllib.error.URLError, OSError, json.JSONDecodeError, ValueError) as e:
+        return None, str(e)[:200]
+    return {
+        "collaborators": [{"login": c.get("login", ""), "permission": _perm(c.get("permissions", {}))}
+                          for c in collabs if isinstance(c, dict)],
+        "invitations": [{"login": (i.get("invitee") or {}).get("login", ""),
+                         "permission": i.get("permissions", "")}
+                        for i in invites if isinstance(i, dict)],
+    }, None
+
+
+def _provision_docs_repo(proj, slug, token, link_url="", org="", private=True, internal=False):
     """Resolve the per-project docs repo. Prefer an explicitly linked URL; otherwise auto-create
     `forge-<slug>-docs` via the GitHub API. If creation fails (commonly a missing repo-creation
     scope), return the error so the caller can fall back to asking the user to paste a repo URL.
-    Returns (repo_url, created, error)."""
+    `internal=True` (org-visibility shares with an org context) first attempts GitHub
+    org-`internal` visibility; if the org's plan rejects it, falls back to a private repo and
+    reports the downgrade in `note`. Returns (repo_url, created, error, note)."""
     if link_url:
-        return link_url.strip(), False, None
-    repo_url, error = _gh_create_repo(org, f"forge-{slug}-docs", private, token)
+        return link_url.strip(), False, None, None
+    name = f"forge-{slug}-docs"
+    if internal and org:
+        repo_url, error = _gh_create_repo(org, name, True, token, internal=True)
+        if not error:
+            return repo_url, True, None, None
+        # Internal visibility needs an Enterprise org plan — retry as plain private. A failure
+        # unrelated to visibility (scope, name taken) fails here too and surfaces from the retry.
+        repo_url, retry_error = _gh_create_repo(org, name, True, token)
+        if retry_error:
+            return None, False, retry_error, None
+        return repo_url, True, None, f"org-internal visibility unavailable ({error[:80]}) — created private"
+    repo_url, error = _gh_create_repo(org, name, private, token)
     if error:
-        return None, False, error
-    return repo_url, True, None
+        return None, False, error, None
+    return repo_url, True, None, None
 
 
 def _kb_registry_op(kb_repo_url, token, mutate, commit_msg):
@@ -1501,6 +1592,18 @@ def _overlay_stage_docs(src_dir, target_forge_dir):
             shutil.copy2(os.path.join(src_stage, fn), dst)
             copied += 1
     return copied
+
+
+def _is_access_denied_clone(repo_url, error):
+    """Classify a failed join clone as an access problem. GitHub deliberately reports private
+    repos the caller cannot see as 'not found', so for github.com URLs not-found IS the
+    access-denied signal. Non-GitHub URLs (file://, ssh) never classify — a missing local path
+    is genuinely missing, not a permissions issue."""
+    if _parse_github_repo(repo_url)[0] is None:
+        return False
+    lower = (error or "").lower()
+    return ("repository not found" in lower or "authentication failed" in lower
+            or "403" in lower or "could not read username" in lower)
 
 
 def _run_join_project(repo_url, token, name_hint=""):
@@ -3262,7 +3365,7 @@ class ForgeHandler(BaseHTTPRequestHandler):
         if path == "/api/projects/share":
             proj = load_project_state()
             action = (data.get("action") or "share").strip()
-            if action not in ("share", "unshare"):
+            if action not in ("share", "unshare", "invite", "access"):
                 self._json_response(400, {"error": "unknown action"})
                 return
             kb_cfg = _kb_config_from_state(proj)
@@ -3291,6 +3394,36 @@ class ForgeHandler(BaseHTTPRequestHandler):
                 save_project_state(st)
                 self._json_response(200, {"status": "unshared", "registry_error": reg_error})
                 return
+            if action in ("invite", "access"):
+                docs_repo = proj.get("collaboration", {}).get("docs_repo_url", "")
+                if not docs_repo:
+                    self._json_response(400, {"error": "Project is not shared"})
+                    return
+                if not token:
+                    self._json_response(400, {"error": "GitHub token required — configure it in Settings"})
+                    return
+                if action == "access":
+                    result, err = _gh_list_access(docs_repo, token)
+                    if err:
+                        self._json_response(502, {"error": err})
+                        return
+                    self._json_response(200, result)
+                    return
+                username = (data.get("username") or "").strip()
+                permission = (data.get("permission") or "push").strip()
+                if not re.fullmatch(r"[A-Za-z0-9](?:[A-Za-z0-9]|-(?=[A-Za-z0-9])){0,38}", username):
+                    self._json_response(400, {"error": "invalid GitHub username"})
+                    return
+                if permission not in ("pull", "push", "admin"):
+                    self._json_response(400, {"error": "invalid permission — use pull, push, or admin"})
+                    return
+                status, err = _gh_invite_collaborator(docs_repo, token, username, permission)
+                if err:
+                    self._json_response(502, {"error": err})
+                    return
+                self._json_response(200, {"status": status, "username": username,
+                                          "permission": permission})
+                return
             if not token:
                 self._json_response(400, {"error": "GitHub token required — configure it in Settings"})
                 return
@@ -3298,8 +3431,10 @@ class ForgeHandler(BaseHTTPRequestHandler):
             org = (data.get("org") or os.environ.get("FORGE_ORG", "")).strip()
             visibility = (data.get("visibility") or KB_VISIBILITY_PRIVATE).strip()
             private = visibility != KB_VISIBILITY_PUBLIC
-            repo_url, created, prov_err = _provision_docs_repo(
-                proj, slug, token, link_url=link_url, org=org, private=private)
+            want_internal = visibility == KB_VISIBILITY_ORG and bool(org)
+            repo_url, created, prov_err, vis_note = _provision_docs_repo(
+                proj, slug, token, link_url=link_url, org=org, private=private,
+                internal=want_internal)
             if prov_err:
                 # Auto-create failed (often missing repo scope) → tell the UI to offer linking.
                 self._json_response(502, {
@@ -3316,6 +3451,10 @@ class ForgeHandler(BaseHTTPRequestHandler):
                 collab["visibility"] = visibility
                 collab["shared_at"] = datetime.now().isoformat()
                 collab["last_error"] = error or (result or {}).get("registry_error")
+                if vis_note:
+                    collab["visibility_note"] = vis_note
+                else:
+                    collab.pop("visibility_note", None)
                 save_project_state(_pstate)
                 if error:
                     logger.warning("share %s: %s", slug, error)
@@ -3326,6 +3465,7 @@ class ForgeHandler(BaseHTTPRequestHandler):
                 "docs_repo_url": repo_url,
                 "created": created,
                 "visibility": visibility,
+                "visibility_note": vis_note,
             })
             return
 
@@ -3343,7 +3483,14 @@ class ForgeHandler(BaseHTTPRequestHandler):
                 return
             result, error = _run_join_project(repo_url, token, name_hint=(data.get("name") or ""))
             if error:
-                self._json_response(502, {"error": error})
+                payload = {"error": error}
+                if _is_access_denied_clone(repo_url, error):
+                    # Listed-but-unauthorized: tell the UI to show the request-access flow
+                    # instead of the raw git error. Access is granted on GitHub (Share dialog
+                    # -> Access -> Invite), not in Forge.
+                    payload["reason"] = "access_denied"
+                    payload["docs_repo_url"] = repo_url
+                self._json_response(502, payload)
                 return
             self._json_response(200, {
                 "status": "joined",
