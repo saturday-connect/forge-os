@@ -1674,6 +1674,79 @@ def _run_join_project(repo_url, token, name_hint=""):
         shutil.rmtree(clone_dir, ignore_errors=True)
 
 
+def _snapshot_doc_version(abs_path):
+    """Save a stage doc's current content into the version store — the same layout the
+    generator and the /api/version endpoints use (versions/<stage>/<stem>/<ts>.md). Returns
+    the version id or None. Never raises: a snapshot failure must not block the sync
+    overwrite, only lose the undo convenience."""
+    try:
+        if not (os.path.isfile(abs_path) and os.path.getsize(abs_path) > 0):
+            return None
+        rel = os.path.relpath(abs_path, FORGE_DIR)
+        stem = os.path.splitext(rel)[0]
+        ver_dir = os.path.join(FORGE_DIR, "versions", stem)
+        os.makedirs(ver_dir, exist_ok=True)
+        ts = datetime.now().strftime(VERSION_TIMESTAMP_FORMAT)
+        shutil.copy2(abs_path, os.path.join(ver_dir, f"{ts}.md"))
+        return ts
+    except OSError as exc:
+        logger.warning("sync snapshot failed for %s: %s", abs_path, exc)
+        return None
+
+
+def _run_pull_sync(repo_url, token):
+    """Pull the docs repo into the active project's stage docs. Additive overlay, remote-wins:
+    new remote files are copied; changed remote files overwrite local AFTER the local content
+    is snapshotted into the version store — nothing is silently lost. Local-only files are
+    kept: deletions propagate via push's mirror semantics, never via pull. Returns
+    (result, error)."""
+    clone_dir = tempfile.mkdtemp(prefix="forge-sync-")
+    try:
+        clone = subprocess.run(
+            ["git", "clone", "--depth=1", _cache_auth_url(repo_url, token), clone_dir],
+            capture_output=True, text=True, timeout=GIT_TIMEOUT_SECS * 4)
+        if clone.returncode != 0:
+            return None, "Clone failed (check repo access): " + clone.stderr.strip()[:200]
+        new, updated, snapshots = [], [], []
+        for stage_dir in ALL_STAGE_DIRS:
+            src_stage = os.path.join(clone_dir, stage_dir)
+            if not os.path.isdir(src_stage):
+                continue
+            for fn in sorted(os.listdir(src_stage)):
+                if not fn.endswith(MARKDOWN_EXTENSION):
+                    continue
+                src = os.path.join(src_stage, fn)
+                dst = os.path.join(FORGE_DIR, stage_dir, fn)
+                rel = f"{stage_dir}/{fn}"
+                try:
+                    with open(src, "rb") as f:
+                        remote_bytes = f.read()
+                except OSError:
+                    continue
+                if os.path.isfile(dst):
+                    try:
+                        with open(dst, "rb") as f:
+                            local_bytes = f.read()
+                    except OSError:
+                        local_bytes = None
+                    if local_bytes == remote_bytes:
+                        continue
+                    ver = _snapshot_doc_version(dst)
+                    if ver:
+                        snapshots.append({"path": rel, "version": ver})
+                    updated.append(rel)
+                else:
+                    new.append(rel)
+                os.makedirs(os.path.dirname(dst), exist_ok=True)
+                shutil.copy2(src, dst)
+        return {"files_new": new, "files_updated": updated, "snapshots": snapshots,
+                "files_pulled": len(new) + len(updated)}, None
+    except (OSError, subprocess.SubprocessError) as e:
+        return None, str(e)[:200]
+    finally:
+        shutil.rmtree(clone_dir, ignore_errors=True)
+
+
 # ── Cross-run build cache: remote sync (Phase 3/D2) ──────────────────────────
 # Union-sync the local content-addressed store (~/.forge/build-cache) with a git
 # repo. Entries are immutable (keyed by input_hash) so the merge is conflict-free:
@@ -3497,6 +3570,45 @@ class ForgeHandler(BaseHTTPRequestHandler):
                 "project": result["entry"],
                 "docs_copied": result["docs_copied"],
             })
+            return
+
+        if path == "/api/projects/sync":
+            proj = load_project_state()
+            direction = (data.get("direction") or "pull").strip()
+            if direction != "pull":
+                self._json_response(400, {"error": "unknown direction"})
+                return
+            repo_url = proj.get("collaboration", {}).get("docs_repo_url", "")
+            if not repo_url:
+                self._json_response(400, {"error": "Project has no docs repo — share or join it first"})
+                return
+            token = proj.get("git", {}).get("token", "") or GIT_PAT
+            result, error = _run_pull_sync(repo_url, token)
+            if error:
+                payload = {"error": error}
+                if _is_access_denied_clone(repo_url, error):
+                    payload["reason"] = "access_denied"
+                    payload["docs_repo_url"] = repo_url
+                self._json_response(502, payload)
+                return
+            # A pulled update invalidates the local review — the reviewed content changed.
+            if result["files_updated"]:
+                reviews = load_reviews()
+                invalidated = []
+                for rel in result["files_updated"]:
+                    if reviews.get(rel) == REVIEW_REVIEWED:
+                        reviews[rel] = REVIEW_NEEDS_REVIEW
+                        invalidated.append(rel)
+                if invalidated:
+                    save_reviews(reviews)
+                result["reviews_invalidated"] = invalidated
+            st = load_project_state()
+            collab = st.setdefault("collaboration", {})
+            collab["last_synced_at"] = datetime.now().isoformat()
+            save_project_state(st)
+            result["status"] = "synced"
+            result["last_synced_at"] = collab["last_synced_at"]
+            self._json_response(200, result)
             return
 
         if path == "/api/projects/archive":
