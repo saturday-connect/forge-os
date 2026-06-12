@@ -1372,6 +1372,38 @@ def _deregister_from_kb(kb_repo_url, token, slug):
                            f"kb(registry): unlist {slug}")
 
 
+def _project_collab_summary(entry):
+    """Collaboration summary for a project index entry, read straight from that project's own
+    state file — the project is usually not the active one, so load_project_state() does not
+    apply. Nothing is denormalized into the index (the state file stays the single source of
+    truth), so projects shared before this field existed surface correctly. Returns {} for
+    non-collaborating projects or unreadable state."""
+    data_dir = os.path.expanduser(entry.get("data_dir", "") or "")
+    state_path = os.path.join(data_dir, FILE_PROJECT_STATE) if data_dir else ""
+    if not state_path or not os.path.isfile(state_path):
+        return {}
+    try:
+        with open(state_path, "r", encoding=FILE_ENCODING) as f:
+            st = json.load(f)
+    except (OSError, json.JSONDecodeError, ValueError):
+        return {}
+    collab = st.get("collaboration", {})
+    if not isinstance(collab, dict):
+        return {}
+    out = {}
+    if collab.get("shared_at"):
+        out["shared"] = True
+        if collab.get("visibility"):
+            out["visibility"] = collab["visibility"]
+    if collab.get("joined_at"):
+        out["joined"] = True
+    if collab.get("docs_repo_url"):
+        out["docs_repo_url"] = collab["docs_repo_url"]
+    if collab.get("last_error"):
+        out["error"] = str(collab["last_error"])[:200]
+    return out
+
+
 def _run_share_project(proj, token, docs_repo_url, visibility, kb_repo_url):
     """Push the project's full .forge doc set + a forge-project.json manifest (the repo's
     self-describing card) to the already-provisioned docs repo, then register it in the KB
@@ -2600,6 +2632,7 @@ class ForgeHandler(BaseHTTPRequestHandler):
                     "last_opened_at": p.get("last_opened_at", ""),
                     "archived_at": p.get("archived_at", ""),
                     "status": p.get("status", PROJECT_STATUS_ACTIVE),
+                    "collaboration": _project_collab_summary(p),
                 })
             self._json_response(200, {
                 "workspace_root": PROJECTS_ROOT,

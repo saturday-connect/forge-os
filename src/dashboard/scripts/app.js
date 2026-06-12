@@ -348,6 +348,7 @@ function renderProjectsHome() {
     const archivedAt = formatProjectDate(p.archived_at);
     const isArchived = (p.status || 'active') === 'archived';
     const isDeletePending = pendingDeleteProjectId === p.id;
+    const collab = p.collaboration || {};
     return `
       <div class="project-card ${isActive ? 'active' : ''}">
         <div class="project-card-head">
@@ -355,6 +356,9 @@ function renderProjectsHome() {
             <div class="project-name" title="${escHtmlJs(p.name || PROJECT_UI_TEXT.unnamed)}">${escHtmlJs(p.name || PROJECT_UI_TEXT.unnamed)}</div>
             <div class="project-slug">${escHtmlJs(p.slug || '')}</div>
           </div>
+          ${collab.shared ? `<span class="collab-pill" title="${escHtmlJs(collab.docs_repo_url || '')}">Shared${collab.visibility ? ' · ' + escHtmlJs(collab.visibility) : ''}</span>` : ''}
+          ${collab.joined ? `<span class="collab-pill collab-pill-joined" title="${escHtmlJs(collab.docs_repo_url || '')}">Joined</span>` : ''}
+          ${collab.error ? `<span class="collab-pill collab-pill-error" title="${escHtmlJs(collab.error)}">Share error</span>` : ''}
           ${isActive ? `<span class="active-pill">${PROJECT_UI_TEXT.active}</span>` : ''}
           ${isArchived ? `<span class="archive-pill">${PROJECT_UI_TEXT.archived}</span>` : ''}
         </div>
