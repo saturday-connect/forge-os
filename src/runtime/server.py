@@ -1268,6 +1268,79 @@ def _gh_create_repo(org, name, private, token):
         return None, str(e)[:200]
 
 
+def _parse_github_repo(repo_url):
+    """Extract (owner, repo) from a github.com https URL — (None, None) for anything else
+    (file://, ssh): access management is a GitHub-only concept."""
+    m = re.match(r"https://github\.com/([^/]+)/([^/]+?)(?:\.git)?/?$", (repo_url or "").strip())
+    return (m.group(1), m.group(2)) if m else (None, None)
+
+
+def _gh_headers(token):
+    return {
+        "Authorization": f"Bearer {token}",
+        "Accept": GITHUB_ACCEPT_HEADER,
+        "X-GitHub-Api-Version": GITHUB_API_VERSION,
+        "User-Agent": GITHUB_USER_AGENT,
+    }
+
+
+def _gh_invite_collaborator(repo_url, token, username, permission):
+    """PUT /repos/{owner}/{repo}/collaborators/{username} — invite a new collaborator or update
+    an existing one's permission. Returns (status, error): 'invited' (201, invitation created)
+    or 'updated' (204, already a collaborator). GitHub remains the authorizer — a caller without
+    admin on the repo gets the 403 verbatim."""
+    owner, repo = _parse_github_repo(repo_url)
+    if not owner:
+        return None, "Docs repo is not a github.com repository"
+    api = (f"https://api.github.com/repos/{owner}/{repo}/collaborators/"
+           f"{urllib.parse.quote(username)}")
+    req = urllib.request.Request(api, data=json.dumps({"permission": permission}).encode("utf-8"),
+                                 method="PUT", headers=_gh_headers(token))
+    try:
+        with urllib.request.urlopen(req, timeout=NETWORK_TIMEOUT_SECS) as resp:
+            return ("invited" if resp.status == 201 else "updated"), None
+    except urllib.error.HTTPError as e:
+        body = e.read().decode("utf-8", errors="ignore")[:200]
+        return None, f"GitHub API error {e.code}: {body}"
+    except (urllib.error.URLError, OSError) as e:
+        return None, str(e)[:200]
+
+
+def _gh_list_access(repo_url, token):
+    """List the docs repo's direct collaborators + pending invitations. Returns
+    ({collaborators: [{login, permission}], invitations: [{login, permission}]}, error)."""
+    owner, repo = _parse_github_repo(repo_url)
+    if not owner:
+        return None, "Docs repo is not a github.com repository"
+
+    def _get(path):
+        req = urllib.request.Request(f"https://api.github.com/repos/{owner}/{repo}/{path}",
+                                     headers=_gh_headers(token))
+        with urllib.request.urlopen(req, timeout=NETWORK_TIMEOUT_SECS) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+
+    def _perm(p):
+        if p.get("admin"):
+            return "admin"
+        return "push" if p.get("push") else "pull"
+
+    try:
+        collabs = _get("collaborators?affiliation=direct&per_page=100")
+        invites = _get("invitations?per_page=100")
+    except urllib.error.HTTPError as e:
+        body = e.read().decode("utf-8", errors="ignore")[:200]
+        return None, f"GitHub API error {e.code}: {body}"
+    except (urllib.error.URLError, OSError, json.JSONDecodeError, ValueError) as e:
+        return None, str(e)[:200]
+    return {
+        "collaborators": [{"login": c.get("login", ""), "permission": _perm(c.get("permissions", {}))}
+                          for c in collabs if isinstance(c, dict)],
+        "invitations": [{"login": (i.get("invitee") or {}).get("login", ""),
+                         "permission": i.get("permissions", "")}
+                        for i in invites if isinstance(i, dict)],
+    }, None
+
+
 def _provision_docs_repo(proj, slug, token, link_url="", org="", private=True):
     """Resolve the per-project docs repo. Prefer an explicitly linked URL; otherwise auto-create
     `forge-<slug>-docs` via the GitHub API. If creation fails (commonly a missing repo-creation
@@ -3262,7 +3335,7 @@ class ForgeHandler(BaseHTTPRequestHandler):
         if path == "/api/projects/share":
             proj = load_project_state()
             action = (data.get("action") or "share").strip()
-            if action not in ("share", "unshare"):
+            if action not in ("share", "unshare", "invite", "access"):
                 self._json_response(400, {"error": "unknown action"})
                 return
             kb_cfg = _kb_config_from_state(proj)
@@ -3290,6 +3363,36 @@ class ForgeHandler(BaseHTTPRequestHandler):
                 collab["unshared_at"] = datetime.now().isoformat()
                 save_project_state(st)
                 self._json_response(200, {"status": "unshared", "registry_error": reg_error})
+                return
+            if action in ("invite", "access"):
+                docs_repo = proj.get("collaboration", {}).get("docs_repo_url", "")
+                if not docs_repo:
+                    self._json_response(400, {"error": "Project is not shared"})
+                    return
+                if not token:
+                    self._json_response(400, {"error": "GitHub token required — configure it in Settings"})
+                    return
+                if action == "access":
+                    result, err = _gh_list_access(docs_repo, token)
+                    if err:
+                        self._json_response(502, {"error": err})
+                        return
+                    self._json_response(200, result)
+                    return
+                username = (data.get("username") or "").strip()
+                permission = (data.get("permission") or "push").strip()
+                if not re.fullmatch(r"[A-Za-z0-9](?:[A-Za-z0-9]|-(?=[A-Za-z0-9])){0,38}", username):
+                    self._json_response(400, {"error": "invalid GitHub username"})
+                    return
+                if permission not in ("pull", "push", "admin"):
+                    self._json_response(400, {"error": "invalid permission — use pull, push, or admin"})
+                    return
+                status, err = _gh_invite_collaborator(docs_repo, token, username, permission)
+                if err:
+                    self._json_response(502, {"error": err})
+                    return
+                self._json_response(200, {"status": status, "username": username,
+                                          "permission": permission})
                 return
             if not token:
                 self._json_response(400, {"error": "GitHub token required — configure it in Settings"})

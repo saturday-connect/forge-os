@@ -547,6 +547,21 @@ async function openShareDialog(projectId) {
         <input id="share-repo-url" class="share-input" placeholder="https://github.com/org/forge-myproject-docs" value="${escHtmlJs(lastRepoUrl)}" />
         <div class="share-field-hint">Leave blank to auto-create. Paste a repo URL if auto-create lacks permission.</div>
       </div>
+      ${shared ? `
+      <div class="share-field">
+        <div class="share-field-label">Access</div>
+        <div id="share-access-list" class="share-field-hint" style="margin-bottom:8px;">Loading access list…</div>
+        <div style="display:flex;gap:8px;">
+          <input id="share-invite-user" class="share-input" placeholder="github-username" style="flex:1;min-width:0;" />
+          <select id="share-invite-perm" class="share-input" style="width:auto;flex-shrink:0;">
+            <option value="pull">read</option>
+            <option value="push" selected>write</option>
+            <option value="admin">admin</option>
+          </select>
+          <button class="btn btn-secondary btn-sm" id="share-invite-btn" onclick="submitInvite()" style="flex-shrink:0;">Invite</button>
+        </div>
+        <div class="share-field-hint">Invitees get GitHub access to the docs repo — that is what Join checks.</div>
+      </div>` : ''}
       <div class="dialog-actions">
         ${shared ? '<button class="btn btn-danger btn-sm" id="share-unshare-btn" style="margin-right:auto;" onclick="submitUnshare()">Stop sharing</button>' : ''}
         <button class="btn btn-ghost btn-sm" onclick="closeShareDialog()">Cancel</button>
@@ -554,6 +569,53 @@ async function openShareDialog(projectId) {
       </div>
     </div>`;
   document.body.appendChild(overlay);
+  if (shared) loadShareAccess();
+}
+
+async function loadShareAccess() {
+  const el = document.getElementById('share-access-list');
+  if (!el) return;
+  try {
+    const res = await apiFetch('/api/projects/share', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'access' }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) { el.textContent = data.error || 'Could not load access list'; return; }
+    const rows = [
+      ...(data.collaborators || []).map((c) => `${escHtmlJs(c.login)} · ${escHtmlJs(c.permission)}`),
+      ...(data.invitations || []).map((i) => `${escHtmlJs(i.login)} · ${escHtmlJs(i.permission)} (invited, pending)`),
+    ];
+    el.innerHTML = rows.length ? rows.join('<br>') : 'No direct collaborators yet — only you (and org admins) have access.';
+  } catch (e) {
+    el.textContent = 'Could not load access list';
+  }
+}
+
+async function submitInvite() {
+  const user = (document.getElementById('share-invite-user')?.value || '').trim();
+  if (!user) { showToast('Enter a GitHub username', 'error'); return; }
+  const perm = document.getElementById('share-invite-perm')?.value || 'push';
+  const btn = document.getElementById('share-invite-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Inviting…'; }
+  try {
+    const res = await apiFetch('/api/projects/share', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'invite', username: user, permission: perm }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      showToast(data.error || 'Invite failed', 'error');
+    } else {
+      showToast(data.status === 'invited' ? `Invitation sent to ${user}` : `${user}'s access updated`, 'success');
+      const input = document.getElementById('share-invite-user');
+      if (input) input.value = '';
+      loadShareAccess();
+    }
+  } catch (e) {
+    showToast('Invite failed', 'error');
+  }
+  if (btn) { btn.disabled = false; btn.textContent = 'Invite'; }
 }
 
 async function submitUnshare() {
