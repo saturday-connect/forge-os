@@ -1391,6 +1391,19 @@ def _run_share_project(proj, token, docs_repo_url, visibility, kb_repo_url):
         def_br = subprocess.run(["git", "rev-parse", "--abbrev-ref", "HEAD"],
                                 cwd=work_dir, capture_output=True, text=True)
         default_branch = def_br.stdout.strip() or "main"
+        # Mirror, don't accumulate: clear previously-shared stage markdown first so local
+        # deletions and renames propagate on re-share ("git add ." below stages the removals).
+        # Non-stage files (README, forge-project.json) are untouched.
+        for stage_dir in ALL_STAGE_DIRS:
+            clone_stage = os.path.join(work_dir, stage_dir)
+            if not os.path.isdir(clone_stage):
+                continue
+            for fn in os.listdir(clone_stage):
+                if fn.endswith(MARKDOWN_EXTENSION):
+                    try:
+                        os.remove(os.path.join(clone_stage, fn))
+                    except OSError as exc:
+                        logger.debug("share mirror: could not clear %s/%s: %s", stage_dir, fn, exc)
         for rel, abs_path in docs:
             dest = os.path.join(work_dir, rel)
             os.makedirs(os.path.dirname(dest), exist_ok=True)
