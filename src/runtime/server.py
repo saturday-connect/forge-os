@@ -1594,6 +1594,18 @@ def _overlay_stage_docs(src_dir, target_forge_dir):
     return copied
 
 
+def _is_access_denied_clone(repo_url, error):
+    """Classify a failed join clone as an access problem. GitHub deliberately reports private
+    repos the caller cannot see as 'not found', so for github.com URLs not-found IS the
+    access-denied signal. Non-GitHub URLs (file://, ssh) never classify — a missing local path
+    is genuinely missing, not a permissions issue."""
+    if _parse_github_repo(repo_url)[0] is None:
+        return False
+    lower = (error or "").lower()
+    return ("repository not found" in lower or "authentication failed" in lower
+            or "403" in lower or "could not read username" in lower)
+
+
 def _run_join_project(repo_url, token, name_hint=""):
     """Clone a shared docs repo into a NEW managed project. The project shell is created exactly
     like create-project (unique slug, proj-<ts> id, `forge init`), then the cloned stage docs are
@@ -3471,7 +3483,14 @@ class ForgeHandler(BaseHTTPRequestHandler):
                 return
             result, error = _run_join_project(repo_url, token, name_hint=(data.get("name") or ""))
             if error:
-                self._json_response(502, {"error": error})
+                payload = {"error": error}
+                if _is_access_denied_clone(repo_url, error):
+                    # Listed-but-unauthorized: tell the UI to show the request-access flow
+                    # instead of the raw git error. Access is granted on GitHub (Share dialog
+                    # -> Access -> Invite), not in Forge.
+                    payload["reason"] = "access_denied"
+                    payload["docs_repo_url"] = repo_url
+                self._json_response(502, payload)
                 return
             self._json_response(200, {
                 "status": "joined",

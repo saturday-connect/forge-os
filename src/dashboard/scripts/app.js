@@ -705,11 +705,40 @@ async function joinProject(slug) {
       body: JSON.stringify({ slug }),
     });
     const data = await res.json().catch(() => ({}));
-    if (!res.ok) { showToast(data.error || 'Join failed', 'error'); return; }
+    if (!res.ok) {
+      if (data.reason === 'access_denied') { openRequestAccessDialog(slug, data.docs_repo_url || ''); return; }
+      showToast(data.error || 'Join failed', 'error');
+      return;
+    }
     showToast('Joined — ' + (data.docs_copied || 0) + ' docs imported', 'success');
     await loadProjectsState();
     renderProjectsHome();
   } catch (e) { showToast('Join failed', 'error'); }
+}
+
+function openRequestAccessDialog(slug, repoUrl) {
+  const overlay = document.createElement('div');
+  overlay.id = 'request-access-overlay';
+  overlay.className = 'dialog-overlay';
+  overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
+  overlay.innerHTML = `
+    <div class="dialog" style="width:440px;max-width:92vw;">
+      <h3 style="margin:0 0 8px;">No access yet</h3>
+      <div style="font-size:11px;color:var(--text-3);margin-bottom:14px;line-height:1.6;">
+        Your GitHub account cannot read <b style="color:var(--text-2);">${escHtmlJs(slug)}</b>'s docs repo.
+        Ask the project owner to invite you (their Share dialog → Access → Invite), then Join again.
+      </div>
+      ${repoUrl ? `
+      <div class="share-field">
+        <div class="share-field-label">Docs repo</div>
+        <input class="share-input" readonly value="${escHtmlJs(repoUrl)}" onclick="this.select()" />
+        <div class="share-field-hint">Click to select — share this URL with the owner when requesting access.</div>
+      </div>` : ''}
+      <div class="dialog-actions">
+        <button class="btn btn-primary btn-sm" onclick="document.getElementById('request-access-overlay').remove()">Got it</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
 }
 
 function renderDiscoverSection() {
