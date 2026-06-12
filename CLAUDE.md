@@ -466,15 +466,17 @@ Inside a target `.forge/`:
 | `POST` | `/api/projects/select` | Select active project (backfills name) |
 | `POST` | `/api/projects/archive` | Archive project |
 | `POST` | `/api/projects/restore` | Restore project |
-| `POST` | `/api/projects/share` | Provision a per-project docs repo (auto-create, else link), push docs + manifest, register in the KB discovery registry |
+| `POST` | `/api/projects/share` | Action dispatch (`share` default, `unshare`; unknown → 400). Share: provision a per-project docs repo (auto-create, else link), mirror-push docs + manifest, list org/public shares in the KB discovery registry (private shares are de-listed, link-only). Unshare: de-list from the registry, clear local share state (`docs_repo_url` kept as `last_docs_repo_url`; the docs repo is not deleted) |
 | `POST` | `/api/projects/join` | Clone a shared docs repo into a new managed project (resolves repo by slug from the registry) |
+
+`GET /api/projects` attaches a per-project `collaboration` summary (`shared`/`visibility`, `joined`, `docs_repo_url`, `error`) read from each project's own state file; `GET /api/state` exposes the active project's full `collaboration` block.
 
 ---
 
 ## State Files
 
 ```text
-.forge/project-state.json       project settings, git, environments, builds, issues, collaboration (docs_repo_url/visibility)
+.forge/project-state.json       project settings, git, environments, builds, issues, collaboration (docs_repo_url, visibility, shared_at/joined_at, last_docs_repo_url + unshared_at after unshare, last_error)
 .forge/reviews.json             per-file review status
 .forge/runs/status.json         generation/processing status
 .forge/runs/generate-cache.json  per-file gen cache (input hash, tokens); shared by run.py + batch_runner
@@ -490,7 +492,7 @@ Inside a target `.forge/`:
 
 `project-state.json` is saved with `0o600` permissions. Git PAT is stripped before persistence (stored only in Electron safeStorage).
 
-The shared **discovery registry** lives in the KB repo at its root as `registry.json` (an external repo file, not under `.forge/`): a list of `{slug, name, visibility, docs_repo_url, code_repo_url, docs_path, doc_count, updated_at}` entries, one per org/public-visible project. `/api/projects/share` and `/api/knowledge/export` upsert it (merge-safe by slug, so neither writer clobbers the other's fields); `/api/knowledge/discover` reads it via the GitHub contents API. Each shared project's docs repo also carries a self-describing `forge-project.json` manifest at its root. Confidential projects are never listed here — they are discovered via GitHub access-filtering instead.
+The shared **discovery registry** lives in the KB repo at its root as `registry.json` (an external repo file, not under `.forge/`): a list of `{slug, name, visibility, docs_repo_url, code_repo_url, docs_path, doc_count, updated_at}` entries, one per org/public-visible project. `/api/projects/share` and `/api/knowledge/export` upsert it (merge-safe by slug, so neither writer clobbers the other's fields); `/api/knowledge/discover` reads it via the GitHub contents API. Registry writes retry once on a rejected push (reset to remote tip + re-apply the slug-keyed mutation — the mutate re-run is the merge, since two writers always conflict textually on one JSON file). Each shared project's docs repo also carries a self-describing `forge-project.json` manifest at its root. Confidential projects are never listed here — a private share (including an org/public → private re-share) actively de-lists its entry, and `/api/knowledge/discover` filters legacy private rows; private shares are joined by URL, with access enforced by GitHub repo permissions.
 
 ---
 
@@ -725,6 +727,7 @@ Component sizing rules:
 - AI Runtime settings decluttered (beta.117): progressive disclosure — only 3 primary controls stay visible (AI Tool, Default model, Build profile); per-stage model tiering, batch generation, build cache repo, and (Custom-only) per-step tiering + max-parallel move into a collapsed `<details class="settings-advanced">`. Choosing Custom reveals the per-step controls (`updateProfileButtons` toggles `#settings-custom-build`) and auto-opens Advanced. All element IDs preserved so save/seed wiring is unchanged. Verified via DOM eval: AI Runtime card exposes exactly 3 top-level `.form-group`s with Advanced collapsed by default
 - Project collaboration (beta.118–120): docs-first sharing across machines with **no central server** — access delegated to GitHub repo permissions. **Share** (`/api/projects/share`) provisions a per-project docs repo (auto-create via GitHub API, else link a pasted URL), pushes the full `.forge` doc set + a `forge-project.json` manifest, and registers `{docs_repo_url, visibility}` in a shared `registry.json` at the KB repo root (merge-safe upsert; the reviewed-docs export coexists without clobbering). **Discover** (`/api/knowledge/discover`) lists the registry via the contents API; **Join** (`/api/projects/join`) clones a shared docs repo into a new managed project (mirrors create-project, overlays docs into the resolved `data_dir`). UI: Share button + visibility dialog (private/org/public) on each project card, and a "Shared with your team" discovery list with Join, on the Projects home. Validated hermetically (local bare repos; only repo-create stubbed) + in-browser (preview screenshots). Three per-phase commits.
 - Build + Deploy feature flag (initial release, OFF by default): one flag gates the Build + Deploy stages and ALL related UI + endpoints so v1 ships the documentation lifecycle only (Projects → Input → Generate → Review). Server: `BUILD_DEPLOY_ENABLED_DEFAULT` (constants), `_resolve_build_deploy_enabled` (env `FORGE_ENABLE_BUILD_DEPLOY` > state `build_deploy_enabled` > default) surfaced in `/api/state`, phase capped at `review` when off, `_bd_guard()` 403s all build/deploy endpoints + the `env_config`/`env_save`/`deploy` actions. Frontend: `body.bd-off` + `.bd-only` CSS + `bdEnabled()`/`lifecyclePhases()` + a `switchView` guard hide the nav, the 3-stage lifecycle strip, the views, and the Settings build controls (Generate's per-stage models + batch toggle kept). Gate-not-delete, fully reversible. Validated hermetically (resolver precedence + endpoints 403 off / 200 on) and in-browser (off = 3-stage lifecycle, no Build/Deploy nav; on = restored). Three per-phase commits on `feat/build-deploy-flag`
+- Collaboration registry hygiene (beta.123, Phase 3a of the completion plan): five fixes hardening the share/discover/join loop. (1) **Private shares unlisted** — the share path routes private visibility to `_deregister_from_kb` (covers org/public → private downgrades) and `/api/knowledge/discover` filters legacy private rows, closing the metadata leak where confidential names/slugs appeared in the team registry. (2) **Registry write serialization** — `_kb_registry_op` retries a rejected push once via reset-to-remote + re-apply of the slug-keyed mutation (the mutate re-run IS the merge; textual rebase always conflicts on one JSON file). (3) **Mirror re-share** — stage markdown in the docs repo clone is cleared before copying, so local deletions/renames propagate instead of accumulating. (4) **Unshare** — `action: "unshare"` on `/api/projects/share` (allowlist-validated) de-lists + clears the collaboration block, keeping `last_docs_repo_url` for one-click re-share; the share dialog shows current share state, a confirm-guarded Stop sharing, and pre-fills the repo URL (fixing re-share's spurious auto-create 502). (5) **Card pills** — `GET /api/projects` attaches a collaboration summary read from each project's own state file (no index denormalization); cards show Shared/Joined/Share-error pills, making background share failures visible. Validated hermetically (5 harnesses, 23 assertions: local bare repos, race injection via mutate hook, real server subprocess + real `forge init`) + in-browser; per-chunk commits on `feat/collab-registry-hygiene`
 
 ---
 
@@ -738,10 +741,10 @@ Direction and known limitations for the next iteration. None of these block curr
 - **`FORGE_VALIDATE_BUILD` is only enabled by the `thorough` profile.** A standalone "validate build output" toggle would let `custom` profiles opt in without going thorough.
 - **The DAG view is read-only.** Could add per-step log drill-down and a live timing waterfall (data is already in `build-system.json`).
 
-### Collaboration — Phase 3 (access & sync), deferred
+### Collaboration — Phase 3 (access & sync), partially shipped
+Registry hygiene shipped in beta.123 (private unlisting, write retry-on-race, mirror re-share, unshare, card pills). Still deferred:
 - **Share provisions + registers but does not grant teammate access** — adding collaborators/teams to the docs repo from Forge is the next step (today: manual on GitHub). Until then a listed-but-unauthorized project surfaces as "Request access" (clone 403).
 - **"org" visibility provisions a *private* repo** (intent recorded in registry + manifest); wire true GitHub org-`internal` visibility for org repos.
-- **Registry writes go straight to the KB default branch** — two simultaneous shares can race on `registry.json`. Serialize (or PR-merge) the registry update for multi-admin orgs.
 - **No pull/push collaboration sync yet** — a "Sync" on a joined project (pull-before/push-after, like the build-cache sync) + GitHub-permission→role (admin/member/viewer) gating is the round-trip's missing half.
 
 ### Hygiene / debt
