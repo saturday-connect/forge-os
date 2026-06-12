@@ -1285,8 +1285,11 @@ def _kb_registry_op(kb_repo_url, token, mutate, commit_msg):
     """Run one mutation against the KB root registry.json: clone the KB repo, call
     mutate(work_dir) -> bool (True = file changed), then commit + push to the default branch.
     Registry updates are metadata, so they skip the PR flow that doc exports use. A mutate that
-    reports no change skips the commit/push entirely. Returns error|None (advisory — callers
-    surface it, never block on it)."""
+    reports no change skips the commit/push entirely. A rejected push (concurrent registry
+    writer won the race) is retried once: reset to the remote tip and re-apply the mutation —
+    NOT a textual rebase, because registry.json is one whole-file JSON that two writers always
+    conflict on; the slug-keyed mutate re-run against the fresh file is the merge. Returns
+    error|None (advisory — callers surface it, never block on it)."""
     if not kb_repo_url:
         return "KB repo not configured"
     work = tempfile.mkdtemp(prefix="forge-kb-reg-")
@@ -1298,20 +1301,31 @@ def _kb_registry_op(kb_repo_url, token, mutate, commit_msg):
         def_br = subprocess.run(["git", "rev-parse", "--abbrev-ref", "HEAD"],
                                 cwd=work, capture_output=True, text=True)
         default_branch = def_br.stdout.strip() or "main"
-        if not mutate(work):
-            return None
-        subprocess.run(["git", "config", "user.email", GIT_COMMIT_EMAIL], cwd=work, capture_output=True)
-        subprocess.run(["git", "config", "user.name", GIT_COMMIT_NAME], cwd=work, capture_output=True)
-        subprocess.run(["git", "add", KB_REGISTRY_FILE], cwd=work, capture_output=True)
-        commit = subprocess.run(["git", "commit", "-m", commit_msg],
-                                cwd=work, capture_output=True, text=True)
-        if commit.returncode != 0 and "nothing to commit" not in (commit.stdout + commit.stderr).lower():
-            return "KB commit failed: " + commit.stderr.strip()[:150]
-        push = subprocess.run(["git", "push", "origin", f"HEAD:{default_branch}"],
-                              cwd=work, capture_output=True, text=True, timeout=GIT_TIMEOUT_SECS * 2)
-        if push.returncode != 0:
-            return "KB push failed: " + push.stderr.strip()[:150]
-        return None
+        last_err = ""
+        for attempt in (1, 2):
+            if not mutate(work):
+                return None
+            subprocess.run(["git", "config", "user.email", GIT_COMMIT_EMAIL], cwd=work, capture_output=True)
+            subprocess.run(["git", "config", "user.name", GIT_COMMIT_NAME], cwd=work, capture_output=True)
+            subprocess.run(["git", "add", KB_REGISTRY_FILE], cwd=work, capture_output=True)
+            commit = subprocess.run(["git", "commit", "-m", commit_msg],
+                                    cwd=work, capture_output=True, text=True)
+            if commit.returncode != 0 and "nothing to commit" not in (commit.stdout + commit.stderr).lower():
+                return "KB commit failed: " + commit.stderr.strip()[:150]
+            push = subprocess.run(["git", "push", "origin", f"HEAD:{default_branch}"],
+                                  cwd=work, capture_output=True, text=True, timeout=GIT_TIMEOUT_SECS * 2)
+            if push.returncode == 0:
+                return None
+            last_err = push.stderr.strip()[:150]
+            if attempt == 1:
+                fetch = subprocess.run(["git", "fetch", "origin", default_branch],
+                                       cwd=work, capture_output=True, text=True,
+                                       timeout=GIT_TIMEOUT_SECS * 2)
+                reset = subprocess.run(["git", "reset", "--hard", f"origin/{default_branch}"],
+                                       cwd=work, capture_output=True, text=True)
+                if fetch.returncode != 0 or reset.returncode != 0:
+                    break
+        return "KB push failed: " + last_err
     except (OSError, subprocess.SubprocessError) as e:
         return str(e)[:150]
     finally:
