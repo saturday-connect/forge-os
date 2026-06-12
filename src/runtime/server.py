@@ -1237,19 +1237,24 @@ def _run_export_to_kb(kb_config, proj, token, docs):
 # the KB discovery registry. Access is delegated to GitHub repo permissions; the KB
 # registry only makes org/public projects discoverable — it is never the access gate.
 
-def _gh_create_repo(org, name, private, token):
+def _gh_create_repo(org, name, private, token, internal=False):
     """Create a GitHub repo via the API. Creates under the org when `org` is set, else under
     the authenticated user. auto_init=True so the repo has a default branch to clone at once.
+    `internal=True` requests org-`internal` visibility (readable by every org member) — GitHub
+    accepts it only for orgs on Enterprise plans, so callers must be ready to retry without it.
     Returns (clone_url, error). The caller treats ANY error as 'fall back to linking a URL'."""
     if not token:
         return None, "GitHub token required to auto-create a repo"
     api = f"https://api.github.com/orgs/{org}/repos" if org else "https://api.github.com/user/repos"
-    payload = json.dumps({
+    body = {
         "name": name,
         "private": bool(private),
         "auto_init": True,
         "description": "Forge OS project docs",
-    }).encode("utf-8")
+    }
+    if internal and org:
+        body["visibility"] = "internal"
+    payload = json.dumps(body).encode("utf-8")
     req = urllib.request.Request(api, data=payload, headers={
         "Authorization": f"Bearer {token}",
         "Accept": GITHUB_ACCEPT_HEADER,
@@ -1341,17 +1346,30 @@ def _gh_list_access(repo_url, token):
     }, None
 
 
-def _provision_docs_repo(proj, slug, token, link_url="", org="", private=True):
+def _provision_docs_repo(proj, slug, token, link_url="", org="", private=True, internal=False):
     """Resolve the per-project docs repo. Prefer an explicitly linked URL; otherwise auto-create
     `forge-<slug>-docs` via the GitHub API. If creation fails (commonly a missing repo-creation
     scope), return the error so the caller can fall back to asking the user to paste a repo URL.
-    Returns (repo_url, created, error)."""
+    `internal=True` (org-visibility shares with an org context) first attempts GitHub
+    org-`internal` visibility; if the org's plan rejects it, falls back to a private repo and
+    reports the downgrade in `note`. Returns (repo_url, created, error, note)."""
     if link_url:
-        return link_url.strip(), False, None
-    repo_url, error = _gh_create_repo(org, f"forge-{slug}-docs", private, token)
+        return link_url.strip(), False, None, None
+    name = f"forge-{slug}-docs"
+    if internal and org:
+        repo_url, error = _gh_create_repo(org, name, True, token, internal=True)
+        if not error:
+            return repo_url, True, None, None
+        # Internal visibility needs an Enterprise org plan — retry as plain private. A failure
+        # unrelated to visibility (scope, name taken) fails here too and surfaces from the retry.
+        repo_url, retry_error = _gh_create_repo(org, name, True, token)
+        if retry_error:
+            return None, False, retry_error, None
+        return repo_url, True, None, f"org-internal visibility unavailable ({error[:80]}) — created private"
+    repo_url, error = _gh_create_repo(org, name, private, token)
     if error:
-        return None, False, error
-    return repo_url, True, None
+        return None, False, error, None
+    return repo_url, True, None, None
 
 
 def _kb_registry_op(kb_repo_url, token, mutate, commit_msg):
@@ -3401,8 +3419,10 @@ class ForgeHandler(BaseHTTPRequestHandler):
             org = (data.get("org") or os.environ.get("FORGE_ORG", "")).strip()
             visibility = (data.get("visibility") or KB_VISIBILITY_PRIVATE).strip()
             private = visibility != KB_VISIBILITY_PUBLIC
-            repo_url, created, prov_err = _provision_docs_repo(
-                proj, slug, token, link_url=link_url, org=org, private=private)
+            want_internal = visibility == KB_VISIBILITY_ORG and bool(org)
+            repo_url, created, prov_err, vis_note = _provision_docs_repo(
+                proj, slug, token, link_url=link_url, org=org, private=private,
+                internal=want_internal)
             if prov_err:
                 # Auto-create failed (often missing repo scope) → tell the UI to offer linking.
                 self._json_response(502, {
@@ -3419,6 +3439,10 @@ class ForgeHandler(BaseHTTPRequestHandler):
                 collab["visibility"] = visibility
                 collab["shared_at"] = datetime.now().isoformat()
                 collab["last_error"] = error or (result or {}).get("registry_error")
+                if vis_note:
+                    collab["visibility_note"] = vis_note
+                else:
+                    collab.pop("visibility_note", None)
                 save_project_state(_pstate)
                 if error:
                     logger.warning("share %s: %s", slug, error)
@@ -3429,6 +3453,7 @@ class ForgeHandler(BaseHTTPRequestHandler):
                 "docs_repo_url": repo_url,
                 "created": created,
                 "visibility": visibility,
+                "visibility_note": vis_note,
             })
             return
 
