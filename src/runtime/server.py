@@ -2492,6 +2492,7 @@ def compute_full_state():
         "user": load_user(),
         "project_type": proj.get("project_type", "standard"),
         "lastDistill": _load_distill_result(),
+        "collaboration": proj.get("collaboration", {}),
         "schema_version": proj.get("schema_version", 1),
     }
 
@@ -3227,15 +3228,39 @@ class ForgeHandler(BaseHTTPRequestHandler):
 
         if path == "/api/projects/share":
             proj = load_project_state()
+            action = (data.get("action") or "share").strip()
+            if action not in ("share", "unshare"):
+                self._json_response(400, {"error": "unknown action"})
+                return
             kb_cfg = _kb_config_from_state(proj)
             kb_repo_url = proj.get("git", {}).get("kb_repo_url", "")
             if not kb_repo_url and kb_cfg.get("repo_owner") and kb_cfg.get("repo_name"):
                 kb_repo_url = f"https://github.com/{kb_cfg['repo_owner']}/{kb_cfg['repo_name']}"
             token = proj.get("git", {}).get("token", "") or GIT_PAT
+            slug = slugify_project_name(proj.get("project_name", "project"))
+            if action == "unshare":
+                if not proj.get("collaboration", {}).get("shared_at"):
+                    self._json_response(400, {"error": "Project is not shared"})
+                    return
+                # De-list from the discovery registry (advisory) and clear the local share
+                # state. The docs repo itself is kept — repo deletion stays a manual GitHub
+                # action by design. No token requirement: with no KB repo there is nothing
+                # to de-list, and the local clear must always succeed.
+                reg_error = _deregister_from_kb(kb_repo_url, token, slug) if kb_repo_url else None
+                st = load_project_state()
+                collab = st.setdefault("collaboration", {})
+                last_url = collab.pop("docs_repo_url", "")
+                if last_url:
+                    collab["last_docs_repo_url"] = last_url
+                for key in ("visibility", "shared_at", "last_error"):
+                    collab.pop(key, None)
+                collab["unshared_at"] = datetime.now().isoformat()
+                save_project_state(st)
+                self._json_response(200, {"status": "unshared", "registry_error": reg_error})
+                return
             if not token:
                 self._json_response(400, {"error": "GitHub token required — configure it in Settings"})
                 return
-            slug = slugify_project_name(proj.get("project_name", "project"))
             link_url = (data.get("docs_repo_url") or "").strip()
             org = (data.get("org") or os.environ.get("FORGE_ORG", "")).strip()
             visibility = (data.get("visibility") or KB_VISIBILITY_PRIVATE).strip()
