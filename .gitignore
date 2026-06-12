@@ -46,6 +46,9 @@ dist/
 # ── Claude Code local config ──────────────────────────────────────────────────
 .claude/
 
+# ── Local planning notes (not shipped) ────────────────────────────────────────
+_planning/
+
 # ── OS and editor noise ───────────────────────────────────────────────────────
 .DS_Store
 Thumbs.db

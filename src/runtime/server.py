@@ -1062,8 +1062,9 @@ def _upsert_kb_registry(work_dir, proj, slug, doc_count, docs_repo_url="", visib
     directory every org member can read. Dedups by slug and MERGES: an empty docs_repo_url or
     visibility preserves whatever a prior writer set, so a later reviewed-docs publish does not
     wipe the docs_repo_url that Share recorded (and vice-versa). Forward-compatible schema. Only
-    org/public-visible projects are ever registered here; confidential projects are discovered
-    via GitHub access-filtering instead, never listed."""
+    org/public-visible projects are listed here — the share path routes private shares to
+    _deregister_from_kb instead, so confidential projects are discovered via GitHub
+    access-filtering, never via this registry."""
     reg_path = os.path.join(work_dir, KB_REGISTRY_FILE)
     registry = []
     if os.path.isfile(reg_path):
@@ -1130,6 +1131,14 @@ def _read_kb_registry(kb_config, token):
         return [], f"GitHub API error {e.code}"
     except (urllib.error.URLError, json.JSONDecodeError, ValueError, OSError) as e:
         return [], str(e)[:200]
+
+
+def _filter_discoverable(entries):
+    """Drop private entries from discovery results — defense for legacy rows written before
+    private shares were unlisted from the registry. Entries without a visibility field are
+    kept (pre-share KB exports default to org visibility)."""
+    return [e for e in entries
+            if not (isinstance(e, dict) and e.get("visibility") == KB_VISIBILITY_PRIVATE)]
 
 
 def _run_export_to_kb(kb_config, proj, token, docs):
@@ -1272,10 +1281,12 @@ def _provision_docs_repo(proj, slug, token, link_url="", org="", private=True):
     return repo_url, True, None
 
 
-def _register_in_kb(kb_repo_url, proj, token, slug, doc_count, docs_repo_url, visibility):
-    """Clone the KB repo, upsert this project's registry entry (with docs_repo_url + visibility),
-    and push registry.json straight to the default branch. Registry updates are metadata, so they
-    skip the PR flow that doc exports use. Returns error|None (advisory — never blocks Share)."""
+def _kb_registry_op(kb_repo_url, token, mutate, commit_msg):
+    """Run one mutation against the KB root registry.json: clone the KB repo, call
+    mutate(work_dir) -> bool (True = file changed), then commit + push to the default branch.
+    Registry updates are metadata, so they skip the PR flow that doc exports use. A mutate that
+    reports no change skips the commit/push entirely. Returns error|None (advisory — callers
+    surface it, never block on it)."""
     if not kb_repo_url:
         return "KB repo not configured"
     work = tempfile.mkdtemp(prefix="forge-kb-reg-")
@@ -1287,11 +1298,12 @@ def _register_in_kb(kb_repo_url, proj, token, slug, doc_count, docs_repo_url, vi
         def_br = subprocess.run(["git", "rev-parse", "--abbrev-ref", "HEAD"],
                                 cwd=work, capture_output=True, text=True)
         default_branch = def_br.stdout.strip() or "main"
-        _upsert_kb_registry(work, proj, slug, doc_count, docs_repo_url=docs_repo_url, visibility=visibility)
+        if not mutate(work):
+            return None
         subprocess.run(["git", "config", "user.email", GIT_COMMIT_EMAIL], cwd=work, capture_output=True)
         subprocess.run(["git", "config", "user.name", GIT_COMMIT_NAME], cwd=work, capture_output=True)
         subprocess.run(["git", "add", KB_REGISTRY_FILE], cwd=work, capture_output=True)
-        commit = subprocess.run(["git", "commit", "-m", f"kb(registry): register {slug}"],
+        commit = subprocess.run(["git", "commit", "-m", commit_msg],
                                 cwd=work, capture_output=True, text=True)
         if commit.returncode != 0 and "nothing to commit" not in (commit.stdout + commit.stderr).lower():
             return "KB commit failed: " + commit.stderr.strip()[:150]
@@ -1304,6 +1316,46 @@ def _register_in_kb(kb_repo_url, proj, token, slug, doc_count, docs_repo_url, vi
         return str(e)[:150]
     finally:
         shutil.rmtree(work, ignore_errors=True)
+
+
+def _register_in_kb(kb_repo_url, proj, token, slug, doc_count, docs_repo_url, visibility):
+    """List this project in the discovery registry (org/public shares only — the share path
+    routes private shares to _deregister_from_kb). Returns error|None (advisory)."""
+    def _mutate(work):
+        _upsert_kb_registry(work, proj, slug, doc_count,
+                            docs_repo_url=docs_repo_url, visibility=visibility)
+        return True
+    return _kb_registry_op(kb_repo_url, token, _mutate, f"kb(registry): register {slug}")
+
+
+def _remove_kb_registry_entry(work_dir, slug):
+    """Drop slug's entry from registry.json. Returns True if an entry was removed."""
+    reg_path = os.path.join(work_dir, KB_REGISTRY_FILE)
+    if not os.path.isfile(reg_path):
+        return False
+    try:
+        with open(reg_path, "r", encoding=FILE_ENCODING) as rf:
+            loaded = json.load(rf)
+    except (OSError, json.JSONDecodeError, ValueError):
+        return False
+    registry = loaded if isinstance(loaded, list) else (
+        loaded.get("projects") if isinstance(loaded, dict) and isinstance(loaded.get("projects"), list) else [])
+    kept = [e for e in registry if not (isinstance(e, dict) and e.get("slug") == slug)]
+    if len(kept) == len(registry):
+        return False
+    with open(reg_path, "w", encoding=FILE_ENCODING) as rf:
+        json.dump(kept, rf, indent=2)
+    return True
+
+
+def _deregister_from_kb(kb_repo_url, token, slug):
+    """Ensure slug is NOT listed in the discovery registry — used by private shares (including
+    org/public -> private downgrades on re-share). No-op when the registry is absent or has no
+    entry. A project that is also KB-exported gets re-listed by its next export; that listing
+    reflects the export, not the private docs repo. Returns error|None (advisory)."""
+    return _kb_registry_op(kb_repo_url, token,
+                           lambda work: _remove_kb_registry_entry(work, slug),
+                           f"kb(registry): unlist {slug}")
 
 
 def _run_share_project(proj, token, docs_repo_url, visibility, kb_repo_url):
@@ -1356,11 +1408,19 @@ def _run_share_project(proj, token, docs_repo_url, visibility, kb_repo_url):
         return None, str(e)[:200]
     finally:
         shutil.rmtree(work_dir, ignore_errors=True)
-    reg_error = _register_in_kb(kb_repo_url, proj, token, slug, len(docs), docs_repo_url, visibility)
+    # Private shares are link-only: ensure the slug is absent from the discovery registry
+    # (covers org/public -> private downgrades on re-share). Org/public shares are listed.
+    listed = visibility != KB_VISIBILITY_PRIVATE
+    if listed:
+        reg_error = _register_in_kb(kb_repo_url, proj, token, slug, len(docs), docs_repo_url, visibility)
+    else:
+        # No KB repo configured means nothing to unlist — not an error for a link-only share.
+        reg_error = _deregister_from_kb(kb_repo_url, token, slug) if kb_repo_url else None
     return {
         "docs_repo_url": docs_repo_url,
         "visibility": visibility,
         "doc_count": len(docs),
+        "listed": listed,
         "registry_error": reg_error,
     }, None
 
@@ -5068,6 +5128,7 @@ class ForgeHandler(BaseHTTPRequestHandler):
             if error:
                 self._json_response(502, {"error": error})
                 return
+            projects = _filter_discoverable(projects)
             self._json_response(200, {"projects": projects, "count": len(projects)})
             return
 

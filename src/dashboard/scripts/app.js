@@ -517,12 +517,12 @@ async function openShareDialog(projectId) {
         </button>
       </div>
       <div style="font-size:11px;color:var(--text-3);margin-bottom:16px;line-height:1.6;">
-        Pushes <b style="color:var(--text-2);">${escHtmlJs(name)}</b>'s docs to a per-project repo and lists it in your team's discovery registry. Who can open it is governed by the repo's GitHub permissions.
+        Pushes <b style="color:var(--text-2);">${escHtmlJs(name)}</b>'s docs to a per-project repo. Org and Public shares are listed in your team's discovery registry; Private shares are link-only, never listed. Who can open the docs is governed by the repo's GitHub permissions.
       </div>
       <div class="share-field">
         <div class="share-field-label">Visibility</div>
         <div class="share-vis-group">
-          <label class="share-vis-opt"><input type="radio" name="share-vis" value="private" checked><span class="share-vis-name">Private</span><span class="share-vis-hint">collaborators only</span></label>
+          <label class="share-vis-opt"><input type="radio" name="share-vis" value="private" checked><span class="share-vis-name">Private</span><span class="share-vis-hint">collaborators only, unlisted</span></label>
           <label class="share-vis-opt"><input type="radio" name="share-vis" value="org"><span class="share-vis-name">Org</span><span class="share-vis-hint">everyone in the org can read</span></label>
           <label class="share-vis-opt"><input type="radio" name="share-vis" value="public"><span class="share-vis-name">Public</span><span class="share-vis-hint">anyone</span></label>
         </div>
