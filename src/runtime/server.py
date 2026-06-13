@@ -1496,6 +1496,33 @@ def _deregister_from_kb(kb_repo_url, token, slug):
                            f"kb(registry): unlist {slug}")
 
 
+def _normalize_repo_url(url):
+    """Canonical form for comparing two docs-repo URLs: strip trailing slash and a `.git`
+    suffix so `…/x`, `…/x/`, and `…/x.git` all match. (str.removesuffix is 3.9+; sliced for
+    older stdlib.)"""
+    u = (url or "").strip().rstrip("/")
+    if u.endswith(".git"):
+        u = u[:-4]
+    return u
+
+
+def _find_joined_project(repo_url):
+    """Return the index entry of a NON-archived managed project already bound to repo_url
+    (shared or joined), or None. Lets join short-circuit instead of silently creating a
+    duplicate project on a re-join. Reads each project's own state file via the collab summary
+    (no index denormalization)."""
+    target = _normalize_repo_url(repo_url)
+    if not target:
+        return None
+    for entry in load_projects_index().get("projects", []):
+        if entry.get("status") == PROJECT_STATUS_ARCHIVED:
+            continue
+        summ = _project_collab_summary(entry)
+        if _normalize_repo_url(summ.get("docs_repo_url", "")) == target:
+            return entry
+    return None
+
+
 def _project_collab_summary(entry):
     """Collaboration summary for a project index entry, read straight from that project's own
     state file — the project is usually not the active one, so load_project_state() does not
@@ -3723,6 +3750,16 @@ class ForgeHandler(BaseHTTPRequestHandler):
                                  if e.get("slug") == slug), "")
             if not repo_url:
                 self._json_response(400, {"error": "repo_url or a known project slug is required"})
+                return
+            # Re-join guard: a repo already bound to a managed project would otherwise clone a
+            # silent duplicate. Point the UI at the existing project (open/sync) instead.
+            existing = _find_joined_project(repo_url)
+            if existing:
+                self._json_response(200, {
+                    "status": "already_joined",
+                    "project": {"id": existing.get("id", ""), "name": existing.get("name", "")},
+                    "docs_repo_url": repo_url,
+                })
                 return
             result, error = _run_join_project(repo_url, token, name_hint=(data.get("name") or ""))
             if error:

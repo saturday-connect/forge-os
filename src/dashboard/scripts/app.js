@@ -825,6 +825,12 @@ async function joinProject(slug) {
       showToast(data.error || 'Join failed', 'error');
       return;
     }
+    if (data.status === 'already_joined') {
+      const nm = (data.project && data.project.name) || 'a project';
+      showToast(`Already joined as "${nm}" — opening it. Use Sync to pull the latest.`, 'info');
+      if (data.project && data.project.id) { openProject(data.project.id); }
+      return;
+    }
     showToast('Joined — ' + (data.docs_copied || 0) + ' docs imported', 'success');
     await loadProjectsState();
     renderProjectsHome();
