@@ -1523,6 +1523,48 @@ def _find_joined_project(repo_url):
     return None
 
 
+_autosync_inflight = set()
+_autosync_lock = threading.Lock()
+
+
+def _maybe_auto_pull(project_id, repo_url, token, slug):
+    """Fire-and-forget background pull when a project with auto_pull_on_open is selected.
+    Advisory — never blocks the select response, never raises into the handler. Dedups against
+    a concurrent auto-pull of the same project (re-selecting mid-sync is a no-op). Applies the
+    same review-invalidation + last_synced_at as a manual pull so the two paths converge."""
+    with _autosync_lock:
+        if project_id in _autosync_inflight:
+            return
+        _autosync_inflight.add(project_id)
+
+    def _run():
+        _t0 = time.monotonic()
+        try:
+            result, error = _run_pull_sync(repo_url, token)
+            if error:
+                _log_collab_op("sync.pull", slug, _t0, "error", detail="auto " + error[:100])
+                return
+            if result["files_updated"]:
+                reviews = load_reviews()
+                changed = [r for r in result["files_updated"] if reviews.get(r) == REVIEW_REVIEWED]
+                for r in changed:
+                    reviews[r] = REVIEW_NEEDS_REVIEW
+                if changed:
+                    save_reviews(reviews)
+            st = load_project_state()
+            st.setdefault("collaboration", {})["last_synced_at"] = datetime.now().isoformat()
+            save_project_state(st)
+            _log_collab_op("sync.pull", slug, _t0, "ok",
+                           detail=f"auto pulled={result['files_pulled']}")
+        except (OSError, subprocess.SubprocessError) as exc:
+            _log_collab_op("sync.pull", slug, _t0, "error", detail=f"auto {str(exc)[:100]}")
+        finally:
+            with _autosync_lock:
+                _autosync_inflight.discard(project_id)
+
+    threading.Thread(target=_run, daemon=True).start()
+
+
 def _log_collab_op(op, slug, started, outcome, detail=""):
     """One structured line per collaboration op (share/join/sync): uniform op, slug, outcome,
     and duration so the round-trip is observable without per-handler boilerplate. WARNING on
@@ -2888,6 +2930,7 @@ def compute_full_state():
         "project_name": proj.get("project_name", ""),
         "skip_org_context": proj.get("skip_org_context", False),
         "stage_batch": proj.get("stage_batch", False),
+        "auto_pull_on_open": proj.get("auto_pull_on_open", False),
         "build_concurrency": proj.get("build_concurrency", 2),
         "build_profile": _resolve_build_profile(proj),
         "build_deploy_enabled": _bd_enabled,
@@ -3628,6 +3671,21 @@ class ForgeHandler(BaseHTTPRequestHandler):
                     save_project_state(_pstate)
             except OSError as exc:
                 logger.warning("select backfill project_name: %s", exc)
+            # Auto-sync: pull-on-open. Opt-in, fire-and-forget — the select response returns
+            # immediately; the pull lands in the background and the next state poll reflects it.
+            try:
+                _ap = load_project_state()
+                _ap_collab = _ap.get("collaboration", {})
+                _ap_url = _ap_collab.get("docs_repo_url", "")
+                # No token requirement — like manual sync, file:// and public repos pull
+                # tokenless; the token (if any) is only injected for private github URLs.
+                # A private repo with no token just fails the advisory pull and logs it.
+                _ap_token = _ap.get("git", {}).get("token", "") or GIT_PAT
+                if _ap.get("auto_pull_on_open") and _ap_url:
+                    _maybe_auto_pull(project_id, _ap_url, _ap_token,
+                                     slugify_project_name(_ap.get("project_name", "project")))
+            except OSError as exc:
+                logger.debug("auto-pull skipped: %s", exc)
             self._json_response(200, {"status": "selected", "project": target})
             return
 
@@ -5887,6 +5945,10 @@ class ForgeHandler(BaseHTTPRequestHandler):
                 # context sent once). Coerced to bool — authoritative over any
                 # ambient FORGE_STAGE_BATCH for dashboard-launched generation.
                 proj["stage_batch"] = bool(data["stage_batch"])
+            if "auto_pull_on_open" in data:
+                # Opt-in: pull the docs repo in the background when this project is
+                # opened. Advisory; remote-wins with version snapshots, never blocks.
+                proj["auto_pull_on_open"] = bool(data["auto_pull_on_open"])
             if "build_concurrency" in data:
                 # Max parallel build steps for the DAG scheduler. Clamp to [1,4]
                 # (rate-limit safety); authoritative over ambient FORGE_BUILD_CONCURRENCY.
