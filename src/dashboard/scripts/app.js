@@ -377,6 +377,12 @@ function renderProjectsHome() {
             <div class="project-meta-value" title="${escHtmlJs(archivedAt)}">${escHtmlJs(archivedAt)}</div>
           </div>
           ` : ''}
+          ${!isArchived && collab.last_synced_at ? `
+          <div class="project-meta-item">
+            <div class="project-meta-label">Synced</div>
+            <div class="project-meta-value" title="${escHtmlJs(formatProjectDate(collab.last_synced_at))}">${escHtmlJs(formatProjectDate(collab.last_synced_at))}</div>
+          </div>
+          ` : ''}
         </div>
         <div class="project-path" title="${escHtmlJs(p.path || '')}">${escHtmlJs(p.path || '')}</div>
         <div class="project-card-actions">
@@ -391,6 +397,7 @@ function renderProjectsHome() {
           ` : `
             <button class="btn btn-primary btn-sm" onclick="openProject('${escHtmlJs(p.id)}')">${PROJECT_UI_TEXT.openProject}</button>
             <button class="btn btn-secondary btn-sm" onclick="openShareDialog('${escHtmlJs(p.id)}')">Share</button>
+            ${collab.docs_repo_url ? `<button class="btn btn-secondary btn-sm" onclick="openSyncDialog('${escHtmlJs(p.id)}')">Sync</button>` : ''}
             <button class="btn btn-secondary btn-sm" onclick="archiveProject('${escHtmlJs(p.id)}')">${PROJECT_UI_TEXT.archiveProject}</button>
           `}
         </div>
@@ -551,7 +558,7 @@ async function openShareDialog(projectId) {
       <div class="share-field">
         <div class="share-field-label">Access</div>
         <div id="share-access-list" class="share-field-hint" style="margin-bottom:8px;">Loading access list…</div>
-        <div style="display:flex;gap:8px;">
+        <div id="share-invite-row" style="display:flex;gap:8px;">
           <input id="share-invite-user" class="share-input" placeholder="github-username" style="flex:1;min-width:0;" />
           <select id="share-invite-perm" class="share-input" style="width:auto;flex-shrink:0;">
             <option value="pull">read</option>
@@ -560,6 +567,7 @@ async function openShareDialog(projectId) {
           </select>
           <button class="btn btn-secondary btn-sm" id="share-invite-btn" onclick="submitInvite()" style="flex-shrink:0;">Invite</button>
         </div>
+        <div id="share-role-note" class="share-field-hint"></div>
         <div class="share-field-hint">Invitees get GitHub access to the docs repo — that is what Join checks.</div>
       </div>` : ''}
       <div class="dialog-actions">
@@ -587,8 +595,28 @@ async function loadShareAccess() {
       ...(data.invitations || []).map((i) => `${escHtmlJs(i.login)} · ${escHtmlJs(i.permission)} (invited, pending)`),
     ];
     el.innerHTML = rows.length ? rows.join('<br>') : 'No direct collaborators yet — only you (and org admins) have access.';
+    applyShareRole(data.role || '');
   } catch (e) {
     el.textContent = 'Could not load access list';
+  }
+}
+
+// Gate admin-only controls to the caller's GitHub repo role (UX hint — GitHub still enforces).
+// Fail OPEN on an unknown role (resolution failed): never lock a user out of a control GitHub
+// would let them use; only a KNOWN non-admin role hides invite/unshare.
+function applyShareRole(role) {
+  const known = role === 'admin' || role === 'member' || role === 'viewer';
+  const isAdmin = role === 'admin';
+  const showAdmin = !known || isAdmin;
+  const invite = document.getElementById('share-invite-row');
+  const unshare = document.getElementById('share-unshare-btn');
+  const note = document.getElementById('share-role-note');
+  if (invite) invite.style.display = showAdmin ? '' : 'none';
+  if (unshare) unshare.style.display = showAdmin ? '' : 'none';
+  if (note) {
+    note.textContent = (known && !isAdmin)
+      ? `You have ${role} access — only admins can invite collaborators or stop sharing.`
+      : (isAdmin ? 'You have admin access to this docs repo.' : '');
   }
 }
 
@@ -639,6 +667,93 @@ async function submitUnshare() {
   } catch (e) {
     showToast('Unshare failed', 'error');
     if (btn) { btn.disabled = false; btn.textContent = 'Stop sharing'; }
+  }
+}
+
+// Sync dialog — pull (anyone with access) / push (gated to non-viewers, fail-open on unknown).
+async function openSyncDialog(projectId) {
+  if (projectId && projectId !== (projectsState.active_project_id || '')) {
+    try {
+      const r = await apiFetch('/api/projects/select', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ project_id: projectId }),
+      });
+      if (!r.ok) { showToast('Could not select project to sync', 'error'); return; }
+      projectsState.active_project_id = projectId;
+    } catch (e) { showToast('Could not select project to sync', 'error'); return; }
+  }
+  let collab = {};
+  try { collab = (await (await apiFetch('/api/state')).json()).collaboration || {}; } catch (e) { /* dialog still works */ }
+  const repo = collab.docs_repo_url || '';
+  const role = collab.role || '';
+  const canPush = role !== 'viewer';  // fail open on unknown role; GitHub still enforces
+  const lastSynced = collab.last_synced_at ? new Date(collab.last_synced_at).toLocaleString() : 'never';
+  const overlay = document.createElement('div');
+  overlay.id = 'sync-overlay';
+  overlay.className = 'dialog-overlay';
+  overlay.onclick = (e) => { if (e.target === overlay) closeSyncDialog(); };
+  overlay.innerHTML = `
+    <div class="dialog" style="width:440px;max-width:92vw;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+        <h3 style="margin:0;">Sync docs</h3>
+        <button class="btn btn-ghost btn-xs" onclick="closeSyncDialog()" aria-label="Close">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div style="font-size:11px;color:var(--text-3);margin-bottom:14px;line-height:1.6;">
+        <b style="color:var(--text-2);word-break:break-all;">${escHtmlJs(repo)}</b><br>
+        Last synced: ${escHtmlJs(lastSynced)}. Pull brings in remote changes (your edited docs are snapshotted to version history first); Push publishes your local docs.
+      </div>
+      <div id="sync-result" class="share-field-hint" style="margin-bottom:12px;"></div>
+      <div class="dialog-actions">
+        <button class="btn btn-ghost btn-sm" onclick="closeSyncDialog()">Close</button>
+        <button class="btn btn-secondary btn-sm" id="sync-pull-btn" onclick="runSync('pull')">Pull</button>
+        ${canPush ? '<button class="btn btn-primary btn-sm" id="sync-push-btn" onclick="runSync(\'push\')">Push</button>' : ''}
+      </div>
+      ${canPush ? '' : '<div class="share-field-hint" style="margin-top:8px;">You have viewer access — push is disabled.</div>'}
+    </div>`;
+  document.body.appendChild(overlay);
+}
+
+function closeSyncDialog() {
+  const o = document.getElementById('sync-overlay');
+  if (o) o.remove();
+}
+
+async function runSync(direction) {
+  const el = document.getElementById('sync-result');
+  const pull = document.getElementById('sync-pull-btn');
+  const push = document.getElementById('sync-push-btn');
+  [pull, push].forEach((b) => { if (b) b.disabled = true; });
+  if (el) el.textContent = direction === 'push' ? 'Pushing…' : 'Pulling…';
+  try {
+    const res = await apiFetch('/api/projects/sync', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ direction }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      if (data.reason === 'access_denied') { closeSyncDialog(); openRequestAccessDialog('this project', data.docs_repo_url || ''); return; }
+      if (el) el.textContent = data.error || 'Sync failed';
+      [pull, push].forEach((b) => { if (b) b.disabled = false; });
+      return;
+    }
+    let msg;
+    if (direction === 'push') {
+      msg = data.no_changes ? 'Already up to date — nothing to push.'
+        : `Pushed ${data.files_pushed} change${data.files_pushed === 1 ? '' : 's'}.`;
+    } else {
+      const n = data.files_pulled || 0;
+      msg = n ? `Pulled ${n} file${n === 1 ? '' : 's'}${(data.reviews_invalidated || []).length ? ` — ${data.reviews_invalidated.length} need re-review` : ''}.`
+        : 'Already up to date.';
+    }
+    showToast(msg, 'success');
+    closeSyncDialog();
+    await loadProjectsState();
+    renderProjectsHome();
+  } catch (e) {
+    if (el) el.textContent = 'Sync failed';
+    [pull, push].forEach((b) => { if (b) b.disabled = false; });
   }
 }
 
