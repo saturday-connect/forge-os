@@ -748,6 +748,14 @@
               <label class="form-label">Branch Prefix</label>
               <input type="text" class="form-input" id="settings-branch-prefix" placeholder="forge">
             </div>
+            <!-- Auto-sync: pull the docs repo in the background on open (opt-in) -->
+            <div class="form-group" style="margin-bottom:0;">
+              <label class="form-label" style="display:flex;align-items:center;gap:8px;cursor:pointer;margin:0;">
+                <input type="checkbox" id="settings-auto-pull" style="width:auto;margin:0;accent-color:var(--primary);transform:translateY(1px);">
+                Auto-pull on open
+              </label>
+              <div class="settings-model-hint" style="margin-top:6px;">When a shared or joined project is opened, pull its docs repo in the background. Remote-wins, with your changed docs snapshotted to version history first — never blocks, never loses local work.</div>
+            </div>
           </div>
 
           <!-- Staging -->
