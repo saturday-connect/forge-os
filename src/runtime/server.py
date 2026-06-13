@@ -1674,24 +1674,38 @@ def _run_join_project(repo_url, token, name_hint=""):
         shutil.rmtree(clone_dir, ignore_errors=True)
 
 
-def _snapshot_doc_version(abs_path):
-    """Save a stage doc's current content into the version store — the same layout the
-    generator and the /api/version endpoints use (versions/<stage>/<stem>/<ts>.md). Returns
-    the version id or None. Never raises: a snapshot failure must not block the sync
-    overwrite, only lose the undo convenience."""
+def _snapshot_rel_version(rel, content):
+    """Write `content` bytes into the version store under the doc's rel path — the same
+    layout the generator and the /api/version endpoints use (versions/<stage>/<stem>/<ts>.md),
+    so sync snapshots are restorable through the existing Review version history. Returns the
+    version id or None. Never raises: a snapshot failure must not block a sync, only lose
+    the undo convenience."""
     try:
-        if not (os.path.isfile(abs_path) and os.path.getsize(abs_path) > 0):
+        if not content:
             return None
-        rel = os.path.relpath(abs_path, FORGE_DIR)
         stem = os.path.splitext(rel)[0]
         ver_dir = os.path.join(FORGE_DIR, "versions", stem)
         os.makedirs(ver_dir, exist_ok=True)
         ts = datetime.now().strftime(VERSION_TIMESTAMP_FORMAT)
-        shutil.copy2(abs_path, os.path.join(ver_dir, f"{ts}.md"))
+        with open(os.path.join(ver_dir, f"{ts}.md"), "wb") as f:
+            f.write(content)
         return ts
+    except OSError as exc:
+        logger.warning("sync snapshot failed for %s: %s", rel, exc)
+        return None
+
+
+def _snapshot_doc_version(abs_path):
+    """Snapshot an on-disk stage doc (see _snapshot_rel_version). Returns version id or None."""
+    try:
+        if not (os.path.isfile(abs_path) and os.path.getsize(abs_path) > 0):
+            return None
+        with open(abs_path, "rb") as f:
+            content = f.read()
     except OSError as exc:
         logger.warning("sync snapshot failed for %s: %s", abs_path, exc)
         return None
+    return _snapshot_rel_version(os.path.relpath(abs_path, FORGE_DIR), content)
 
 
 def _run_pull_sync(repo_url, token):
@@ -1745,6 +1759,113 @@ def _run_pull_sync(repo_url, token):
         return None, str(e)[:200]
     finally:
         shutil.rmtree(clone_dir, ignore_errors=True)
+
+
+def _run_push_sync(repo_url, token, proj, _pre_push_hook=None):
+    """Publish the project's current stage docs to the docs repo — the mirror image of
+    _run_pull_sync's policy: LOCAL wins on push, and any remote content that differs or would
+    be deleted is snapshotted into the version store first (it also remains in the docs repo's
+    git history). Local files are never modified by a push. A rejected push (concurrent
+    pusher) is retried once: reset to the new remote tip, re-snapshot, re-mirror, push —
+    last-writer-wins at repo level, with the loser preserved. `_pre_push_hook(work_dir)` is a
+    test seam invoked between commit and push to inject a deterministic race. Returns
+    (result, error)."""
+    docs = _collect_all_stage_docs()
+    work_dir = tempfile.mkdtemp(prefix="forge-sync-push-")
+    try:
+        clone = subprocess.run(
+            ["git", "clone", "--depth=1", _cache_auth_url(repo_url, token), work_dir],
+            capture_output=True, text=True, timeout=GIT_TIMEOUT_SECS * 4)
+        if clone.returncode != 0:
+            return None, "Clone failed (check repo access): " + clone.stderr.strip()[:200]
+        def_br = subprocess.run(["git", "rev-parse", "--abbrev-ref", "HEAD"],
+                                cwd=work_dir, capture_output=True, text=True)
+        default_branch = def_br.stdout.strip() or "main"
+        subprocess.run(["git", "config", "user.email", GIT_COMMIT_EMAIL], cwd=work_dir, capture_output=True)
+        subprocess.run(["git", "config", "user.name", GIT_COMMIT_NAME], cwd=work_dir, capture_output=True)
+        last_err = ""
+        for attempt in (1, 2):
+            local_by_rel = {rel: abs_path for rel, abs_path in docs}
+            snapshots, overwritten, deleted = [], [], []
+            remote_rels = set()
+            # Snapshot remote content that this push will overwrite or delete.
+            for stage_dir in ALL_STAGE_DIRS:
+                clone_stage = os.path.join(work_dir, stage_dir)
+                if not os.path.isdir(clone_stage):
+                    continue
+                for fn in sorted(os.listdir(clone_stage)):
+                    if not fn.endswith(MARKDOWN_EXTENSION):
+                        continue
+                    rel = f"{stage_dir}/{fn}"
+                    remote_rels.add(rel)
+                    try:
+                        with open(os.path.join(clone_stage, fn), "rb") as f:
+                            remote_bytes = f.read()
+                    except OSError:
+                        remote_bytes = b""
+                    if rel not in local_by_rel:
+                        ver = _snapshot_rel_version(rel, remote_bytes)
+                        if ver:
+                            snapshots.append({"path": rel, "version": ver})
+                        deleted.append(rel)
+                        continue
+                    try:
+                        with open(local_by_rel[rel], "rb") as f:
+                            local_bytes = f.read()
+                    except OSError:
+                        local_bytes = None
+                    if local_bytes != remote_bytes:
+                        ver = _snapshot_rel_version(rel, remote_bytes)
+                        if ver:
+                            snapshots.append({"path": rel, "version": ver})
+                        overwritten.append(rel)
+            added = sorted(set(local_by_rel) - remote_rels)
+            # Mirror local -> clone (same semantics as re-share: deletions propagate).
+            for stage_dir in ALL_STAGE_DIRS:
+                clone_stage = os.path.join(work_dir, stage_dir)
+                if os.path.isdir(clone_stage):
+                    for fn in os.listdir(clone_stage):
+                        if fn.endswith(MARKDOWN_EXTENSION):
+                            try:
+                                os.remove(os.path.join(clone_stage, fn))
+                            except OSError as exc:
+                                logger.debug("push sync mirror clear %s/%s: %s", stage_dir, fn, exc)
+            for rel, abs_path in docs:
+                dest = os.path.join(work_dir, rel)
+                os.makedirs(os.path.dirname(dest), exist_ok=True)
+                shutil.copy2(abs_path, dest)
+            subprocess.run(["git", "add", "."], cwd=work_dir, capture_output=True)
+            commit = subprocess.run(
+                ["git", "commit", "-m",
+                 f"forge(sync): push {proj.get('project_name', 'project')} ({len(docs)} docs)"],
+                cwd=work_dir, capture_output=True, text=True)
+            nothing = "nothing to commit" in (commit.stdout + commit.stderr).lower()
+            if commit.returncode != 0 and not nothing:
+                return None, "Sync commit failed: " + commit.stderr.strip()[:200]
+            if callable(_pre_push_hook):
+                _pre_push_hook(work_dir)
+            push = subprocess.run(["git", "push", "origin", f"HEAD:{default_branch}"],
+                                  cwd=work_dir, capture_output=True, text=True,
+                                  timeout=GIT_TIMEOUT_SECS * 2)
+            if push.returncode == 0:
+                return {"files_added": added, "remote_overwritten": overwritten,
+                        "remote_deleted": deleted, "snapshots": snapshots,
+                        "files_pushed": len(added) + len(overwritten) + len(deleted),
+                        "no_changes": nothing}, None
+            last_err = push.stderr.strip()[:200]
+            if attempt == 1:
+                fetch = subprocess.run(["git", "fetch", "origin", default_branch],
+                                       cwd=work_dir, capture_output=True, text=True,
+                                       timeout=GIT_TIMEOUT_SECS * 2)
+                reset = subprocess.run(["git", "reset", "--hard", f"origin/{default_branch}"],
+                                       cwd=work_dir, capture_output=True, text=True)
+                if fetch.returncode != 0 or reset.returncode != 0:
+                    break
+        return None, "Sync push failed: " + last_err
+    except (OSError, subprocess.SubprocessError) as e:
+        return None, str(e)[:200]
+    finally:
+        shutil.rmtree(work_dir, ignore_errors=True)
 
 
 # ── Cross-run build cache: remote sync (Phase 3/D2) ──────────────────────────
@@ -3575,7 +3696,7 @@ class ForgeHandler(BaseHTTPRequestHandler):
         if path == "/api/projects/sync":
             proj = load_project_state()
             direction = (data.get("direction") or "pull").strip()
-            if direction != "pull":
+            if direction not in ("pull", "push"):
                 self._json_response(400, {"error": "unknown direction"})
                 return
             repo_url = proj.get("collaboration", {}).get("docs_repo_url", "")
@@ -3583,6 +3704,39 @@ class ForgeHandler(BaseHTTPRequestHandler):
                 self._json_response(400, {"error": "Project has no docs repo — share or join it first"})
                 return
             token = proj.get("git", {}).get("token", "") or GIT_PAT
+            if direction == "push":
+                # Pull-first so a push never silently clobbers remote work the local copy
+                # has not seen; both halves snapshot overwritten content into the version store.
+                pull_result, pull_err = _run_pull_sync(repo_url, token)
+                if pull_err:
+                    payload = {"error": pull_err}
+                    if _is_access_denied_clone(repo_url, pull_err):
+                        payload["reason"] = "access_denied"
+                        payload["docs_repo_url"] = repo_url
+                    self._json_response(502, payload)
+                    return
+                if pull_result["files_updated"]:
+                    reviews = load_reviews()
+                    invalidated = [rel for rel in pull_result["files_updated"]
+                                   if reviews.get(rel) == REVIEW_REVIEWED]
+                    for rel in invalidated:
+                        reviews[rel] = REVIEW_NEEDS_REVIEW
+                    if invalidated:
+                        save_reviews(reviews)
+                result, error = _run_push_sync(repo_url, token, proj)
+                if error:
+                    self._json_response(502, {"error": error})
+                    return
+                st = load_project_state()
+                collab = st.setdefault("collaboration", {})
+                collab["last_synced_at"] = datetime.now().isoformat()
+                save_project_state(st)
+                result["status"] = "synced"
+                result["pulled_first"] = {"files_new": pull_result["files_new"],
+                                          "files_updated": pull_result["files_updated"]}
+                result["last_synced_at"] = collab["last_synced_at"]
+                self._json_response(200, result)
+                return
             result, error = _run_pull_sync(repo_url, token)
             if error:
                 payload = {"error": error}
