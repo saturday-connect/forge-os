@@ -1525,6 +1525,8 @@ def _project_collab_summary(entry):
         out["docs_repo_url"] = collab["docs_repo_url"]
     if collab.get("role"):
         out["role"] = collab["role"]
+    if collab.get("last_synced_at"):
+        out["last_synced_at"] = collab["last_synced_at"]
     if collab.get("last_error"):
         out["error"] = str(collab["last_error"])[:200]
     return out
