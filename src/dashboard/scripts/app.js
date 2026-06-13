@@ -5616,6 +5616,9 @@ function renderSettings() {
   const _apToggle = document.getElementById('settings-auto-pull');
   if (_apToggle) _apToggle.checked = !!state.auto_pull_on_open;
 
+  const _apushToggle = document.getElementById('settings-auto-push');
+  if (_apushToggle) _apushToggle.checked = !!state.auto_push_on_review;
+
   const _bcSel = document.getElementById('settings-build-concurrency');
   if (_bcSel) _bcSel.value = String(state.build_concurrency || 2);
   updateProfileButtons();
@@ -5651,6 +5654,7 @@ async function saveSettings() {
     generate_stage_models: _genModelsDraft || {},
     stage_batch: !!document.getElementById('settings-stage-batch')?.checked,
     auto_pull_on_open: !!document.getElementById('settings-auto-pull')?.checked,
+    auto_push_on_review: !!document.getElementById('settings-auto-push')?.checked,
     build_concurrency: parseInt(document.getElementById('settings-build-concurrency')?.value || '2', 10),
     build_cache_repo: {
       url: getValue('settings-build-cache-url'),
