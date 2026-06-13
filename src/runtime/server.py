@@ -1527,42 +1527,109 @@ _autosync_inflight = set()
 _autosync_lock = threading.Lock()
 
 
-def _maybe_auto_pull(project_id, repo_url, token, slug):
-    """Fire-and-forget background pull when a project with auto_pull_on_open is selected.
-    Advisory — never blocks the select response, never raises into the handler. Dedups against
-    a concurrent auto-pull of the same project (re-selecting mid-sync is a no-op). Applies the
-    same review-invalidation + last_synced_at as a manual pull so the two paths converge."""
+def _spawn_autosync(project_id, work):
+    """Run `work()` on a daemon thread, deduped against a concurrent auto-sync of the same
+    project (a second trigger mid-sync is a no-op) and never raising into the caller. Shared
+    by auto-pull (on open) and auto-push (on review-complete)."""
     with _autosync_lock:
         if project_id in _autosync_inflight:
             return
         _autosync_inflight.add(project_id)
 
     def _run():
+        try:
+            work()
+        finally:
+            with _autosync_lock:
+                _autosync_inflight.discard(project_id)
+
+    threading.Thread(target=_run, daemon=True).start()
+
+
+def _autosync_invalidate_reviews(files_updated):
+    """A pulled change to a reviewed doc flips it to needs_review — shared by the auto-pull and
+    auto-push (pull-first) paths."""
+    if not files_updated:
+        return
+    reviews = load_reviews()
+    changed = [r for r in files_updated if reviews.get(r) == REVIEW_REVIEWED]
+    for r in changed:
+        reviews[r] = REVIEW_NEEDS_REVIEW
+    if changed:
+        save_reviews(reviews)
+
+
+def _stamp_last_synced():
+    st = load_project_state()
+    st.setdefault("collaboration", {})["last_synced_at"] = datetime.now().isoformat()
+    save_project_state(st)
+
+
+def _maybe_auto_pull(project_id, repo_url, token, slug):
+    """Fire-and-forget background pull when a project with auto_pull_on_open is selected.
+    Advisory — never blocks the select response. Applies the same review-invalidation +
+    last_synced_at as a manual pull so the two paths converge."""
+    def _work():
         _t0 = time.monotonic()
         try:
             result, error = _run_pull_sync(repo_url, token)
             if error:
                 _log_collab_op("sync.pull", slug, _t0, "error", detail="auto " + error[:100])
                 return
-            if result["files_updated"]:
-                reviews = load_reviews()
-                changed = [r for r in result["files_updated"] if reviews.get(r) == REVIEW_REVIEWED]
-                for r in changed:
-                    reviews[r] = REVIEW_NEEDS_REVIEW
-                if changed:
-                    save_reviews(reviews)
-            st = load_project_state()
-            st.setdefault("collaboration", {})["last_synced_at"] = datetime.now().isoformat()
-            save_project_state(st)
-            _log_collab_op("sync.pull", slug, _t0, "ok",
-                           detail=f"auto pulled={result['files_pulled']}")
+            _autosync_invalidate_reviews(result["files_updated"])
+            _stamp_last_synced()
+            _log_collab_op("sync.pull", slug, _t0, "ok", detail=f"auto pulled={result['files_pulled']}")
         except (OSError, subprocess.SubprocessError) as exc:
             _log_collab_op("sync.pull", slug, _t0, "error", detail=f"auto {str(exc)[:100]}")
-        finally:
-            with _autosync_lock:
-                _autosync_inflight.discard(project_id)
+    _spawn_autosync(project_id, _work)
 
-    threading.Thread(target=_run, daemon=True).start()
+
+def _maybe_auto_push(project_id, repo_url, token, slug):
+    """Fire-and-forget background push when review completes (auto_push_on_review). Pull-first
+    (like the manual push endpoint) so unseen remote work is never blind-clobbered, then mirror
+    local -> remote. Advisory — never blocks the review response."""
+    def _work():
+        _t0 = time.monotonic()
+        try:
+            pull_result, pull_err = _run_pull_sync(repo_url, token)
+            if pull_err:
+                _log_collab_op("sync.push", slug, _t0, "error", detail="auto " + pull_err[:100])
+                return
+            _autosync_invalidate_reviews(pull_result["files_updated"])
+            result, error = _run_push_sync(repo_url, token, load_project_state())
+            if error:
+                _log_collab_op("sync.push", slug, _t0, "error", detail="auto " + error[:100])
+                return
+            _stamp_last_synced()
+            _log_collab_op("sync.push", slug, _t0, "ok", detail=f"auto pushed={result['files_pushed']}")
+        except (OSError, subprocess.SubprocessError) as exc:
+            _log_collab_op("sync.push", slug, _t0, "error", detail=f"auto {str(exc)[:100]}")
+    _spawn_autosync(project_id, _work)
+
+
+def _autopush_review_complete(reviews):
+    """The auto-push checkpoint: True iff at least one stage doc is generated and EVERY
+    generated (non-empty) doc is reviewed. Intentionally looser than compute_full_state's
+    `all_reviewed` (which requires all 11 stages populated): auto-push should fire when the
+    user has reviewed everything they have generated, not only when every stage is filled —
+    otherwise it would almost never trigger. Empty stages are ignored."""
+    if not os.path.isdir(FORGE_DIR):
+        return False
+    valid_prefixes = {f"{i:02d}" for i in range(VALID_STAGE_PREFIX_COUNT)}
+    generated_total = 0
+    unreviewed_total = 0
+    for d in sorted(os.listdir(FORGE_DIR)):
+        d_path = os.path.join(FORGE_DIR, d)
+        if not (os.path.isdir(d_path) and d[:2] in valid_prefixes and d != DIR_RAW_INPUT):
+            continue
+        for fname in sorted(os.listdir(d_path)):
+            if fname.endswith(MARKDOWN_EXTENSION):
+                entry = build_file_entry(d_path, fname, reviews)
+                if entry["status"] != REVIEW_EMPTY:
+                    generated_total += 1
+                    if entry["status"] != REVIEW_REVIEWED:
+                        unreviewed_total += 1
+    return generated_total > 0 and unreviewed_total == 0
 
 
 def _log_collab_op(op, slug, started, outcome, detail=""):
@@ -2931,6 +2998,7 @@ def compute_full_state():
         "skip_org_context": proj.get("skip_org_context", False),
         "stage_batch": proj.get("stage_batch", False),
         "auto_pull_on_open": proj.get("auto_pull_on_open", False),
+        "auto_push_on_review": proj.get("auto_push_on_review", False),
         "build_concurrency": proj.get("build_concurrency", 2),
         "build_profile": _resolve_build_profile(proj),
         "build_deploy_enabled": _bd_enabled,
@@ -5949,6 +6017,10 @@ class ForgeHandler(BaseHTTPRequestHandler):
                 # Opt-in: pull the docs repo in the background when this project is
                 # opened. Advisory; remote-wins with version snapshots, never blocks.
                 proj["auto_pull_on_open"] = bool(data["auto_pull_on_open"])
+            if "auto_push_on_review" in data:
+                # Opt-in: push the docs repo in the background when review completes
+                # (all docs reviewed). Advisory, role-gated, fire-and-forget.
+                proj["auto_push_on_review"] = bool(data["auto_push_on_review"])
             if "build_concurrency" in data:
                 # Max parallel build steps for the DAG scheduler. Clamp to [1,4]
                 # (rate-limit safety); authoritative over ambient FORGE_BUILD_CONCURRENCY.
@@ -6028,11 +6100,28 @@ class ForgeHandler(BaseHTTPRequestHandler):
                 self._json_response(400, {"error": "invalid"})
                 return
             reviews = load_reviews()
+            _prev_reviews = dict(reviews)  # snapshot for the auto-push all-reviewed transition
             if status == REVIEW_REVIEWED:
                 reviews[file_path] = REVIEW_REVIEWED
             else:
                 reviews.pop(file_path, None)
             save_reviews(reviews)
+            # Auto-push checkpoint: fire once when this mark transitions the project into
+            # all-reviewed (not per file). Opt-in, role-gated, fire-and-forget.
+            if status == REVIEW_REVIEWED:
+                try:
+                    _rp = load_project_state()
+                    _rp_collab = _rp.get("collaboration", {})
+                    _rp_url = _rp_collab.get("docs_repo_url", "")
+                    if (_rp.get("auto_push_on_review") and _rp_url
+                            and _rp_collab.get("role") != ROLE_VIEWER  # fail-open on unknown role
+                            and not _autopush_review_complete(_prev_reviews)
+                            and _autopush_review_complete(reviews)):
+                        _rp_token = _rp.get("git", {}).get("token", "") or GIT_PAT
+                        _maybe_auto_push(_normalize_repo_url(_rp_url), _rp_url, _rp_token,
+                                         slugify_project_name(_rp.get("project_name", "project")))
+                except OSError as exc:
+                    logger.debug("auto-push checkpoint skipped: %s", exc)
             for gate_name in GATE_STAGE_MAP:
                 gate_status = evaluate_gate(gate_name)
                 gate_path = os.path.join(FORGE_DIR, DIR_GATES, f"{gate_name}.md")
