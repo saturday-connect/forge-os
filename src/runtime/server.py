@@ -1496,6 +1496,44 @@ def _deregister_from_kb(kb_repo_url, token, slug):
                            f"kb(registry): unlist {slug}")
 
 
+def _normalize_repo_url(url):
+    """Canonical form for comparing two docs-repo URLs: strip trailing slash and a `.git`
+    suffix so `…/x`, `…/x/`, and `…/x.git` all match. (str.removesuffix is 3.9+; sliced for
+    older stdlib.)"""
+    u = (url or "").strip().rstrip("/")
+    if u.endswith(".git"):
+        u = u[:-4]
+    return u
+
+
+def _find_joined_project(repo_url):
+    """Return the index entry of a NON-archived managed project already bound to repo_url
+    (shared or joined), or None. Lets join short-circuit instead of silently creating a
+    duplicate project on a re-join. Reads each project's own state file via the collab summary
+    (no index denormalization)."""
+    target = _normalize_repo_url(repo_url)
+    if not target:
+        return None
+    for entry in load_projects_index().get("projects", []):
+        if entry.get("status") == PROJECT_STATUS_ARCHIVED:
+            continue
+        summ = _project_collab_summary(entry)
+        if _normalize_repo_url(summ.get("docs_repo_url", "")) == target:
+            return entry
+    return None
+
+
+def _log_collab_op(op, slug, started, outcome, detail=""):
+    """One structured line per collaboration op (share/join/sync): uniform op, slug, outcome,
+    and duration so the round-trip is observable without per-handler boilerplate. WARNING on
+    error (operational signal), INFO otherwise. `started` is a time.monotonic() reading."""
+    dur_ms = int((time.monotonic() - started) * 1000)
+    msg = f"collab op={op} slug={slug or '-'} outcome={outcome} dur_ms={dur_ms}"
+    if detail:
+        msg += f" detail={detail}"
+    (logger.warning if outcome == "error" else logger.info)(msg)
+
+
 def _project_collab_summary(entry):
     """Collaboration summary for a project index entry, read straight from that project's own
     state file — the project is usually not the active one, so load_project_state() does not
@@ -3687,6 +3725,7 @@ class ForgeHandler(BaseHTTPRequestHandler):
                 return
 
             def _do_share():
+                _t0 = time.monotonic()
                 result, error = _run_share_project(proj, token, repo_url, visibility, kb_repo_url)
                 _pstate = load_project_state()
                 collab = _pstate.setdefault("collaboration", {})
@@ -3699,8 +3738,10 @@ class ForgeHandler(BaseHTTPRequestHandler):
                 else:
                     collab.pop("visibility_note", None)
                 save_project_state(_pstate)
-                if error:
-                    logger.warning("share %s: %s", slug, error)
+                _log_collab_op("share", slug, _t0, "error" if error else "ok",
+                               detail=(error[:120] if error else
+                                       f"vis={visibility} docs={(result or {}).get('doc_count', 0)} "
+                                       f"listed={(result or {}).get('listed')}"))
 
             threading.Thread(target=_do_share, daemon=True).start()
             self._json_response(200, {
@@ -3724,8 +3765,22 @@ class ForgeHandler(BaseHTTPRequestHandler):
             if not repo_url:
                 self._json_response(400, {"error": "repo_url or a known project slug is required"})
                 return
+            _t0 = time.monotonic()
+            _jslug = slug or os.path.basename(_normalize_repo_url(repo_url))
+            # Re-join guard: a repo already bound to a managed project would otherwise clone a
+            # silent duplicate. Point the UI at the existing project (open/sync) instead.
+            existing = _find_joined_project(repo_url)
+            if existing:
+                _log_collab_op("join", _jslug, _t0, "already_joined")
+                self._json_response(200, {
+                    "status": "already_joined",
+                    "project": {"id": existing.get("id", ""), "name": existing.get("name", "")},
+                    "docs_repo_url": repo_url,
+                })
+                return
             result, error = _run_join_project(repo_url, token, name_hint=(data.get("name") or ""))
             if error:
+                _log_collab_op("join", _jslug, _t0, "error", detail=error[:120])
                 payload = {"error": error}
                 if _is_access_denied_clone(repo_url, error):
                     # Listed-but-unauthorized: tell the UI to show the request-access flow
@@ -3735,6 +3790,7 @@ class ForgeHandler(BaseHTTPRequestHandler):
                     payload["docs_repo_url"] = repo_url
                 self._json_response(502, payload)
                 return
+            _log_collab_op("join", _jslug, _t0, "ok", detail=f"docs={result['docs_copied']}")
             self._json_response(200, {
                 "status": "joined",
                 "project": result["entry"],
@@ -3753,11 +3809,14 @@ class ForgeHandler(BaseHTTPRequestHandler):
                 self._json_response(400, {"error": "Project has no docs repo — share or join it first"})
                 return
             token = proj.get("git", {}).get("token", "") or GIT_PAT
+            _t0 = time.monotonic()
+            _sslug = slugify_project_name(proj.get("project_name", "project"))
             if direction == "push":
                 # Pull-first so a push never silently clobbers remote work the local copy
                 # has not seen; both halves snapshot overwritten content into the version store.
                 pull_result, pull_err = _run_pull_sync(repo_url, token)
                 if pull_err:
+                    _log_collab_op("sync.push", _sslug, _t0, "error", detail=pull_err[:120])
                     payload = {"error": pull_err}
                     if _is_access_denied_clone(repo_url, pull_err):
                         payload["reason"] = "access_denied"
@@ -3774,6 +3833,7 @@ class ForgeHandler(BaseHTTPRequestHandler):
                         save_reviews(reviews)
                 result, error = _run_push_sync(repo_url, token, proj)
                 if error:
+                    _log_collab_op("sync.push", _sslug, _t0, "error", detail=error[:120])
                     self._json_response(502, {"error": error})
                     return
                 st = load_project_state()
@@ -3784,10 +3844,13 @@ class ForgeHandler(BaseHTTPRequestHandler):
                 result["pulled_first"] = {"files_new": pull_result["files_new"],
                                           "files_updated": pull_result["files_updated"]}
                 result["last_synced_at"] = collab["last_synced_at"]
+                _log_collab_op("sync.push", _sslug, _t0, "ok",
+                               detail=f"pushed={result['files_pushed']} pulled_first={pull_result['files_pulled']}")
                 self._json_response(200, result)
                 return
             result, error = _run_pull_sync(repo_url, token)
             if error:
+                _log_collab_op("sync.pull", _sslug, _t0, "error", detail=error[:120])
                 payload = {"error": error}
                 if _is_access_denied_clone(repo_url, error):
                     payload["reason"] = "access_denied"
@@ -3811,6 +3874,9 @@ class ForgeHandler(BaseHTTPRequestHandler):
             save_project_state(st)
             result["status"] = "synced"
             result["last_synced_at"] = collab["last_synced_at"]
+            _log_collab_op("sync.pull", _sslug, _t0, "ok",
+                           detail=f"pulled={result['files_pulled']} "
+                                  f"reviews_invalidated={len(result.get('reviews_invalidated', []))}")
             self._json_response(200, result)
             return
 
