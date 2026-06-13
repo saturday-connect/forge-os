@@ -1346,6 +1346,39 @@ def _gh_list_access(repo_url, token):
     }, None
 
 
+# Roles map the caller's GitHub repo permission to a Forge capability tier. This is a UX hint
+# only — GitHub remains the actual authorizer (a forged request still fails at the API). Push
+# sync needs write; invite/unshare need admin; everyone else is read-only.
+ROLE_ADMIN = "admin"
+ROLE_MEMBER = "member"
+ROLE_VIEWER = "viewer"
+
+
+def _gh_repo_role(repo_url, token):
+    """GET /repos/{owner}/{repo} and map the caller's `permissions` to a role:
+    admin → admin, push → member, pull/none → viewer. Returns (role, error). Non-github
+    repos (file://, ssh) have no permission model → (None, error)."""
+    owner, repo = _parse_github_repo(repo_url)
+    if not owner:
+        return None, "Docs repo is not a github.com repository"
+    req = urllib.request.Request(f"https://api.github.com/repos/{owner}/{repo}",
+                                 headers=_gh_headers(token))
+    try:
+        with urllib.request.urlopen(req, timeout=NETWORK_TIMEOUT_SECS) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        body = e.read().decode("utf-8", errors="ignore")[:200]
+        return None, f"GitHub API error {e.code}: {body}"
+    except (urllib.error.URLError, OSError, json.JSONDecodeError, ValueError) as e:
+        return None, str(e)[:200]
+    perms = data.get("permissions", {}) if isinstance(data, dict) else {}
+    if perms.get("admin"):
+        return ROLE_ADMIN, None
+    if perms.get("push"):
+        return ROLE_MEMBER, None
+    return ROLE_VIEWER, None
+
+
 def _provision_docs_repo(proj, slug, token, link_url="", org="", private=True, internal=False):
     """Resolve the per-project docs repo. Prefer an explicitly linked URL; otherwise auto-create
     `forge-<slug>-docs` via the GitHub API. If creation fails (commonly a missing repo-creation
@@ -1490,6 +1523,8 @@ def _project_collab_summary(entry):
         out["joined"] = True
     if collab.get("docs_repo_url"):
         out["docs_repo_url"] = collab["docs_repo_url"]
+    if collab.get("role"):
+        out["role"] = collab["role"]
     if collab.get("last_error"):
         out["error"] = str(collab["last_error"])[:200]
     return out
@@ -3601,6 +3636,18 @@ class ForgeHandler(BaseHTTPRequestHandler):
                     if err:
                         self._json_response(502, {"error": err})
                         return
+                    # Resolve the caller's role and cache it so the sync UI can gate Push
+                    # without a network round-trip (advisory — GitHub still enforces).
+                    role, role_err = _gh_repo_role(docs_repo, token)
+                    result["role"] = role
+                    if role:
+                        st = load_project_state()
+                        collab = st.setdefault("collaboration", {})
+                        collab["role"] = role
+                        collab["role_checked_at"] = datetime.now().isoformat()
+                        save_project_state(st)
+                    elif role_err:
+                        result["role_error"] = role_err
                     self._json_response(200, result)
                     return
                 username = (data.get("username") or "").strip()

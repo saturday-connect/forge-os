@@ -551,7 +551,7 @@ async function openShareDialog(projectId) {
       <div class="share-field">
         <div class="share-field-label">Access</div>
         <div id="share-access-list" class="share-field-hint" style="margin-bottom:8px;">Loading access list…</div>
-        <div style="display:flex;gap:8px;">
+        <div id="share-invite-row" style="display:flex;gap:8px;">
           <input id="share-invite-user" class="share-input" placeholder="github-username" style="flex:1;min-width:0;" />
           <select id="share-invite-perm" class="share-input" style="width:auto;flex-shrink:0;">
             <option value="pull">read</option>
@@ -560,6 +560,7 @@ async function openShareDialog(projectId) {
           </select>
           <button class="btn btn-secondary btn-sm" id="share-invite-btn" onclick="submitInvite()" style="flex-shrink:0;">Invite</button>
         </div>
+        <div id="share-role-note" class="share-field-hint"></div>
         <div class="share-field-hint">Invitees get GitHub access to the docs repo — that is what Join checks.</div>
       </div>` : ''}
       <div class="dialog-actions">
@@ -587,8 +588,28 @@ async function loadShareAccess() {
       ...(data.invitations || []).map((i) => `${escHtmlJs(i.login)} · ${escHtmlJs(i.permission)} (invited, pending)`),
     ];
     el.innerHTML = rows.length ? rows.join('<br>') : 'No direct collaborators yet — only you (and org admins) have access.';
+    applyShareRole(data.role || '');
   } catch (e) {
     el.textContent = 'Could not load access list';
+  }
+}
+
+// Gate admin-only controls to the caller's GitHub repo role (UX hint — GitHub still enforces).
+// Fail OPEN on an unknown role (resolution failed): never lock a user out of a control GitHub
+// would let them use; only a KNOWN non-admin role hides invite/unshare.
+function applyShareRole(role) {
+  const known = role === 'admin' || role === 'member' || role === 'viewer';
+  const isAdmin = role === 'admin';
+  const showAdmin = !known || isAdmin;
+  const invite = document.getElementById('share-invite-row');
+  const unshare = document.getElementById('share-unshare-btn');
+  const note = document.getElementById('share-role-note');
+  if (invite) invite.style.display = showAdmin ? '' : 'none';
+  if (unshare) unshare.style.display = showAdmin ? '' : 'none';
+  if (note) {
+    note.textContent = (known && !isAdmin)
+      ? `You have ${role} access — only admins can invite collaborators or stop sharing.`
+      : (isAdmin ? 'You have admin access to this docs repo.' : '');
   }
 }
 
