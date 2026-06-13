@@ -67,7 +67,7 @@ docs/                              GitHub Pages product site (deployed from /doc
 **Rules:**
 - Edit source in `src/`, `desktop/`, `docs/`.
 - Never hand-edit `forge`, `src/dashboard.html`, or `.forge/scripts/*` — they are generated artifacts.
-- After any source change: `python3 src/build_forge.py` then `./forge upgrade`.
+- After any source change: `python3 src/build_forge.py` — it rebuilds `./forge` and hot-deploys to every live `~/.forge/projects/*/scripts/` runtime (no manual `./forge upgrade` needed; that command stays for refreshing a standalone/legacy `.forge`).
 - Never name the Electron wrapper directory `electron/` — Node.js treats it as a reserved package name.
 
 ---
@@ -123,23 +123,22 @@ The per-file generator (`run.py`) re-sends the full upstream context for every f
 
 ```bash
 python3 src/build_forge.py
-./forge upgrade
-./forge --project "$PWD/.projects/task-flow" upgrade
-./forge --project "$PWD/test-projects/saas-todo" upgrade
 ```
 
-The build script hot-deploys `server.py`, `dashboard.html`, and `constants.py` to all live `.forge/scripts/` directories it can find, including `~/.forge/scripts/` (the Electron app's runtime location). This means a local rebuild immediately updates the Electron server without a manual upgrade — **but only if `~/.forge/scripts/` already exists** (created when Electron is first run).
+That single command rebuilds `./forge` **and** hot-deploys `server.py`, `dashboard.html`, `constants.py`, `build_runner.py`, and `batch_runner.py` to every live `.forge/scripts/` directory it can find — including the Electron-managed runtimes under `~/.forge/projects/*/scripts/`. A local rebuild therefore updates running servers with no manual `./forge upgrade` step. (The legacy repo-root `.forge`, `.projects/task-flow`, and `test-projects/saas-todo` upgrade targets no longer exist — see the Failure Log.)
 
-Restart dashboard:
+Smoke-test the dashboard against a throwaway managed project (the project root must pre-exist — `init` writes the `.forge` dotfile into it and the data dir under `~/.forge/projects/<uuid>/`):
 
 ```bash
-screen -S forge-dashboard -X quit >/dev/null 2>&1 || true
-lsof -tiTCP:8080 -sTCP:LISTEN | xargs -r kill
-screen -dmS forge-dashboard ./forge dashboard 8080
-curl -sS -o /tmp/forge-dashboard.html -w '%{http_code} %{size_download}\n' http://127.0.0.1:8080/
+mkdir -p /tmp/forge-smoke && ./forge --project /tmp/forge-smoke init
+lsof -tiTCP:8080 -sTCP:LISTEN | xargs -r kill 2>/dev/null || true
+./forge --project /tmp/forge-smoke dashboard 8080 &
+sleep 2
+curl -sS -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8080/            # expect 200
+curl -sS -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8080/api/state   # expect 200
 ```
 
-Expected successful response: `200 <non-zero-size>`
+`--project <path>` goes before the command. Expected successful response: `200`.
 
 ---
 
@@ -150,16 +149,16 @@ After any source change:
 ```bash
 python3 src/build_forge.py
 python3 -m py_compile src/build_forge.py src/runtime/server.py src/runtime/build_runner.py src/runtime/batch_runner.py
-./forge upgrade
-./forge --project "$PWD/.projects/task-flow" upgrade
-./forge --project "$PWD/test-projects/saas-todo" upgrade
-screen -S forge-dashboard -X quit >/dev/null 2>&1 || true
-lsof -tiTCP:8080 -sTCP:LISTEN | xargs -r kill
-screen -dmS forge-dashboard ./forge dashboard 8080
-curl -sS -o /tmp/forge-dashboard.html -w '%{http_code} %{size_download}\n' http://127.0.0.1:8080/
+# build_forge.py already hot-deploys to every ~/.forge/projects/*/scripts/ — no per-project upgrade.
+# Smoke-test against a throwaway managed project:
+mkdir -p /tmp/forge-smoke && ./forge --project /tmp/forge-smoke init
+lsof -tiTCP:8080 -sTCP:LISTEN | xargs -r kill 2>/dev/null || true
+./forge --project /tmp/forge-smoke dashboard 8080 &
+sleep 2
+curl -sS -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8080/            # expect 200
 ```
 
-UI sanity pass must cover: Projects, Overview, Input, Generate, Review, Build, Deploy, Issues, Settings.
+For runtime changes affecting AI-dependent paths (generate/build/collaboration), prefer the **hermetic harness** discipline (stub the AI call, isolated temp project, local bare git repo) over a manual UI pass — see the Failure Log. UI sanity pass, when warranted, must cover: Projects, Overview, Input, Generate, Review, Build, Deploy, Issues, Settings.
 
 Known acceptable finding: absolute project paths are intentionally ellipsized in cards.
 
@@ -365,13 +364,13 @@ Single workflow: `.github/workflows/build-desktop.yml`
 Root-level source and orchestration:
 
 ```text
-.forge/                      root runtime state for orchestrator dashboard
+.forge/                      root runtime state for orchestrator dashboard (when run from repo root)
 .projects/                   managed project workspace, gitignored
 .projects/index.json         managed project registry
 .projects/<slug>/.forge/     per-project generated runtime state
 src/                         source for compiler, runtime, dashboard
-test-projects/saas-todo/     validation project outside .projects
 forge                        built executable
+~/.forge/projects/<uuid>/    Electron/CLI-managed project runtimes (the live runtimes build_forge.py hot-deploys to)
 ```
 
 Inside a target `.forge/`:
@@ -663,7 +662,7 @@ Component sizing rules:
 ### Stale Validation Paths In This File
 - Symptom: the documented `./forge upgrade`, `test-projects/saas-todo`, and `.projects/task-flow` targets report "Forge not initialized" — those dirs don't exist on this machine
 - Cause: the real live runtimes are the Electron-managed projects under `~/.forge/projects/<uuid>/scripts/`; `build_forge.py` hot-deploys there (≈15 dirs), not to a repo-root `.forge`
-- Takeaway: validate against `~/.forge/projects/*/scripts/` (or `init` a throwaway project). Treat the repo-root / `test-projects` paths in the Validation Workflow as legacy
+- Takeaway: validate against `~/.forge/projects/*/scripts/` (or `init` a throwaway project). **Resolved:** the Build And Deploy Cycle + Validation Workflow sections were corrected to the throwaway-`init` + `--project … dashboard` smoke test (verified to return `200`); the dead `./forge upgrade` / `test-projects` / `task-flow` targets are gone
 
 ### Docs-Only Push Triggers A (Non-Releasing) CI Build
 - Symptom: editing only `docs/` and pushing to main starts the full `build-desktop.yml` matrix
@@ -752,9 +751,7 @@ The full collaboration feature is shipped: docs-first sharing (beta.118–120), 
 - **Invitee teams**: invite is per-username; org **team** grants (`PUT /orgs/{org}/teams/{slug}/repos/...`) would suit larger orgs.
 
 ### Hygiene / debt
-- **Correct the stale Validation Workflow paths** in this file to target `~/.forge/projects/*/scripts/` (the real runtimes) instead of the non-existent repo-root `.forge` / `test-projects` / `.projects/task-flow`.
-- **Add `paths-ignore: ['docs/**']`** to `build-desktop.yml` so docs-only pushes skip the app build matrix.
-- **Centralize remaining build constants** the same way `BUILD_CACHE_DIRNAME` was — any path/marker shared by `build_runner` and `server` should live in `constants.py` to prevent drift.
+- **Build-status payload keys** are centralized in `constants.py` (`BUILD_STATUS_KEYS` group) and shared by `build_runner` (writer) and `server` (reader). Other shared literals are deliberately left inline: external well-known names (`.env`, `package.json`, `docker-compose.yml`, `requirements.txt`) are fixed by their ecosystems and don't drift — centralizing them would be indirection without benefit.
 
 ### Method to keep using
 - For any generate/build runtime change, **validate hermetically** (stub `invoke_ai` / `build_runner`, isolated temp project, local bare repo) before shipping. It caught the real bug this session (build step blocked on empty source docs) at zero cost.
