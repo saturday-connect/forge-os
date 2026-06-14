@@ -1527,23 +1527,42 @@ _autosync_inflight = set()
 _autosync_lock = threading.Lock()
 
 
-def _spawn_autosync(project_id, work):
+def _spawn_autosync(sync_key, work):
     """Run `work()` on a daemon thread, deduped against a concurrent auto-sync of the same
     project (a second trigger mid-sync is a no-op) and never raising into the caller. Shared
-    by auto-pull (on open) and auto-push (on review-complete)."""
+    by auto-pull (on open) and auto-push (on review-complete). `sync_key` is the normalized
+    docs-repo URL — the same key both paths use, so a pull and a push for one project dedup
+    against each other and `_is_autosyncing` can answer the in-progress question."""
     with _autosync_lock:
-        if project_id in _autosync_inflight:
+        if sync_key in _autosync_inflight:
             return
-        _autosync_inflight.add(project_id)
+        _autosync_inflight.add(sync_key)
 
     def _run():
         try:
             work()
         finally:
             with _autosync_lock:
-                _autosync_inflight.discard(project_id)
+                _autosync_inflight.discard(sync_key)
 
     threading.Thread(target=_run, daemon=True).start()
+
+
+def _is_autosyncing(repo_url):
+    """True iff a background auto-sync (pull or push) is currently running for this docs repo."""
+    key = _normalize_repo_url(repo_url)
+    if not key:
+        return False
+    with _autosync_lock:
+        return key in _autosync_inflight
+
+
+def _state_collaboration(proj):
+    """The active project's collaboration block for /api/state, with the live `syncing` flag
+    (from the in-memory inflight set) layered onto the persisted fields."""
+    collab = dict(proj.get("collaboration", {}))
+    collab["syncing"] = _is_autosyncing(collab.get("docs_repo_url", ""))
+    return collab
 
 
 def _autosync_invalidate_reviews(files_updated):
@@ -1560,12 +1579,28 @@ def _autosync_invalidate_reviews(files_updated):
 
 
 def _stamp_last_synced():
+    """Record a successful sync: stamp the time, mark status ok, clear any prior error."""
     st = load_project_state()
-    st.setdefault("collaboration", {})["last_synced_at"] = datetime.now().isoformat()
+    collab = st.setdefault("collaboration", {})
+    collab["last_synced_at"] = datetime.now().isoformat()
+    collab["last_sync_status"] = "ok"
+    collab.pop("last_sync_error", None)
     save_project_state(st)
 
 
-def _maybe_auto_pull(project_id, repo_url, token, slug):
+def _record_sync_error(message):
+    """Persist an auto-sync failure so the UI can surface it (the op is otherwise silent)."""
+    try:
+        st = load_project_state()
+        collab = st.setdefault("collaboration", {})
+        collab["last_sync_status"] = "error"
+        collab["last_sync_error"] = str(message)[:200]
+        save_project_state(st)
+    except OSError as exc:
+        logger.debug("record sync error: %s", exc)
+
+
+def _maybe_auto_pull(repo_url, token, slug):
     """Fire-and-forget background pull when a project with auto_pull_on_open is selected.
     Advisory — never blocks the select response. Applies the same review-invalidation +
     last_synced_at as a manual pull so the two paths converge."""
@@ -1574,17 +1609,19 @@ def _maybe_auto_pull(project_id, repo_url, token, slug):
         try:
             result, error = _run_pull_sync(repo_url, token)
             if error:
+                _record_sync_error(error)
                 _log_collab_op("sync.pull", slug, _t0, "error", detail="auto " + error[:100])
                 return
             _autosync_invalidate_reviews(result["files_updated"])
             _stamp_last_synced()
             _log_collab_op("sync.pull", slug, _t0, "ok", detail=f"auto pulled={result['files_pulled']}")
         except (OSError, subprocess.SubprocessError) as exc:
+            _record_sync_error(str(exc))
             _log_collab_op("sync.pull", slug, _t0, "error", detail=f"auto {str(exc)[:100]}")
-    _spawn_autosync(project_id, _work)
+    _spawn_autosync(_normalize_repo_url(repo_url), _work)
 
 
-def _maybe_auto_push(project_id, repo_url, token, slug):
+def _maybe_auto_push(repo_url, token, slug):
     """Fire-and-forget background push when review completes (auto_push_on_review). Pull-first
     (like the manual push endpoint) so unseen remote work is never blind-clobbered, then mirror
     local -> remote. Advisory — never blocks the review response."""
@@ -1593,18 +1630,21 @@ def _maybe_auto_push(project_id, repo_url, token, slug):
         try:
             pull_result, pull_err = _run_pull_sync(repo_url, token)
             if pull_err:
+                _record_sync_error(pull_err)
                 _log_collab_op("sync.push", slug, _t0, "error", detail="auto " + pull_err[:100])
                 return
             _autosync_invalidate_reviews(pull_result["files_updated"])
             result, error = _run_push_sync(repo_url, token, load_project_state())
             if error:
+                _record_sync_error(error)
                 _log_collab_op("sync.push", slug, _t0, "error", detail="auto " + error[:100])
                 return
             _stamp_last_synced()
             _log_collab_op("sync.push", slug, _t0, "ok", detail=f"auto pushed={result['files_pushed']}")
         except (OSError, subprocess.SubprocessError) as exc:
+            _record_sync_error(str(exc))
             _log_collab_op("sync.push", slug, _t0, "error", detail=f"auto {str(exc)[:100]}")
-    _spawn_autosync(project_id, _work)
+    _spawn_autosync(_normalize_repo_url(repo_url), _work)
 
 
 def _autopush_review_complete(reviews):
@@ -1676,6 +1716,8 @@ def _project_collab_summary(entry):
         out["last_synced_at"] = collab["last_synced_at"]
     if collab.get("last_error"):
         out["error"] = str(collab["last_error"])[:200]
+    if collab.get("last_sync_status") == "error" and collab.get("last_sync_error"):
+        out["sync_error"] = str(collab["last_sync_error"])[:200]
     return out
 
 
@@ -3007,7 +3049,7 @@ def compute_full_state():
         "user": load_user(),
         "project_type": proj.get("project_type", "standard"),
         "lastDistill": _load_distill_result(),
-        "collaboration": proj.get("collaboration", {}),
+        "collaboration": _state_collaboration(proj),
         "schema_version": proj.get("schema_version", 1),
     }
 
@@ -3750,7 +3792,7 @@ class ForgeHandler(BaseHTTPRequestHandler):
                 # A private repo with no token just fails the advisory pull and logs it.
                 _ap_token = _ap.get("git", {}).get("token", "") or GIT_PAT
                 if _ap.get("auto_pull_on_open") and _ap_url:
-                    _maybe_auto_pull(project_id, _ap_url, _ap_token,
+                    _maybe_auto_pull(_ap_url, _ap_token,
                                      slugify_project_name(_ap.get("project_name", "project")))
             except OSError as exc:
                 logger.debug("auto-pull skipped: %s", exc)
@@ -6118,7 +6160,7 @@ class ForgeHandler(BaseHTTPRequestHandler):
                             and not _autopush_review_complete(_prev_reviews)
                             and _autopush_review_complete(reviews)):
                         _rp_token = _rp.get("git", {}).get("token", "") or GIT_PAT
-                        _maybe_auto_push(_normalize_repo_url(_rp_url), _rp_url, _rp_token,
+                        _maybe_auto_push(_rp_url, _rp_token,
                                          slugify_project_name(_rp.get("project_name", "project")))
                 except OSError as exc:
                     logger.debug("auto-push checkpoint skipped: %s", exc)
