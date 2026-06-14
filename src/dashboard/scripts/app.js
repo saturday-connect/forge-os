@@ -359,6 +359,7 @@ function renderProjectsHome() {
           ${collab.shared ? `<span class="collab-pill" title="${escHtmlJs(collab.docs_repo_url || '')}">Shared${collab.visibility ? ' · ' + escHtmlJs(collab.visibility) : ''}</span>` : ''}
           ${collab.joined ? `<span class="collab-pill collab-pill-joined" title="${escHtmlJs(collab.docs_repo_url || '')}">Joined</span>` : ''}
           ${collab.error ? `<span class="collab-pill collab-pill-error" title="${escHtmlJs(collab.error)}">Share error</span>` : ''}
+          ${collab.sync_error ? `<span class="collab-pill collab-pill-error" title="${escHtmlJs(collab.sync_error)}">Sync error</span>` : ''}
           ${isActive ? `<span class="active-pill">${PROJECT_UI_TEXT.active}</span>` : ''}
           ${isArchived ? `<span class="archive-pill">${PROJECT_UI_TEXT.archived}</span>` : ''}
         </div>
@@ -1121,6 +1122,10 @@ function renderTopbar() {
     const shortFile = (processing.file || '').split('/').pop().replace('.md','');
     statusText.textContent = `Fixing — ${shortFile}`;
     fixingFile = processing.file || fixingFile;
+  } else if (state.collaboration && state.collaboration.syncing) {
+    // Background auto-sync (pull-on-open / push-on-review) running for the active project.
+    pill.className = 'running';
+    statusText.textContent = 'Syncing…';
   } else {
     pill.className = '';
     statusText.textContent = 'Idle';
