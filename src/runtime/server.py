@@ -1268,7 +1268,7 @@ def _gh_create_repo(org, name, private, token, internal=False):
         return repo.get("clone_url") or repo.get("html_url"), None
     except urllib.error.HTTPError as e:
         body = e.read().decode("utf-8", errors="ignore")[:200]
-        return None, f"GitHub API error {e.code}: {body}"
+        return None, _gh_api_error(e.code, body, context="the org" if org else "your account")
     except (urllib.error.URLError, OSError) as e:
         return None, str(e)[:200]
 
@@ -1289,6 +1289,23 @@ def _gh_headers(token):
     }
 
 
+def _gh_api_error(code, body="", context="this repo"):
+    """Map a GitHub API HTTP status to an ACTIONABLE message. The raw 'GitHub API error 401: …'
+    confused users — owning the repo is irrelevant if the credential GitHub receives is rejected.
+    401 = bad/expired token; 403 = scope/SSO; 404 with a valid token usually = no access (GitHub
+    hides private-repo existence as not-found)."""
+    if code == 401:
+        return "GitHub token is invalid or expired — update it in Settings → Git Configuration."
+    if code == 403:
+        return ("GitHub denied this request (403) — the token may lack the required scope, or it "
+                "needs org SSO authorization.")
+    if code == 404:
+        return (f"Not found or no access to {context} (404) — confirm it exists and your token has "
+                "access (org repos may need SSO authorization for the token).")
+    msg = f"GitHub API error {code}"
+    return f"{msg}: {body[:120]}" if body else msg
+
+
 def _gh_invite_collaborator(repo_url, token, username, permission):
     """PUT /repos/{owner}/{repo}/collaborators/{username} — invite a new collaborator or update
     an existing one's permission. Returns (status, error): 'invited' (201, invitation created)
@@ -1306,7 +1323,7 @@ def _gh_invite_collaborator(repo_url, token, username, permission):
             return ("invited" if resp.status == 201 else "updated"), None
     except urllib.error.HTTPError as e:
         body = e.read().decode("utf-8", errors="ignore")[:200]
-        return None, f"GitHub API error {e.code}: {body}"
+        return None, _gh_api_error(e.code, body, context="this repo (inviting requires admin)")
     except (urllib.error.URLError, OSError) as e:
         return None, str(e)[:200]
 
@@ -1334,7 +1351,11 @@ def _gh_list_access(repo_url, token):
         invites = _get("invitations?per_page=100")
     except urllib.error.HTTPError as e:
         body = e.read().decode("utf-8", errors="ignore")[:200]
-        return None, f"GitHub API error {e.code}: {body}"
+        # Listing collaborators requires push access; GitHub returns 404 (not 403) when you lack
+        # it, to avoid leaking repo existence.
+        if e.code == 404:
+            return None, "You need push access to this repo to view or manage collaborators."
+        return None, _gh_api_error(e.code, body, context="this repo's collaborators")
     except (urllib.error.URLError, OSError, json.JSONDecodeError, ValueError) as e:
         return None, str(e)[:200]
     return {
@@ -1368,7 +1389,7 @@ def _gh_repo_role(repo_url, token):
             data = json.loads(resp.read().decode("utf-8"))
     except urllib.error.HTTPError as e:
         body = e.read().decode("utf-8", errors="ignore")[:200]
-        return None, f"GitHub API error {e.code}: {body}"
+        return None, _gh_api_error(e.code, body, context="this docs repo")
     except (urllib.error.URLError, OSError, json.JSONDecodeError, ValueError) as e:
         return None, str(e)[:200]
     perms = data.get("permissions", {}) if isinstance(data, dict) else {}
@@ -1820,16 +1841,47 @@ def _overlay_stage_docs(src_dir, target_forge_dir):
     return copied
 
 
-def _is_access_denied_clone(repo_url, error):
-    """Classify a failed join clone as an access problem. GitHub deliberately reports private
-    repos the caller cannot see as 'not found', so for github.com URLs not-found IS the
-    access-denied signal. Non-GitHub URLs (file://, ssh) never classify — a missing local path
-    is genuinely missing, not a permissions issue."""
-    if _parse_github_repo(repo_url)[0] is None:
-        return False
+def _classify_clone_error(repo_url, error):
+    """Classify a failed clone (join/share/sync) into an actionable category:
+      'bad_credentials' — the token itself is rejected (expired/revoked/invalid) → fix the token,
+                          NOT request access (owning the repo is irrelevant if the credential is bad).
+      'access_denied'   — token authenticates but lacks access to this repo → request access.
+                          GitHub reports invisible private repos as 'not found', so not-found IS
+                          the denial signal here; 'write access … not granted' is the same.
+      ''                — anything else (network, transient). Non-github URLs never classify.
+    Bad-credential phrasings are checked first because GitHub's git layer sometimes wraps an
+    invalid credential as a generic access message."""
     lower = (error or "").lower()
-    return ("repository not found" in lower or "authentication failed" in lower
-            or "403" in lower or "could not read username" in lower)
+    if ("authentication failed" in lower or "invalid username or password" in lower
+            or "bad credentials" in lower or "401" in lower):
+        return "bad_credentials"
+    if _parse_github_repo(repo_url)[0] is None:
+        return ""  # file:// / ssh: a missing local path is genuinely missing, not permissions
+    if ("repository not found" in lower or "write access to repository not granted" in lower
+            or "permission denied" in lower or "permission to" in lower
+            or "403" in lower or "could not read username" in lower):
+        return "access_denied"
+    return ""
+
+
+def _is_access_denied_clone(repo_url, error):
+    """Back-compat shim — True when the clone failed because the token lacks access to the repo
+    (the request-access case). See _classify_clone_error."""
+    return _classify_clone_error(repo_url, error) == "access_denied"
+
+
+def _clone_error_payload(repo_url, error):
+    """Build a 502 JSON body for a failed join/share/sync clone, tagged with a `reason` so the UI
+    routes to the right remedy: 'bad_credentials' → update the token; 'access_denied' → request
+    access; otherwise a plain error."""
+    cat = _classify_clone_error(repo_url, error)
+    if cat == "bad_credentials":
+        return {"error": "GitHub token is invalid or expired — update it in "
+                         "Settings → Git Configuration.",
+                "reason": "bad_credentials"}
+    if cat == "access_denied":
+        return {"error": error, "reason": "access_denied", "docs_repo_url": repo_url}
+    return {"error": error}
 
 
 def _run_join_project(repo_url, token, name_hint=""):
@@ -3900,7 +3952,16 @@ class ForgeHandler(BaseHTTPRequestHandler):
                 collab["docs_repo_url"] = repo_url
                 collab["visibility"] = visibility
                 collab["shared_at"] = datetime.now().isoformat()
-                collab["last_error"] = error or (result or {}).get("registry_error")
+                # Persist a friendly message for the "Share error" pill — a bad token or no-access
+                # clone should say what to do, not dump the raw git error.
+                _friendly = error
+                if error:
+                    _cat = _classify_clone_error(repo_url, error)
+                    if _cat == "bad_credentials":
+                        _friendly = "GitHub token is invalid or expired — update it in Settings → Git Configuration."
+                    elif _cat == "access_denied":
+                        _friendly = f"No access to {repo_url} — check the token has write access (org repos may need SSO authorization)."
+                collab["last_error"] = _friendly or (result or {}).get("registry_error")
                 if vis_note:
                     collab["visibility_note"] = vis_note
                 else:
@@ -3949,14 +4010,9 @@ class ForgeHandler(BaseHTTPRequestHandler):
             result, error = _run_join_project(repo_url, token, name_hint=(data.get("name") or ""))
             if error:
                 _log_collab_op("join", _jslug, _t0, "error", detail=error[:120])
-                payload = {"error": error}
-                if _is_access_denied_clone(repo_url, error):
-                    # Listed-but-unauthorized: tell the UI to show the request-access flow
-                    # instead of the raw git error. Access is granted on GitHub (Share dialog
-                    # -> Access -> Invite), not in Forge.
-                    payload["reason"] = "access_denied"
-                    payload["docs_repo_url"] = repo_url
-                self._json_response(502, payload)
+                # Tag the failure: bad token -> fix credential; lack of access -> request-access
+                # flow (granted on GitHub via Share -> Access -> Invite, not in Forge).
+                self._json_response(502, _clone_error_payload(repo_url, error))
                 return
             _log_collab_op("join", _jslug, _t0, "ok", detail=f"docs={result['docs_copied']}")
             self._json_response(200, {
@@ -3985,11 +4041,7 @@ class ForgeHandler(BaseHTTPRequestHandler):
                 pull_result, pull_err = _run_pull_sync(repo_url, token)
                 if pull_err:
                     _log_collab_op("sync.push", _sslug, _t0, "error", detail=pull_err[:120])
-                    payload = {"error": pull_err}
-                    if _is_access_denied_clone(repo_url, pull_err):
-                        payload["reason"] = "access_denied"
-                        payload["docs_repo_url"] = repo_url
-                    self._json_response(502, payload)
+                    self._json_response(502, _clone_error_payload(repo_url, pull_err))
                     return
                 if pull_result["files_updated"]:
                     reviews = load_reviews()
@@ -4002,7 +4054,7 @@ class ForgeHandler(BaseHTTPRequestHandler):
                 result, error = _run_push_sync(repo_url, token, proj)
                 if error:
                     _log_collab_op("sync.push", _sslug, _t0, "error", detail=error[:120])
-                    self._json_response(502, {"error": error})
+                    self._json_response(502, _clone_error_payload(repo_url, error))
                     return
                 st = load_project_state()
                 collab = st.setdefault("collaboration", {})
@@ -4019,11 +4071,7 @@ class ForgeHandler(BaseHTTPRequestHandler):
             result, error = _run_pull_sync(repo_url, token)
             if error:
                 _log_collab_op("sync.pull", _sslug, _t0, "error", detail=error[:120])
-                payload = {"error": error}
-                if _is_access_denied_clone(repo_url, error):
-                    payload["reason"] = "access_denied"
-                    payload["docs_repo_url"] = repo_url
-                self._json_response(502, payload)
+                self._json_response(502, _clone_error_payload(repo_url, error))
                 return
             # A pulled update invalidates the local review — the reviewed content changed.
             if result["files_updated"]:

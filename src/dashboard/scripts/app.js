@@ -735,6 +735,7 @@ async function runSync(direction) {
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
       if (data.reason === 'access_denied') { closeSyncDialog(); openRequestAccessDialog('this project', data.docs_repo_url || ''); return; }
+      if (data.reason === 'bad_credentials') { closeSyncDialog(); showToast(data.error || 'GitHub token invalid — update it in Settings', 'error'); return; }
       if (el) el.textContent = data.error || 'Sync failed';
       [pull, push].forEach((b) => { if (b) b.disabled = false; });
       return;
