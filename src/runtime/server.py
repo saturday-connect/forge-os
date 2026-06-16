@@ -225,6 +225,16 @@ _local_run_stop = threading.Event()   # set() to signal log-reader + health thre
 FORGE_TOKEN = os.environ.get("FORGE_TOKEN", "")
 GIT_PAT = os.environ.get("FORGE_GIT_PAT", "")
 
+
+def _set_git_pat(value):
+    """Update the in-process GitHub PAT so a token pasted in Settings takes effect IMMEDIATELY,
+    without an app restart. Without this, saving a token only writes the _pat_signal for Electron
+    to persist, while the running server keeps using its startup GIT_PAT — so a freshly-fixed
+    token still 401s until restart. (A module-level setter is required: `global GIT_PAT` cannot
+    be declared inside do_POST because GIT_PAT is read textually earlier in that method.)"""
+    global GIT_PAT
+    GIT_PAT = value or ""
+
 REPO_ROOT = os.path.abspath(os.environ.get("FORGE_REPO_ROOT", "."))
 ORCHESTRATOR_ROOT = os.path.abspath(os.environ.get("FORGE_ORCHESTRATOR_ROOT", REPO_ROOT))
 _data_dir = os.environ.get("FORGE_DATA_DIR", "")
@@ -1271,6 +1281,19 @@ def _gh_create_repo(org, name, private, token, internal=False):
         return None, _gh_api_error(e.code, body, context="the org" if org else "your account")
     except (urllib.error.URLError, OSError) as e:
         return None, str(e)[:200]
+
+
+_GH_USERNAME_RE = r"[A-Za-z0-9](?:[A-Za-z0-9]|-(?=[A-Za-z0-9])){0,38}"
+
+
+def _normalize_gh_username(raw):
+    """Bare GitHub handle from common paste forms — strips a leading '@' (@octocat) and unwraps a
+    pasted profile URL (github.com/octocat, https://github.com/octocat/). Returns '' if the result
+    is not a valid GitHub username, so the caller can show one clear error."""
+    u = (raw or "").strip().lstrip("@")
+    if "/" in u:
+        u = u.rstrip("/").split("/")[-1]
+    return u if re.fullmatch(_GH_USERNAME_RE, u) else ""
 
 
 def _parse_github_repo(repo_url):
@@ -3910,10 +3933,12 @@ class ForgeHandler(BaseHTTPRequestHandler):
                         result["role_error"] = role_err
                     self._json_response(200, result)
                     return
-                username = (data.get("username") or "").strip()
+                # Accept common paste forms (@octocat, github.com/octocat) -> bare handle.
+                username = _normalize_gh_username(data.get("username"))
                 permission = (data.get("permission") or "push").strip()
-                if not re.fullmatch(r"[A-Za-z0-9](?:[A-Za-z0-9]|-(?=[A-Za-z0-9])){0,38}", username):
-                    self._json_response(400, {"error": "invalid GitHub username"})
+                if not username:
+                    self._json_response(400, {"error": "Enter just the GitHub username "
+                                                       "(e.g. octocat) — no @, URL, email, or spaces."})
                     return
                 if permission not in ("pull", "push", "admin"):
                     self._json_response(400, {"error": "invalid permission — use pull, push, or admin"})
@@ -3961,7 +3986,18 @@ class ForgeHandler(BaseHTTPRequestHandler):
                         _friendly = "GitHub token is invalid or expired — update it in Settings → Git Configuration."
                     elif _cat == "access_denied":
                         _friendly = f"No access to {repo_url} — check the token has write access (org repos may need SSO authorization)."
-                collab["last_error"] = _friendly or (result or {}).get("registry_error")
+                # Only a failed DOCS share is a real error. If the docs pushed fine and only the
+                # discovery-registry LISTING failed (commonly: no KB repo configured), that is
+                # advisory — the project is shared and joinable by URL, just not listed. Surface
+                # it as a soft note, NOT a red "Share error".
+                _reg_err = (result or {}).get("registry_error")
+                collab["last_error"] = _friendly
+                if not error and _reg_err:
+                    collab["share_note"] = ("Shared — not listed in team discovery (" + _reg_err
+                                            + "). Configure a Knowledge Base repo in Settings to list it; "
+                                            "members can still Join by URL.")
+                else:
+                    collab.pop("share_note", None)
                 if vis_note:
                     collab["visibility_note"] = vis_note
                 else:
@@ -6143,6 +6179,9 @@ class ForgeHandler(BaseHTTPRequestHandler):
             # Signal Electron to persist new PAT in safeStorage (never write to disk).
             # The file is 0600, lives briefly, and is deleted by the Electron poller.
             if new_pat:
+                # Take effect in THIS session immediately (no app restart needed)...
+                _set_git_pat(new_pat)
+                # ...and signal Electron to persist it in safeStorage for next launch.
                 _signal = os.path.expanduser(PAT_SIGNAL_PATH)
                 try:
                     _forge_dir_local = os.path.dirname(_signal)

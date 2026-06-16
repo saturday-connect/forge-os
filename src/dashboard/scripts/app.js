@@ -541,7 +541,7 @@ async function openShareDialog(projectId) {
       <div style="font-size:11px;color:var(--text-3);margin-bottom:16px;line-height:1.6;">
         Pushes <b style="color:var(--text-2);">${escHtmlJs(name)}</b>'s docs to a per-project repo. Org and Public shares are listed in your team's discovery registry; Private shares are link-only, never listed. Who can open the docs is governed by the repo's GitHub permissions.
       </div>
-      ${shared ? `<div style="font-size:11px;color:var(--text-2);margin:-8px 0 16px;line-height:1.6;">Currently shared${shared.visibility ? ` (${escHtmlJs(shared.visibility)})` : ''} → <span style="word-break:break-all;">${escHtmlJs(shared.docs_repo_url || '')}</span>${shared.visibility_note ? `<br><span style="color:var(--text-3);">${escHtmlJs(shared.visibility_note)}</span>` : ''}</div>` : ''}
+      ${shared ? `<div style="font-size:11px;color:var(--text-2);margin:-8px 0 16px;line-height:1.6;">Currently shared${shared.visibility ? ` (${escHtmlJs(shared.visibility)})` : ''} → <span style="word-break:break-all;">${escHtmlJs(shared.docs_repo_url || '')}</span>${shared.visibility_note ? `<br><span style="color:var(--text-3);">${escHtmlJs(shared.visibility_note)}</span>` : ''}${shared.share_note ? `<br><span style="color:var(--amber,#f59e0b);">${escHtmlJs(shared.share_note)}</span>` : ''}</div>` : ''}
       <div class="share-field">
         <div class="share-field-label">Visibility</div>
         <div class="share-vis-group">
@@ -591,11 +591,22 @@ async function loadShareAccess() {
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) { el.textContent = data.error || 'Could not load access list'; return; }
+    const members = data.collaborators || [];
+    const pending = data.invitations || [];
+    const total = members.length + pending.length;
+    const permLabel = (p) => ({ admin: 'admin', push: 'write', pull: 'read', write: 'write', read: 'read' }[p] || p || '');
+    const row = (login, perm, isPending) => `
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:5px 0;border-bottom:1px solid var(--border,rgba(255,255,255,.06));">
+        <span style="color:var(--text-2);font-size:12px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escHtmlJs(login || '—')}</span>
+        <span style="font-size:10px;color:${isPending ? 'var(--amber,#f59e0b)' : 'var(--text-3)'};flex-shrink:0;">${escHtmlJs(permLabel(perm))}${isPending ? ' · invited' : ''}</span>
+      </div>`;
     const rows = [
-      ...(data.collaborators || []).map((c) => `${escHtmlJs(c.login)} · ${escHtmlJs(c.permission)}`),
-      ...(data.invitations || []).map((i) => `${escHtmlJs(i.login)} · ${escHtmlJs(i.permission)} (invited, pending)`),
-    ];
-    el.innerHTML = rows.length ? rows.join('<br>') : 'No direct collaborators yet — only you (and org admins) have access.';
+      ...members.map((c) => row(c.login, c.permission, false)),
+      ...pending.map((i) => row(i.login, i.permission, true)),
+    ].join('');
+    el.innerHTML = total
+      ? `<div style="font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:.4px;margin-bottom:2px;">${total} ${total === 1 ? 'member' : 'members'}</div>${rows}`
+      : 'No direct collaborators yet — only you (and org admins) have access.';
     applyShareRole(data.role || '');
   } catch (e) {
     el.textContent = 'Could not load access list';
@@ -814,16 +825,29 @@ async function loadDiscover() {
   }
 }
 
-async function joinProject(slug) {
+// Join a discovered project by slug (registry-resolved).
+function joinProject(slug) { return _doJoin({ slug }, slug); }
+
+// Join any shared project directly by its docs repo URL — the path for PRIVATE shares, which
+// are link-only and never appear in the team discovery list.
+function joinByUrl() {
+  const inp = document.getElementById('discover-join-url');
+  const url = (inp ? inp.value : '').trim();
+  if (!url) { showToast('Paste the docs repo URL the owner shared with you', 'error'); return; }
+  return _doJoin({ repo_url: url }, url);
+}
+
+async function _doJoin(body, label) {
   showToast('Joining…', 'info');
   try {
     const res = await apiFetch('/api/projects/join', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ slug }),
+      body: JSON.stringify(body),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
-      if (data.reason === 'access_denied') { openRequestAccessDialog(slug, data.docs_repo_url || ''); return; }
+      if (data.reason === 'access_denied') { openRequestAccessDialog(label, data.docs_repo_url || ''); return; }
+      if (data.reason === 'bad_credentials') { showToast(data.error || 'GitHub token invalid — update it in Settings', 'error'); return; }
       showToast(data.error || 'Join failed', 'error');
       return;
     }
@@ -864,42 +888,58 @@ function openRequestAccessDialog(slug, repoUrl) {
   document.body.appendChild(overlay);
 }
 
+// Always-available "Join by URL" — the only path for PRIVATE shares (which are link-only and
+// never listed in the team discovery registry). Paste the docs repo URL the owner shared.
+function joinByUrlBlock() {
+  return `
+    <div class="discover-joinurl">
+      <div class="discover-joinurl-label">Join by URL <span style="color:var(--text-3);font-weight:400;">— for a private/direct share</span></div>
+      <div style="display:flex;gap:8px;">
+        <input id="discover-join-url" class="share-input" style="flex:1;min-width:0;" placeholder="https://github.com/org/project-docs" />
+        <button class="btn btn-secondary btn-sm" style="flex-shrink:0;" onclick="joinByUrl()">Join</button>
+      </div>
+      <div class="discover-hint" style="margin-top:6px;">Private shares aren't listed above. Paste the docs repo URL the owner gave you (you must be invited to it).</div>
+    </div>`;
+}
+
 function renderDiscoverSection() {
   const head = (right) => `
     <div class="discover-head">
       <div class="discover-title">Shared with your team</div>
       ${right}
     </div>`;
+  let inner;
   if (discoverBusy && !discoverLoaded) {
-    return `<section class="discover-section">${head('<span class="discover-hint-inline">Loading…</span>')}</section>`;
+    inner = head('<span class="discover-hint-inline">Loading…</span>');
+  } else if (!discoverLoaded) {
+    inner = head('<button class="btn btn-ghost btn-xs" onclick="loadDiscover()">Find shared projects</button>');
+  } else {
+    const refresh = `<button class="btn btn-ghost btn-xs" onclick="loadDiscover()">${discoverBusy ? 'Loading…' : 'Refresh'}</button>`;
+    if (discoverError) {
+      inner = head(refresh) + `<div class="discover-hint">${escHtmlJs(discoverError)}</div>`;
+    } else if (!discoverProjects.length) {
+      inner = head(refresh) + '<div class="discover-hint">No org/public projects in the team registry yet.</div>';
+    } else {
+      const rows = discoverProjects.map((p) => {
+        const nm = escHtmlJs(p.name || p.slug || 'project');
+        const vis = escHtmlJs(p.visibility || '');
+        const sl = escHtmlJs(p.slug || '');
+        const joinable = !!p.docs_repo_url;
+        return `
+          <div class="discover-row">
+            <div class="discover-row-info">
+              <div class="discover-row-name">${nm}</div>
+              <div class="discover-row-meta">${vis ? `<span class="discover-vis-pill">${vis}</span>` : ''}<span class="discover-row-slug">${sl}</span></div>
+            </div>
+            ${joinable
+              ? `<button class="btn btn-secondary btn-xs" onclick="joinProject('${sl}')">Join</button>`
+              : `<span class="discover-row-pending">not shared yet</span>`}
+          </div>`;
+      }).join('');
+      inner = head(refresh) + `<div class="discover-list">${rows}</div>`;
+    }
   }
-  if (!discoverLoaded) {
-    return `<section class="discover-section">${head('<button class="btn btn-ghost btn-xs" onclick="loadDiscover()">Find shared projects</button>')}</section>`;
-  }
-  const refresh = `<button class="btn btn-ghost btn-xs" onclick="loadDiscover()">${discoverBusy ? 'Loading…' : 'Refresh'}</button>`;
-  if (discoverError) {
-    return `<section class="discover-section">${head(refresh)}<div class="discover-hint">${escHtmlJs(discoverError)}</div></section>`;
-  }
-  if (!discoverProjects.length) {
-    return `<section class="discover-section">${head(refresh)}<div class="discover-hint">No shared projects in the team registry yet. Share a project to list it here.</div></section>`;
-  }
-  const rows = discoverProjects.map((p) => {
-    const nm = escHtmlJs(p.name || p.slug || 'project');
-    const vis = escHtmlJs(p.visibility || '');
-    const sl = escHtmlJs(p.slug || '');
-    const joinable = !!p.docs_repo_url;
-    return `
-      <div class="discover-row">
-        <div class="discover-row-info">
-          <div class="discover-row-name">${nm}</div>
-          <div class="discover-row-meta">${vis ? `<span class="discover-vis-pill">${vis}</span>` : ''}<span class="discover-row-slug">${sl}</span></div>
-        </div>
-        ${joinable
-          ? `<button class="btn btn-secondary btn-xs" onclick="joinProject('${sl}')">Join</button>`
-          : `<span class="discover-row-pending">not shared yet</span>`}
-      </div>`;
-  }).join('');
-  return `<section class="discover-section">${head(refresh)}<div class="discover-list">${rows}</div></section>`;
+  return `<section class="discover-section">${inner}${joinByUrlBlock()}</section>`;
 }
 
 function openProjectsHome() {
